@@ -6,10 +6,10 @@ import type { WranglerConfig } from "../../cf/types";
 import { CliError } from "../../cli/errors";
 import { PLAIN } from "../../term/color";
 import { fakeDbIo, r2RestRules, REMOTE_AUTH } from "../db.fixture";
-import { appHome } from "../home";
+import { appHome, standbyHome } from "../home";
 import type { DbConfig, DbRunContext, FakeDbIo, Home } from "../types";
 import { exportReply, fakeDatabase } from "./backup.fixture";
-import { compareRowCounts, openBackupPorts, resolveDumpSource } from "./dumps";
+import { compareRowCounts, dumpHome, loadLocalDump, openBackupPorts, readLocalDump, resolveDumpSource } from "./dumps";
 
 function config(r2: unknown[] | undefined, env: string | null = null, envR2?: unknown[], databaseId: string | null = "db-id"): DbConfig {
   return {
@@ -192,5 +192,79 @@ describe("openBackupPorts()", () => {
     expect(error).toBeInstanceOf(CliError);
     expect(error).toMatchObject({ kind: "invalid-args", message: "remote (app-db) has no D1 id to address" });
     expect([io.restCalls, reachedLocally]).toEqual([[], []]);
+  });
+});
+
+describe("the dump bucket on a standby target", () => {
+  const APP_CONFIG = "/app/wrangler.jsonc";
+  const STANDBY_CONFIG = "/app/.forge/standby/app-db-standby/wrangler.jsonc";
+  const KEY = "d1-backups/db-id/2026-09-10T03:00:00.000Z-B1.sql";
+
+  function placed(place: "local" | "standby"): { run: DbRunContext; io: FakeDbIo } {
+    const declared = {
+      ...config([{ binding: "BACKUPS", bucket_name: "app-backups" }]),
+      root: "/app",
+      target: { place, database: null },
+    } as DbConfig;
+    const io = fakeDbIo();
+    io.buckets.set("BACKUPS", fakeBackupBucket());
+    io.databases.set("DB", fakeDatabase());
+    const home = place === "standby" ? standbyHome(declared, io) : appHome(declared);
+    return { run: { config: declared, home, io, host: {}, json: false, yes: true, style: PLAIN, print: () => {} }, io };
+  }
+
+  it("opens the bucket through the app's own config, whose r2_buckets the standby's generated config lacks, and the database through the standby's", async () => {
+    const { run, io } = placed("standby");
+
+    await openBackupPorts(run, resolveDumpSource(run, {}));
+
+    expect(io.bindingCalls).toEqual([
+      { kind: "bucket", binding: "BACKUPS", home: "standby", configPath: APP_CONFIG },
+      { kind: "database", binding: "DB", home: "standby", configPath: STANDBY_CONFIG },
+    ]);
+  });
+
+  it("opens both through the app's own config on a local target", async () => {
+    const { run, io } = placed("local");
+
+    await openBackupPorts(run, resolveDumpSource(run, {}));
+
+    expect(io.bindingCalls).toEqual([
+      { kind: "bucket", binding: "BACKUPS", home: "local", configPath: APP_CONFIG },
+      { kind: "database", binding: "DB", home: "local", configPath: APP_CONFIG },
+    ]);
+  });
+
+  it("reads a named dump's sidecar from the app's bucket on standby", async () => {
+    const { run, io } = placed("standby");
+
+    await expect(readLocalDump(run, resolveDumpSource(run, {}), KEY)).rejects.toThrow(
+      `${KEY} has no sidecar in BACKUPS, so its backup never finished`,
+    );
+    expect(io.bindingCalls).toEqual([{ kind: "bucket", binding: "BACKUPS", home: "standby", configPath: APP_CONFIG }]);
+  });
+
+  it("loads a dump from the app's bucket into the standby home", async () => {
+    const { run, io } = placed("standby");
+    await (io.buckets.get("BACKUPS") as ReturnType<typeof fakeBackupBucket>).put(
+      KEY,
+      "CREATE TABLE notes (id INTEGER);\nINSERT INTO notes VALUES (1);",
+    );
+
+    await loadLocalDump(run, resolveDumpSource(run, {}), { key: KEY } as D1BackupSidecar, run.home);
+
+    expect(io.bindingCalls).toEqual([{ kind: "bucket", binding: "BACKUPS", home: "standby", configPath: APP_CONFIG }]);
+    expect(io.d1Calls.map((call) => [call.home, call.statements])).toEqual([
+      ["standby", ["CREATE TABLE notes (id INTEGER)", "INSERT INTO notes VALUES (1)"]],
+    ]);
+  });
+});
+
+describe("dumpHome()", () => {
+  it("is the run's own home for every place but standby", () => {
+    for (const place of ["local", "remote", "preview"] as const) {
+      const home = { label: `${place}-home` } as Home;
+      expect(dumpHome({ config: { ...config([]), target: { place, database: null } } as DbConfig, home })).toBe(home);
+    }
   });
 });

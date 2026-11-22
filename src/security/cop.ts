@@ -6,6 +6,7 @@ import { getAppContext } from "../context/types";
 import { isWebSocketUpgrade } from "../http/upgrade";
 import { err, ok } from "../result/result";
 import { isExemptFromOriginCheck, verifyOrigin, withExtraOrigins } from "./origin";
+import { createRefusalAnswer } from "./refusal";
 import type { CrossOriginResult, OriginProtectionOptions } from "./types";
 
 /** The Fetch Metadata verdict, with the missing-header allowance passed in. @internal */
@@ -50,10 +51,12 @@ export function crossOriginProtection(): Middleware {
 
 /** Combined cross-origin guard for mutating routes: Fetch Metadata and an Origin/Referer allowlist. @public */
 export function originProtection<Bindings = Record<string, unknown>>(options: OriginProtectionOptions<Bindings>): Middleware {
+  const refuse = createRefusalAnswer<Bindings>(options.onRefuse);
+  const admitsSignalless = options.missing === "allow";
   return async (context, next) => {
     if (isExemptFromOriginCheck(context.request)) return next();
     const cop = crossOriginVerdict(context.request, true);
-    if (!cop.ok) return new Response("Forbidden", { status: 403 });
+    if (!cop.ok) return refuse(context, { guard: "origin", status: 403, reason: cop.error === "missing-fetch-metadata" ? "missing" : cop.error });
     // `Sec-Fetch-Site` is a veto, not a pass: a good value must not short-circuit the allowlist,
     // or a non-browser client skips it by forging one `Sec-Fetch-Site: same-origin` header.
     const allowed =
@@ -62,9 +65,8 @@ export function originProtection<Bindings = Record<string, unknown>>(options: Or
     if (origin.ok) return next();
     // The allowlist had nothing to judge, so fall back to the tier `SECURITY_HARDENING.md` §3e names:
     // the veto above admits only `same-origin` and `none`, values page content cannot forge.
-    if (origin.error === "missing" && !isWebSocketUpgrade(context.request) && context.request.headers.get("Sec-Fetch-Site") !== null) {
-      return next();
-    }
-    return new Response("Forbidden", { status: 403 });
+    const vouchedByFetchMetadata = context.request.headers.get("Sec-Fetch-Site") !== null;
+    if (origin.error === "missing" && !isWebSocketUpgrade(context.request) && (vouchedByFetchMetadata || admitsSignalless)) return next();
+    return refuse(context, { guard: "origin", status: 403, reason: origin.error });
   };
 }

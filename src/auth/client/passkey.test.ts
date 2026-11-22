@@ -83,7 +83,7 @@ interface CredentialCall {
 }
 
 function fakeRealm(options: {
-  replies?: Record<string, { status?: number; body?: unknown }>;
+  replies?: Record<string, { status?: number; body?: unknown; raw?: string; headers?: Record<string, string> }>;
   hang?: string[];
   answer?: unknown;
   pendingCredential?: boolean;
@@ -122,7 +122,9 @@ function fakeRealm(options: {
       if (options.hang?.includes(url)) return untilAborted(init.signal);
       const reply = options.replies?.[url];
       if (!reply) return Promise.resolve(new Response("", { status: 404 }));
-      return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));
+      return Promise.resolve(
+        new Response(reply.raw ?? JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200, headers: reply.headers ?? {} }),
+      );
     },
     navigate: (path) => {
       navigations.push(path);
@@ -264,6 +266,103 @@ describe("runPasskeyCeremony — the DOM-free ceremony core", () => {
   });
 });
 
+describe("runPasskeyCeremony — a guard's problem+json refusal (FORGE_ERRORS.md §3e)", () => {
+  const PROBLEM = { "content-type": "application/problem+json; charset=utf-8" };
+  const LEAK = "reason: expired token for subject 0190f3a0";
+
+  function refusedAt(step: "options" | "verify", reply: { status: number; body?: unknown; raw?: string; headers?: Record<string, string> }) {
+    return fakeRealm({
+      replies: step === "options" ? { [OPTIONS_PATH]: reply } : { [OPTIONS_PATH]: { body: REQUEST_OPTIONS }, [VERIFY_PATH]: reply },
+      answer: ASSERTION,
+    });
+  }
+
+  it("reports a 429 problem+json on the options call as options-failed with status 429, prompting for nothing", async () => {
+    const { realm, calls, navigations } = refusedAt("options", {
+      status: 429,
+      headers: PROBLEM,
+      body: { type: "about:blank", title: "Too Many Requests", status: 429, detail: LEAK },
+    });
+
+    expect({ outcome: await runPasskeyCeremony(CEREMONY, realm), calls, navigations }).toEqual({
+      outcome: { mode: "authentication", reason: "options-failed", status: 429 },
+      calls: [],
+      navigations: [],
+    });
+  });
+
+  it("reports a 429 problem+json on the verification as verification-failed with status 429, navigating nowhere", async () => {
+    const { realm, navigations } = refusedAt("verify", {
+      status: 429,
+      headers: PROBLEM,
+      body: { type: "about:blank", title: "Too Many Requests", status: 429, detail: LEAK },
+    });
+
+    expect({ outcome: await runPasskeyCeremony(CEREMONY, realm), navigations }).toEqual({
+      outcome: { mode: "authentication", reason: "verification-failed", status: 429 },
+      navigations: [],
+    });
+  });
+
+  it("surfaces the status of every refusal a guard answers in problem+json", async () => {
+    const cases = [
+      { status: 400, title: "Bad Request" },
+      { status: 403, title: "Forbidden" },
+      { status: 413, title: "Content Too Large" },
+      { status: 503, title: "Service Unavailable" },
+    ];
+
+    const outcomes = await Promise.all(
+      cases.map(async ({ status, title }) =>
+        runPasskeyCeremony(CEREMONY, refusedAt("verify", { status, headers: PROBLEM, body: { type: "about:blank", title, status } }).realm),
+      ),
+    );
+    expect(outcomes).toEqual(cases.map(({ status }) => ({ mode: "authentication", reason: "verification-failed", status })));
+  });
+
+  it("still surfaces the response status when a problem+json body cannot be parsed", async () => {
+    // The body is truncated mid-object.
+    const { realm } = refusedAt("options", { status: 503, headers: PROBLEM, raw: '{"type":"about:bl' });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication", reason: "options-failed", status: 503 });
+  });
+
+  it("leaves status absent on a failure that is not a guard's problem+json", async () => {
+    const cases = [
+      {
+        name: "plain-text 429",
+        step: "options",
+        reply: { status: 429, raw: "Too many requests. Please try again later.", headers: { "content-type": "text/plain" } },
+      },
+      {
+        name: "JSON 403",
+        step: "verify",
+        reply: { status: 403, body: { error: "Not signed in." }, headers: { "content-type": "application/json" } },
+      },
+      {
+        name: "problem+json 500",
+        step: "verify",
+        reply: { status: 500, headers: PROBLEM, body: { type: "about:blank", title: "Internal Server Error", status: 500 } },
+      },
+      {
+        name: "problem+json 401",
+        step: "options",
+        reply: { status: 401, headers: PROBLEM, body: { type: "about:blank", title: "Unauthorized", status: 401 } },
+      },
+    ] as const;
+
+    const outcomes = await Promise.all(
+      cases.map(async ({ name, step, reply }) => ({ name, outcome: await runPasskeyCeremony(CEREMONY, refusedAt(step, reply).realm) })),
+    );
+    expect(outcomes).toEqual(
+      cases.map(({ name, step }) => ({
+        name,
+        outcome: { mode: "authentication", reason: step === "options" ? "options-failed" : "verification-failed" },
+      })),
+    );
+  });
+});
+
 describe("encodeCredential / ceremonyReason", () => {
   it("round-trips every buffer through base64url", () => {
     const encoded = encodeCredential(ASSERTION);
@@ -330,7 +429,7 @@ function fixture(overrides: Record<string, string> = {}): {
 }
 
 describe("readPasskeyContract", () => {
-  it("reads the whole contract, defaulting the CSRF header to csrfProtection's own", () => {
+  it("reads the whole contract, defaulting the CSRF header to the CSRF policy's own", () => {
     const { root } = fixture();
 
     expect(readPasskeyContract(root as unknown as HTMLElement)).toEqual(CEREMONY);

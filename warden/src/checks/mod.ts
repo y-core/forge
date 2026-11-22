@@ -1,7 +1,7 @@
 export type { ChangelogCheckConfig } from "./changelog";
 export { checkChangelog, validateChangelog } from "./changelog";
-export type { DesignCheckConfig } from "./design";
-export { checkDesign } from "./design";
+export type { DesignCheckConfig, DocFencesCheckConfig } from "./design";
+export { checkDesign, checkDocFences } from "./design";
 export type { CitableDir, DocKind, DocsCheckConfig, ExtraDir, FrontmatterRule } from "./docs";
 export { checkDocs, linkDefinitions, parseSections, stripFences, validateFrontmatter, validateNoRot } from "./docs";
 export type { SubpathCitation } from "./docs-parse";

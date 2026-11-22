@@ -25,23 +25,32 @@
       "./testing",
       "./testing/coverage",
       "./testing/d1",
+      "./testing/d1/bun",
       "./testing/form",
       "./testing/harness",
+      "./testing/markup",
       "./testing/bun",
       "./testing/node",
       "./testing/snapshot",
       "./testing/totp",
+      "./testing/zone",
       "./tooling/*"
     ],
     "node": [
+      "./result",
+      "./storage/db",
       "./testing/d1",
       "./testing/form",
       "./testing/harness",
+      "./testing/markup",
       "./testing/totp",
+      "./testing/zone",
       "./tooling/cf/wrangler",
       "./tooling/db/host",
       "./tooling/lint/plugin",
-      "./tooling/playwright"
+      "./tooling/playwright",
+      "./ui/contracts",
+      "./validation"
     ]
   },
   "scripts": {
@@ -167,6 +176,10 @@
     "#relax/error-page": {
       "forge-dev": "./src/app/error-page.dev.ts",
       "default": "./src/app/error-page.strict.ts"
+    },
+    "#request-scope": {
+      "forge-node-bundle": "./src/context/request-scope.node.ts",
+      "default": "./src/context/request-scope.ts"
     }
   },
   "exports": {
@@ -178,6 +191,10 @@
     "./assets": {
       "types": "./src/assets/mod.ts",
       "import": "./src/assets/mod.ts"
+    },
+    "./assets/client": {
+      "types": "./src/assets/client/mod.ts",
+      "import": "./src/assets/client/mod.ts"
     },
     "./assets/precache": {
       "types": "./src/assets/precache.ts",
@@ -290,6 +307,9 @@
     },
     "./result": {
       "types": "./src/result/mod.ts",
+      "workerd": "./src/result/mod.ts",
+      "bun": "./src/result/mod.ts",
+      "node": "./src/result/mod.node.mjs",
       "import": "./src/result/mod.ts"
     },
     "./router": {
@@ -314,6 +334,9 @@
     },
     "./storage/db": {
       "types": "./src/storage/db/mod.ts",
+      "workerd": "./src/storage/db/mod.ts",
+      "bun": "./src/storage/db/mod.ts",
+      "node": "./src/storage/db/mod.node.mjs",
       "import": "./src/storage/db/mod.ts"
     },
     "./storage/kv": {
@@ -333,16 +356,27 @@
       "import": "./src/testing/coverage/mod.ts"
     },
     "./testing/d1": {
-      "types": "./src/testing/d1.ts",
-      "import": "./src/testing/d1.mjs"
+      "types": "./src/testing/d1/mod.ts",
+      "workerd": "./src/testing/d1/mod.ts",
+      "bun": "./src/testing/d1/mod.ts",
+      "node": "./src/testing/d1/mod.node.mjs",
+      "import": "./src/testing/d1/mod.ts"
+    },
+    "./testing/d1/bun": {
+      "types": "./src/testing/d1/bun.ts",
+      "import": "./src/testing/d1/bun.ts"
     },
     "./testing/form": {
       "types": "./src/testing/form.ts",
-      "import": "./src/testing/form.mjs"
+      "import": "./src/testing/form.node.mjs"
     },
     "./testing/harness": {
       "types": "./src/testing/harness.ts",
-      "import": "./src/testing/harness.mjs"
+      "import": "./src/testing/harness.node.mjs"
+    },
+    "./testing/markup": {
+      "types": "./src/testing/markup.ts",
+      "import": "./src/testing/markup.node.mjs"
     },
     "./testing/bun": {
       "types": "./src/testing/bun.d.ts"
@@ -356,15 +390,23 @@
     },
     "./testing/totp": {
       "types": "./src/testing/totp.ts",
-      "import": "./src/testing/totp.mjs"
+      "import": "./src/testing/totp.node.mjs"
+    },
+    "./testing/zone": {
+      "types": "./src/testing/zone.ts",
+      "import": "./src/testing/zone.node.mjs"
     },
     "./tooling/assets": {
       "types": "./src/tooling/assets/mod.ts",
       "import": "./src/tooling/assets/mod.ts"
     },
+    "./tooling/assets/types": {
+      "types": "./src/tooling/assets/types.ts",
+      "import": "./src/tooling/assets/types.ts"
+    },
     "./tooling/cf/wrangler": {
       "types": "./src/tooling/cf/wrangler.ts",
-      "import": "./src/tooling/cf/wrangler.mjs"
+      "import": "./src/tooling/cf/wrangler.node.mjs"
     },
     "./tooling/cf": {
       "types": "./src/tooling/cf/mod.ts",
@@ -384,7 +426,7 @@
     },
     "./tooling/db/host": {
       "types": "./src/tooling/db/host.ts",
-      "import": "./src/tooling/db/host.mjs"
+      "import": "./src/tooling/db/host.node.mjs"
     },
     "./tooling/gate": {
       "types": "./src/tooling/gate/mod.ts",
@@ -400,13 +442,13 @@
     },
     "./tooling/lint/plugin": {
       "types": "./src/tooling/lint/mod.ts",
-      "import": "./src/tooling/lint/plugin.mjs"
+      "import": "./src/tooling/lint/plugin.node.mjs"
     },
     "./tooling/oxfmt.base.json": "./src/tooling/config/oxfmt.base.json",
     "./tooling/oxlint.base.json": "./src/tooling/config/oxlint.base.json",
     "./tooling/playwright": {
       "types": "./src/tooling/playwright/config.ts",
-      "import": "./src/tooling/playwright/config.mjs"
+      "import": "./src/tooling/playwright/config.node.mjs"
     },
     "./tooling/release": {
       "types": "./src/tooling/release/mod.ts",
@@ -448,6 +490,9 @@
     },
     "./ui/contracts": {
       "types": "./src/ui/contracts/mod.ts",
+      "workerd": "./src/ui/contracts/mod.ts",
+      "bun": "./src/ui/contracts/mod.ts",
+      "node": "./src/ui/contracts/mod.node.mjs",
       "import": "./src/ui/contracts/mod.ts"
     },
     "./ui/contracts/theme": {
@@ -473,6 +518,9 @@
     },
     "./validation": {
       "types": "./src/validation/mod.ts",
+      "workerd": "./src/validation/mod.ts",
+      "bun": "./src/validation/mod.ts",
+      "node": "./src/validation/mod.node.mjs",
       "import": "./src/validation/mod.ts"
     },
     "./warden": {

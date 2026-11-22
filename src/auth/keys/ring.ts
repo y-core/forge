@@ -1,9 +1,9 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
+import { cachePendingUntilRejected, guardResolverEnv } from "../../context/env-memo";
 import { EnvKey } from "../../context/types";
-import type { AppContext } from "../../context/types";
+import { assertUnwrappedKeyRing } from "../../crypto/keyring/resolver";
 import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../crypto/keyring/ring";
-import { cachePendingUntilRejected } from "../../crypto/keyring/subkey";
 import type { KeyRing, KeyRingDomain } from "../../crypto/keyring/types";
 import { assertSecretStrength } from "../../crypto/primitives/strength";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
@@ -15,7 +15,7 @@ export const AUTH_KEY_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/auth/k
 
 // Nested on the env *and* the options: keyed on the env alone, two mounts with different
 // `AuthOptions` share one key ring — a token minted under one secret and read under another's.
-const servicesCache = new WeakMap<object, WeakMap<AuthOptions, Promise<AuthServices>>>();
+const servicesCache = new WeakMap<object, WeakMap<object, Promise<AuthServices>>>();
 
 /** Derives the id a key is known by — a fingerprint, so a consumer never types one. @public */
 export function authKeyId(key: Uint8Array<ArrayBuffer>): Promise<string> {
@@ -49,26 +49,27 @@ function assertRingUsable(ring: KeyRing): void {
 }
 
 // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
-async function buildAuthServices(context: RequestContext<any, any>, options: AuthOptions): Promise<AuthServices> {
+async function buildAuthServices<Bindings>(context: RequestContext<any, any>, options: AuthOptions<Bindings>): Promise<AuthServices> {
   const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
   await assertAlgorithmsAvailable(algorithms);
-  const keys = await Promise.resolve(options.ring(context as AppContext));
+  const keys = await Promise.resolve(options.ring(guardResolverEnv(context.get(EnvKey) as Bindings)));
   assertRingUsable(keys);
   return { algorithms, keys };
 }
 
 /** Resolves the auth capabilities for this request, caching them per `env` and failing closed on an unusable configuration. @public */
-export async function resolveAuthServices(
+export async function resolveAuthServices<Bindings = Record<string, unknown>>(
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
   context: RequestContext<any, any>,
-  options: AuthOptions,
+  options: AuthOptions<Bindings>,
 ): Promise<AuthServices> {
+  assertUnwrappedKeyRing("resolveAuthServices", options.ring);
   const envObj = context.get(EnvKey);
   const cacheKey = envObj && typeof envObj === "object" ? envObj : null;
   if (!cacheKey) return buildAuthServices(context, options);
   let perEnv = servicesCache.get(cacheKey);
   if (!perEnv) {
-    perEnv = new WeakMap<AuthOptions, Promise<AuthServices>>();
+    perEnv = new WeakMap<object, Promise<AuthServices>>();
     servicesCache.set(cacheKey, perEnv);
   }
   return perEnv.get(options) ?? cachePendingUntilRejected(perEnv, options, buildAuthServices(context, options));

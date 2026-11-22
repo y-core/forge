@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 
+import { spawnSync } from "bun";
+
 import pkg from "../package.json" with { type: "json" };
 
 const CONFIG = resolve(import.meta.dir, "../playwright.config.ts");
@@ -11,7 +13,7 @@ type LoadedConfig = { workers?: unknown; projects?: { name: string; connectOptio
 
 // A fresh process per case: the config reads the environment once, at load.
 function loadConfig(env: Record<string, string | undefined>): LoadedConfig {
-  const run = Bun.spawnSync(
+  const run = spawnSync(
     [
       "bun",
       "-e",

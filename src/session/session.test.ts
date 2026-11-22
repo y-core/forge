@@ -9,8 +9,9 @@ import { Forge } from "../app/forge-app";
 import { setPendingHeader } from "../context/pending-headers";
 import { importKeyRing } from "../crypto/keyring/ring";
 import type { KeyRing } from "../crypto/keyring/types";
+import { createUnsignedCookie } from "../http/cookie";
 import { mapHandler } from "../testing/route";
-import { createSignedCookie, createUnsignedCookie } from "./cookie";
+import { createSignedCookie } from "./cookie";
 import { createKVSessionStorage } from "./kv-storage";
 import { sessionCtx, sessionMiddleware } from "./session";
 import type { SessionCookieOptions, SessionKVBinding } from "./types";
@@ -671,6 +672,17 @@ describe("session primitives (facade re-exports)", () => {
     const direct = new Session();
     expect(typeof direct.id).toBe("string");
     expect(direct.id).not.toBe(s.id);
+  });
+});
+
+describe("sessionMiddleware — the maxAge it carries", () => {
+  it("carries its cookie's maxAge", async () => {
+    const cookie = createSignedCookie("__session", { path: "/", ring: OLD_RING, maxAge: 600 });
+    expect(sessionMiddleware(createCookieSessionStorage(), cookie).maxAge).toBe(600);
+  });
+
+  it("carries undefined over a cookie built with no maxAge", () => {
+    expect(sessionMiddleware(createCookieSessionStorage(), sessionCookie).maxAge).toBeUndefined();
   });
 });
 

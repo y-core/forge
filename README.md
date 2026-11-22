@@ -182,7 +182,7 @@ import { contextVar } from "@y-core/forge/context";
 
 const userCtx = contextVar<User>("user");
 userCtx.set(context, user);
-const user = userCtx.get(context); // throws if unset
+const current = userCtx.get(context); // throws if unset
 const maybe = userCtx.getOptional(context); // undefined if unset
 ```
 
@@ -215,6 +215,8 @@ Tests live alongside the source they test (`*.test.ts` / `*.test.tsx`) and run d
 `Request`, dispatches it through the full middleware chain, and awaits any `waitUntil` work before resolving:
 
 ```ts
+import { expect } from "bun:test";
+
 const res = await app.request(
   "/api/contact",
   { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ _csrf: token, name: "Jane" }) },

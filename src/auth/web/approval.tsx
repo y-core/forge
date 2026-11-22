@@ -4,10 +4,10 @@
 import { get, post, route } from "@remix-run/fetch-router/routes";
 
 import type { Forge } from "../../app/forge-app";
-import { buildGuardChain } from "../../app/middleware-chain";
+import { contextVar } from "../../context/accessor";
 import { getAppContext } from "../../context/types";
-import type { AppContext, RequestHandler } from "../../context/types";
-import { createKeyRingResolver } from "../../crypto/keyring/resolver";
+import type { AppContext, Middleware, RequestHandler } from "../../context/types";
+import { assertUnwrappedKeyRing, createKeyRingResolver } from "../../crypto/keyring/resolver";
 import { timingSafeEqual } from "../../crypto/primitives/timing";
 import { mintCsrf } from "../../form/csrf";
 import { safeRedirectPath } from "../../http/redirect-path";
@@ -17,7 +17,7 @@ import { APPROVAL_TTL_MS } from "../config";
 import { authLimit } from "../limits";
 import { readAuthSubmission } from "./actions";
 import { approvalCode, signApprovalCode } from "./guards";
-import { markApproval } from "./identity";
+import { markApproval, NO_SESSION } from "./identity";
 import { authCsrfHeader, turnstileCheckFor, turnstileWidgetFor } from "./options";
 import { APPROVAL_RETURN_PARAM, authWithQuery } from "./paths";
 import { createAuthRedirect } from "./redirect";
@@ -26,10 +26,17 @@ import { approvalSchema } from "./schemas";
 import type { Approval, ApprovalOptions } from "./types";
 import { ApprovalView } from "./views/approval";
 
-const NO_SESSION =
-  "auth/web approval: no session on this request — mount session middleware before `registerApproval`, or an accepted code is recorded nowhere.";
+const UNGUARDED =
+  "auth/web approval: the prompt ran without its origin check and rate limit — pass `approval.contribution` to `applyMiddlewareChain`'s `contributions`.";
 
 const MIN_APPROVAL_TTL_MS = 1_000;
+
+const promptGuarded = contextVar<true>("auth.approval.guarded");
+
+const markGuarded: Middleware = (context, next) => {
+  promptGuarded.set(context, true);
+  return next();
+};
 
 /** The Turnstile action the prompt's challenge is bound to, so a token solved for an auth form cannot pass it. @internal */
 export const APPROVAL_TURNSTILE_ACTION = "approval";
@@ -53,13 +60,20 @@ export function defineApproval<Bindings = Record<string, unknown>>(options: Appr
       "defineApproval: no `ring` was passed — a session holds a digest of the code it was approved under, so pass the app's key ring and a changed code ends the approval.",
     );
   }
+  assertUnwrappedKeyRing("defineApproval", options.ring);
   const ttlMs = authLimit("defineApproval", "ttlMs", options.ttlMs, {
     fallback: APPROVAL_TTL_MS,
     min: MIN_APPROVAL_TTL_MS,
     unit: "millisecond",
     floor: "a window no approval can be inside makes every approved route prompt forever",
   });
-  return Object.freeze({ ...options, ring: createKeyRingResolver(options.ring), ttlMs });
+  const group = { paths: [options.path], origin: options.origin, rateLimit: options.rateLimit, guards: [markGuarded] };
+  return Object.freeze({
+    ...options,
+    ring: createKeyRingResolver(options.ring),
+    ttlMs,
+    contribution: Object.freeze({ guards: [group], csrfCovers: [options.path] }),
+  });
 }
 
 function notFound(): Response {
@@ -94,6 +108,7 @@ async function submitPrompt<Bindings>(c: AppContext<Bindings>, approval: Approva
   // One refusal for both: telling a failed challenge from a wrong code tells a script which one to solve.
   if (!parsed.ok || !timingSafeEqual(parsed.data.code, expected)) {
     requestLog.getOptional(c)?.warn("auth.approval.refused", { reason: parsed.ok ? "mismatch" : "submission" });
+    if (!parsed.ok && parsed.error.cause === "too-large") return renderPrompt(c, approval, parsed.error.message, parsed.error.status);
     return renderPrompt(c, approval, APPROVAL_REFUSED, 422);
   }
 
@@ -101,13 +116,16 @@ async function submitPrompt<Bindings>(c: AppContext<Bindings>, approval: Approva
   return createAuthRedirect(c, safeRedirectPath(c.url.searchParams.get(APPROVAL_RETURN_PARAM), "/"));
 }
 
-/** Mounts `approval`'s prompt page at its path, behind its origin policy and rate limit. @public */
+/** Maps `approval`'s prompt page at its path; its guards are `approval.contribution`, registered by `applyMiddlewareChain`. @public */
 export function registerApproval<Bindings extends object>(app: Forge<Bindings>, approval: Approval<Bindings>): void {
-  app.use(approval.path, ...buildGuardChain<Bindings>({ paths: [approval.path], origin: approval.origin, rateLimit: approval.rateLimit }));
   const show: RequestHandler = (context) => {
+    promptGuarded.get(context, UNGUARDED);
     const c = getAppContext<Bindings>(context);
     return approvalCode(c, approval) === undefined ? notFound() : renderPrompt(c, approval);
   };
-  const submit: RequestHandler = (context) => submitPrompt(getAppContext<Bindings>(context), approval);
+  const submit: RequestHandler = (context) => {
+    promptGuarded.get(context, UNGUARDED);
+    return submitPrompt(getAppContext<Bindings>(context), approval);
+  };
   app.map(route({ show: get(approval.path), submit: post(approval.path) }), { actions: { show, submit } });
 }

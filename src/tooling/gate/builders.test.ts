@@ -8,6 +8,7 @@ import {
   browserStep,
   browserRequired,
   COMPAT_SERVER,
+  bundleShadowStep,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -49,6 +50,7 @@ import {
   typecheckStep,
   workerdStep,
 } from "./builders";
+import { checkBundleShadows } from "./checks/bundle-shadow";
 import { checkConfigFiles } from "./checks/config-files";
 import { hasTailwind } from "./checks/design-system";
 import { gateFixtureRoot } from "./checks/gate.fixture";
@@ -642,6 +644,7 @@ describe("builders — derived watches", () => {
       [commentBudgetStep({ root: "/nowhere", sources: ["src", "!**/.wrangler"] }), ["src", "src/**"]],
       [ssrBoundaryStep({ root: "/nowhere", clientDirs: [], sources: ["src/ui"], entryPoints: [] }), ["src/ui", "src/ui/**"]],
       [classOrderStep({ root: "/nowhere", sources: ["src"] }), ["src", "src/**"]],
+      [bundleShadowStep({ root: "/nowhere", sources: ["src", "!src/gen"] }), ["src", "src/**"]],
       [modernCssStep({ root: "/nowhere", sources: ["src/ui"] }), ["src/ui", "src/ui/**"]],
       [fadedTextStep({ root: "/nowhere", sources: ["src/ui", "!src/ui/design"], pairs: [] }), ["src/ui", "src/ui/**"]],
       [importBoundaryStep({ root: "/nowhere", guarded: ["src/tooling"] }), ["src", "src/**", "src/tooling", "src/tooling/**"]],
@@ -774,6 +777,32 @@ describe("configFileStep()", () => {
     const root = gateFixtureRoot({ "config/x.config.ts": 'import { defineX } from "x";\nexport default defineX({});\n' });
 
     expect(await configFileStep({ root }).run("static")).toEqual(checkConfigFiles({ root }));
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("bundleShadowStep()", () => {
+  it("labels the row validate-bundle-shadows, as an in-process check with no prerequisite", () => {
+    const step = bundleShadowStep({ root: "/nowhere", sources: ["src"] });
+
+    expect([step.label, isCheckStep(step), Object.hasOwn(step, "requires"), Object.hasOwn(step, "fix")]).toEqual([
+      "validate-bundle-shadows",
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it("replaces its watches with the caller's", () => {
+    expect(bundleShadowStep({ root: "/nowhere", sources: ["src"] }, { watches: ["x/**"] }).watches).toEqual(["x/**"]);
+  });
+
+  it("runs the shadow check over the root and sources it was given, refusing a reached `.mjs`", async () => {
+    const root = gateFixtureRoot({ "src/a.ts": "", "src/a.mjs": "", "src/b.ts": 'import "./a";\n' });
+    const result = await bundleShadowStep({ root, sources: ["src"] }).run("static");
+
+    expect([result.ok, result.findings.map((finding) => `${finding.file}:${finding.line}`)]).toEqual([false, ["src/b.ts:1"]]);
+    expect(result).toEqual(checkBundleShadows({ root, sources: ["src"] }));
     rmSync(root, { recursive: true, force: true });
   });
 });

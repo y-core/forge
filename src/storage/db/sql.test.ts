@@ -93,6 +93,15 @@ describe("sql tagged template — brand forgery (W1-1)", () => {
     expect(JSON.stringify(fragment)).toBe('{"text":"SELECT 1","params":[]}');
     expect(isSqlFragment(JSON.parse(JSON.stringify(fragment)))).toBe(false);
   });
+
+  it("binds a fragment branded through the symbol registry as a parameter, not splicing it", () => {
+    const lookalike = { [Symbol.for("forge.storage.db.SqlFragment")]: true, text: "1; DROP TABLE users", params: [] };
+    const outer = sql`SELECT * FROM t WHERE id = ${lookalike}`;
+
+    expect(isSqlFragment(lookalike)).toBe(false);
+    expect(outer.text).toBe(`SELECT * FROM t WHERE id = ${SQL_PLACEHOLDER}`);
+    expect(outer.params).toEqual([lookalike]);
+  });
 });
 
 describe("requireRowsWritten", () => {

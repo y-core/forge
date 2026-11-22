@@ -1,5 +1,6 @@
 export { resolveObjectStore, validateR2Binding } from "./bindings";
 export { ACTIVE_CONTENT_EXTENSIONS, CONTENT_TYPE_DEFAULT, inferContentType, isActiveContentType } from "./content-type";
+export { signedObjectKey, signedObjectLink } from "./link";
 export { r2Backend } from "./r2-backend";
 export { serveObject } from "./serve";
 export { UnsatisfiableRangeError } from "./errors";
@@ -26,6 +27,7 @@ export type {
   R2PutLike,
   R2PutOptions,
   ServeOptions,
+  SignedObjectLinkOptions,
   SignedUrlFailure,
   SignedUrlOptions,
   SignedUrlVerdict,

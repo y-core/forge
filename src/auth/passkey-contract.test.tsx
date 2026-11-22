@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "bun:test";
 
+import { CSRF_HEADER_DEFAULT } from "../form/constants";
 import { render } from "../testing/render";
 import { FakeElement } from "../ui/client/dom.fixture";
 import { readPasskeyContract } from "./client/passkey";
@@ -39,6 +40,10 @@ function without(root: FakeElement, name: string): FakeElement {
 }
 
 describe("passkey contract — the wire format between a view and a controller that never import each other", () => {
+  it("defaults the CSRF header to the one form's CSRF check reads, which the contract copies rather than imports", () => {
+    expect(PASSKEY_CSRF_HEADER_DEFAULT).toBe(CSRF_HEADER_DEFAULT);
+  });
+
   it("hands the controller back the ceremony the view was given, so neither side can rename an attribute alone", async () => {
     const { root } = await enrolled(CONTRACT);
 

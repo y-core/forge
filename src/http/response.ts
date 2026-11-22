@@ -37,6 +37,14 @@ export function jsonResponse(body: unknown, status = 200, headers?: Record<strin
   return new Response(JSON.stringify(body), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
 }
 
+/** Constructs an RFC 9457 `application/problem+json` `Response` of `type` `about:blank` carrying only its title and status. @internal */
+export function problemResponse(status: number, title: string): Response {
+  return new Response(JSON.stringify({ type: "about:blank", title, status }), {
+    status,
+    headers: { "content-type": "application/problem+json; charset=utf-8" },
+  });
+}
+
 /** Constructs a PDF `Response` from rendered bytes; throws on a caller-supplied `content-type`. @public */
 export function pdfResponse(body: BufferSource, status = 200, headers?: Record<string, string>): Response {
   if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {

@@ -13,7 +13,7 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-const BUNDLE_URL = pathToFileURL(resolve(import.meta.dir, "wrangler.mjs")).href;
+const BUNDLE_URL = pathToFileURL(resolve(import.meta.dir, "wrangler.node.mjs")).href;
 
 const JSONC_FIXTURE = `{
   // the worker's name

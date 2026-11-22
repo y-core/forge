@@ -135,6 +135,7 @@ export interface SchemaHealthMonitorOptions<Bindings = Record<string, unknown>> 
 /** Options for `defineD1Binding`: the `env` key the database is bound under, and how its client and checks behave. @public */
 export interface D1BindingDefinition extends SchemaRecheckOptions {
   name: string;
+  /** Takes the monitor's records, and the client's too unless `client.logger` names another. */
   logger?: Logger | undefined;
   client?: D1ClientOptions | undefined;
 }

@@ -3,8 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { readPdfArtwork } from "../../render/pdf/mod";
+import type { PdfArtwork } from "../../render/pdf/types";
 import { buildMarks, svgPathCommands, svgToMark } from "./mark-build";
 import type { MarkData } from "./types";
+
+const MARK_DATA_IS_ARTWORK: [MarkData] extends [PdfArtwork] ? true : false = true;
 
 const ROOT = resolve(import.meta.dir, "../../..");
 
@@ -117,6 +121,16 @@ describe("the paint a shape carries", () => {
     expect(drawn).toMatchObject({ stroke: [1, 1, 1], weight: 2.5 });
   });
 
+  test("refuses a stroke-width carrying a unit, which would be written as no number at all", () => {
+    expect(() => svgToMark(wrapped('<rect width="1" height="1" stroke="#000" stroke-width="1.5px" />'))).toThrow(
+      /stroke-width 1.5px is not a plain number/,
+    );
+  });
+
+  test("refuses a stroke-width that is not a number", () => {
+    expect(() => svgToMark(wrapped('<rect width="1" height="1" stroke="#000" stroke-width="thin" />'))).toThrow(/not a plain number/);
+  });
+
   test("refuses a colour notation it does not read, rather than drawing it as black", () => {
     expect(() => svgToMark(wrapped('<rect width="1" height="1" fill="rebeccapurple" />'))).toThrow(/#rgb or #rrggbb/);
   });
@@ -143,6 +157,43 @@ describe("the coordinate space the artifact is drawn out of", () => {
 
   test("refuses an SVG with no coordinate space at all", () => {
     expect(() => svgToMark('<svg><rect width="1" height="1" /></svg>')).toThrow(/coordinate space/);
+  });
+
+  test("refuses a viewBox with no width, which every coordinate is scaled out of", () => {
+    expect(() => svgToMark('<svg viewBox="0 0 0 50"><rect width="1" height="1" /></svg>')).toThrow(/viewBox has no area/);
+  });
+
+  test("refuses a viewBox with a negative height", () => {
+    expect(() => svgToMark('<svg viewBox="0 0 50 -5"><rect width="1" height="1" /></svg>')).toThrow(/viewBox has no area/);
+  });
+
+  test("refuses a declared width and height that are not positive numbers", () => {
+    expect(() => svgToMark('<svg width="0" height="20"><rect width="1" height="1" /></svg>')).toThrow(/plain numbers above 0/);
+    expect(() => svgToMark('<svg width="40px" height="20px"><rect width="1" height="1" /></svg>')).toThrow(/plain numbers above 0/);
+  });
+
+  test("refuses a path coordinate out of a number's range, which would be written as null", () => {
+    expect(() => svgToMark(wrapped('<path d="M 0 0 L 1e999 5" />'))).toThrow(/svgToMark: 1e999 is not a finite number/);
+  });
+
+  test("refuses a shape attribute out of a number's range", () => {
+    expect(() => svgToMark(wrapped('<rect x="1e999" width="1" height="1" />'))).toThrow(/svgToMark: 1e999 is not a finite number/);
+  });
+
+  test("refuses a shape attribute that is not a number", () => {
+    expect(() => svgToMark(wrapped('<circle cx="10px" cy="5" r="2" />'))).toThrow(/svgToMark: 10px is not a finite number/);
+  });
+
+  test("refuses a polygon point out of a number's range", () => {
+    expect(() => svgToMark(wrapped('<polygon points="0 0 1e999 0 5 5" />'))).toThrow(/svgToMark: 1e999 is not a finite number/);
+  });
+
+  test("refuses a viewBox out of a number's range, which its area check alone would pass", () => {
+    expect(() => svgToMark('<svg viewBox="0 0 1e999 10"><rect width="1" height="1" /></svg>')).toThrow(/svgToMark: 1e999 is not a finite number/);
+  });
+
+  test("refuses a declared width out of a number's range", () => {
+    expect(() => svgToMark('<svg width="1e999" height="20"><rect width="1" height="1" /></svg>')).toThrow(/plain numbers above 0/);
   });
 
   test("refuses an SVG carrying no shape it converts", () => {
@@ -178,5 +229,25 @@ describe("what the build step writes", () => {
     const svg = readFileSync(join(ROOT, "tests/fixtures/mark/mark.svg"), "utf-8");
     const committed = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/mark/mark.json"), "utf-8")) as MarkData;
     expect(svgToMark(svg)).toEqual(committed);
+  });
+});
+
+describe("the artifact is what the PDF engine reads", () => {
+  test("the build's output type is one the engine draws", () => {
+    expect(MARK_DATA_IS_ARTWORK).toBe(true);
+  });
+
+  test("a converted mark with fill, stroke, weight, curves and close passes the engine's reader unchanged", () => {
+    const mark = svgToMark(
+      wrapped(
+        '<path d="M 0 0 C 10 0 20 10 20 20 Q 30 30 40 20 Z" fill="#336699" stroke="#000" stroke-width="1.5" /><circle cx="50" cy="25" r="10" />',
+      ),
+    );
+    expect(readPdfArtwork(mark)).toStrictEqual({ ok: true, data: mark });
+  });
+
+  test("the committed artifact passes the engine's reader unchanged", () => {
+    const committed: unknown = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/mark/mark.json"), "utf-8"));
+    expect(readPdfArtwork(committed)).toStrictEqual({ ok: true, data: committed });
   });
 });

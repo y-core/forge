@@ -4,6 +4,8 @@ export { createContextKey, RequestContext } from "@remix-run/fetch-router";
 import type { RequestContext } from "@remix-run/fetch-router";
 import { createContextKey } from "@remix-run/fetch-router";
 
+import { requestScope } from "#request-scope";
+
 /** A type-safe accessor pair bound to one context-variable key. @public */
 export interface ContextVar<T> {
   /** Reads the variable; throws if it is not set on this request. */
@@ -20,6 +22,14 @@ export interface ContextVar<T> {
 /** Opaque key type for context-variable storage. @public */
 export interface ContextKey<T> {
   readonly defaultValue?: T;
+}
+
+/** Reads and writes one key of a request's context; `#request-scope` resolves it, and the node bundle's copy refuses both. @internal */
+export interface RequestScope {
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
+  read<T>(c: RequestContext<any, any>, key: ContextKey<T>): T | undefined;
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
+  write<T>(c: RequestContext<any, any>, key: ContextKey<T>, value: T): void;
 }
 
 /** Context key that provides the raw Workers `env` bindings. @internal */
@@ -45,7 +55,7 @@ export function getAppContext<
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings/params/config are irrelevant for the state check
   context: RequestContext<any, any>,
 ): AppContext<Bindings, Params, Config> {
-  if (context.get(EnvKey) === undefined) {
+  if (requestScope.read(context, EnvKey) === undefined) {
     throw new Error(
       "getAppContext: per-request state is not available — the Forge router must inject request state (provideRequestState) before this handler runs.",
     );
@@ -64,3 +74,32 @@ export interface BindingSpec {
   /** An absent binding passes; a present one of the wrong shape still fails. */
   optional?: boolean | undefined;
 }
+
+/** Why a chain guard refused a request, narrowed by `guard`; the reason is for the hook and the log, never the client. @public */
+export type Refusal =
+  | {
+      readonly guard: "csrf";
+      readonly status: 403;
+      readonly reason:
+        | "expired"
+        | "future-timestamp"
+        | "invalid-format"
+        | "invalid-signature"
+        | "missing-token"
+        | "path-mismatch"
+        | "subject-mismatch"
+        | "unknown-key"
+        | "unbound-subject";
+    }
+  | { readonly guard: "csrf"; readonly status: 413; readonly reason: "too-large" }
+  | { readonly guard: "csrf"; readonly status: 400; readonly reason: "unreadable-body" }
+  | { readonly guard: "origin"; readonly status: 403; readonly reason: "missing" | "disallowed" | "cross-site" | "same-site" }
+  | { readonly guard: "rate-limit"; readonly status: 429; readonly retryAfter?: number }
+  | { readonly guard: "rate-limit"; readonly status: 503; readonly reason: "binding-absent" | "key-failed" | "binding-failed" }
+  | { readonly guard: "admin"; readonly status: 403 };
+
+/** Answers a refused request in the medium the app chooses, or declines with `undefined` so the next hook out, else forge's default, answers. @public */
+export type RefuseHook<Bindings = Record<string, unknown>> = (
+  c: AppContext<Bindings>,
+  refusal: Refusal,
+) => Response | undefined | Promise<Response | undefined>;

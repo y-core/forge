@@ -31,12 +31,13 @@ import { defineD1Binding, sql } from "@y-core/forge/storage/db";
 const db = defineD1Binding<Bindings>({ name: "DB" });
 applyMiddlewareChain(app, { securityHeaders, bindings: bindingSetSchema([db.spec]), globals: [...db.globals] });
 
-// Inside a handler:
-const found = await db.client(c).queryOne<{ id: string; email: string }>(sql`SELECT id, email FROM users WHERE id = ${userId}`);
+async function showUser() {
+  const found = await db.client(c).queryOne<{ id: string; email: string }>(sql`SELECT id, email FROM users WHERE id = ${userId}`);
 
-if (!found.ok) return new Response("Storage unavailable", { status: 503 });
-if (found.data === null) return new Response("Not found", { status: 404 });
-return Response.json(found.data);
+  if (!found.ok) return new Response("Storage unavailable", { status: 503 });
+  if (found.data === null) return new Response("Not found", { status: 404 });
+  return Response.json(found.data);
+}
 ```
 
 `db.client(c)` **throws** when the binding is absent, while every query returns a `Result`, because a missing binding is a deployment defect while
@@ -53,11 +54,11 @@ import { resolveObjectStore, validateR2Binding } from "@y-core/forge/storage/r2"
 app.use("*", validateKVBinding("SESSIONS_KV"));
 app.use("*", validateR2Binding("ASSETS"));
 
-const sessions = resolveKVStore<Bindings, Session>(c, {
+const sessions = resolveKVStore<Bindings, StoredSession>(c, {
   binding: (c) => c.env.SESSIONS_KV,
-  store: { codec: jsonCodec<Session>() },
+  store: { codec: jsonCodec<StoredSession>() },
 })!;
-const assets = resolveObjectStore(c, { binding: (c) => c.env.ASSETS, store: { prefix: "uploads" } })!;
+const assets = resolveObjectStore<Bindings>(c, { binding: (c) => c.env.ASSETS, store: { prefix: "uploads" } })!;
 ```
 
 ---
@@ -67,6 +68,9 @@ const assets = resolveObjectStore(c, { binding: (c) => c.env.ASSETS, store: { pr
 Every read and write takes a fragment built by the `sql` tag and resolves to a `Result`.
 
 ```ts
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+
+const db = createD1Client(c.env.DB);
 const rows = await db.query<User>(sql`SELECT id, email FROM users WHERE status = ${status} LIMIT ${limit}`);
 const one = await db.queryOne<User>(sql`SELECT id, email FROM users WHERE id = ${id}`); // User | null
 const written = await db.execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`); // { rowsWritten, lastRowId? }
@@ -76,6 +80,9 @@ Every interpolated value becomes a `?` bind parameter, and a fragment interpolat
 params — so a filter can be built once and reused:
 
 ```ts
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+
+const db = createD1Client(c.env.DB);
 const active = sql`status = ${"active"}`;
 const page = await db.query<User>(sql`SELECT * FROM users WHERE ${active} ORDER BY created_at DESC`);
 ```
@@ -88,14 +95,18 @@ brand does and does not cover — notably an identifier such as a column name, w
 also says what D1 billed and where the call ran:
 
 ```ts
+import { sql } from "@y-core/forge/storage/db";
+
 const read = await db.query(sql`SELECT id FROM users WHERE status = ${status}`);
 read.meta.cost; // { rowsRead, rowsWritten, durationMs }, as D1 reported it
 read.meta.servedBy; // { region, primary }
 ```
 
-Query logging is off by default: pass `{ logger }` as `createD1Client`'s second argument, or as `resolveD1Client`'s `client` option, to log one
-`d1.query` record per call with the SQL text, cost and placement, and `slowQueryMs` to raise a slow one to `warn`. The record never carries a bound
-value; why that matters is [`STORAGE_BINDINGS.md`][sb-1a] §1a's.
+With no `logger`, a client writes only `warn` records — the `d1.request.budget` warnings and a `d1.query` raised by `slowQueryMs` — and drops
+the per-call `debug` record. One `resolveD1Client` or `defineD1Binding` builds writes them to the request logger, and any other to the
+console. Pass `{ logger }` as `createD1Client`'s second argument, or as `resolveD1Client`'s `client` option, to log one `d1.query` record
+per call with the SQL text, cost and placement. The record never carries a bound value; why that matters is [`STORAGE_BINDINGS.md`][sb-1a]
+§1a's.
 
 ---
 
@@ -104,12 +115,16 @@ value; why that matters is [`STORAGE_BINDINGS.md`][sb-1a] §1a's.
 A failed call carries a `D1Failure`. Branch on its `kind`, never on the message text:
 
 ```ts
-const created = await db.execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`);
-if (!created.ok) {
-  const { kind, constraint } = created.error;
-  if (kind === "constraint" && constraint?.rule === "unique") return conflict("that email is taken");
-  if (kind === "overloaded" || kind === "transient") return new Response("Try again shortly", { status: 503 });
-  throw created.error;
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+
+async function createUser() {
+  const created = await createD1Client(c.env.DB).execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`);
+  if (!created.ok) {
+    const { kind, constraint } = created.error;
+    if (kind === "constraint" && constraint?.rule === "unique") return conflict("that email is taken");
+    if (kind === "overloaded" || kind === "transient") return new Response("Try again shortly", { status: 503 });
+    throw created.error;
+  }
 }
 ```
 
@@ -117,6 +132,8 @@ A write that is safe to run twice can be retried for you. Mark it, and a `transi
 ever is:
 
 ```ts
+import { sql } from "@y-core/forge/storage/db";
+
 await db.execute(sql`UPDATE users SET last_seen = ${now} WHERE id = ${id}`, { idempotent: true });
 ```
 
@@ -149,8 +166,9 @@ D1 binds at most 100 parameters per statement, and the client refuses a statemen
 parameter and read it with `json_each`:
 
 ```ts
-import { sql } from "@y-core/forge/storage/db";
+import { createD1Client, sql } from "@y-core/forge/storage/db";
 
+const db = createD1Client(c.env.DB);
 const read = await db.query<User>(
   sql`SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each(${JSON.stringify(emails)}))`,
 );
@@ -159,7 +177,9 @@ const read = await db.query<User>(
 A BLOB UUID key, such as forge's own, takes its UUID strings through `unhex(value, '-')`:
 
 ```ts
-const read = await db.query<User>(
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+
+const read = await createD1Client(c.env.DB).query<User>(
   sql`SELECT id, email FROM auth_users WHERE id IN (SELECT unhex(value, '-') FROM json_each(${JSON.stringify(ids)}))`,
 );
 ```
@@ -210,8 +230,9 @@ what you are trading — a smaller footprint against legible output everywhere t
 [`STORAGE_BINDINGS.md`][sb-1e] §1e's, along with the rule that a UUIDv7 is never a secret. Take it per table, not schema-wide.
 
 ```ts
-import { sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
+import { createD1Client, sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
 
+const db = createD1Client(c.env.DB);
 await db.execute(sql`INSERT INTO events (id, kind) VALUES (${uuidv7Bytes()}, ${kind})`);
 
 // D1's JSON transport has no binary type, so a BLOB column reads back as number[].
@@ -247,8 +268,8 @@ const health = healthCheck<Bindings>({ ...db.health }); // checks `DB` and `DB:s
 The boot check refuses every request while `DB` is missing or is not a D1 binding. The monitor logs one `d1.schema.health` record per isolate, and
 another each time `recheckMs` has passed (60 s by default). The health route answers 503 while the schema differs from the one `forge db migrate`
 certified, and re-reads it on the same interval, so drift that starts mid-isolate shows up within one interval. Every part reads the binding by
-`name`; pass `client` for the client's options and `logger` for the monitor's. The monitor and the health route share that read, so polling the
-health route adds no D1 reads while the schema matches.
+`name`; pass `client` for the client's options and `logger` for the monitor's records and the client's, unless `client.logger` names another.
+The monitor and the health route share that read, so polling the health route adds no D1 reads while the schema matches.
 
 Which schema states fail the check, what the monitor logs at which level, and why nothing here ever repairs the schema are
 [`STORAGE_BINDINGS.md`][sb-1f] §1f's. The repair is `forge db migrate` on the CLI ([`DATABASE_MANAGEMENT.md`][dm]). The low-level pieces
@@ -265,7 +286,7 @@ const cache = createKVStore<Flags>(c.env.CACHE, { codec: jsonCodec<Flags>(), pre
 
 // Read-through: returns the cached value, or computes it, writes it, and returns it.
 const flags = await cache.getOrSet("v1", () => fetchFlagsFromOrigin(), { ttl: 300 });
-if (flags.ok) render(flags.data);
+if (flags.ok) applyFlags(flags.data);
 
 await cache.set("v1", next, { metadata: { source: "admin" } });
 const entry = await cache.getWithMeta<{ source: string }>("v1"); // { value, metadata }
@@ -308,11 +329,13 @@ import { createObjectStore, r2Backend } from "@y-core/forge/storage/r2";
 
 const assets = createObjectStore(r2Backend(c.env.ASSETS), { prefix: "uploads" });
 
-const put = await assets.put("avatars/42.png", imageBytes, { contentType: "image/png" });
-if (!put.ok) return new Response("Upload failed", { status: 503 });
+async function uploadAndServe() {
+  const put = await assets.put("avatars/42.png", imageBytes, { contentType: "image/png" });
+  if (!put.ok) return new Response("Upload failed", { status: 503 });
 
-const served = await assets.serveObject(c.request, "avatars/42.png", { cacheControl: "public, max-age=3600" });
-return served.ok ? served.data : new Response("Unavailable", { status: 503 });
+  const served = await assets.serveObject(c.request, "avatars/42.png", { cacheControl: "public, max-age=3600" });
+  return served.ok ? served.data : new Response("Unavailable", { status: 503 });
+}
 ```
 
 A key that starts with `/` or carries a `.` or `..` segment is rejected, and reaches the caller as `{ ok: false, error }` like any other failure —
@@ -341,7 +364,7 @@ The free `serveObject(backend, request, key, options?)` is the same machinery wi
 ```ts
 import { r2Backend, serveObject } from "@y-core/forge/storage/r2";
 
-return serveObject(r2Backend(c.env.ASSETS), c.request, key, { contentDisposition: "attachment" });
+const download = () => serveObject(r2Backend(c.env.ASSETS), c.request, key, { contentDisposition: "attachment" });
 ```
 
 ---
@@ -364,14 +387,28 @@ const ring = await importKeyRing(parseKeyRingSecrets(c.env.SIGNED_URL_KEY_RING))
 const url = await createSignedObjectUrl(ring, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
 
 // On the receiving route:
-const verdict = await verifySignedObjectUrl(ring, c.request.url);
-if (!verdict.ok) return new Response("Forbidden", { status: 403 }); // log verdict.error; do not echo it
-return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
+async function receive() {
+  const verdict = await verifySignedObjectUrl(ring, c.request.url);
+  if (!verdict.ok) return new Response("Forbidden", { status: 403 }); // log verdict.error; do not echo it
+  return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
+}
 ```
 
 `expiresInSeconds` defaults to `3600` and must be a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, or signing throws. The
 refusal reasons, what the HMAC covers, the order the checks run in, and why the reason belongs in your logs rather than in the response are
 [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
+
+To guard a whole download route, mount `signedObjectLink` in front of it. It verifies the request URL, refuses a bad link with a bare 403 and
+logs the reason, and hands the handler the verified key through `signedObjectKey`. Pass `onRefuse` to answer a refusal another way.
+
+```ts
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { r2Backend, serveObject, signedObjectKey, signedObjectLink } from "@y-core/forge/storage/r2";
+
+app.use("/download/*", signedObjectLink<Bindings>({ ring: (env) => importKeyRing(parseKeyRingSecrets(env.SIGNED_URL_KEY_RING)) }));
+// In the handler:
+const download = () => serveObject(r2Backend(c.env.ASSETS), c.request, signedObjectKey.get(c));
+```
 
 **Give signed URLs a secret of their own.** Reusing the CSRF secret ties the two rotations together, and a leak of one retires both. The ring
 signs under a `signed-url` subkey, and both functions throw on the auth key ring.
@@ -409,7 +446,7 @@ import { createObjectStore, r2Backend } from "@y-core/forge/storage/r2";
 import { fakeD1, fakeKV, fakeR2 } from "@y-core/forge/testing";
 
 const db = createD1Client(fakeD1((text, params) => [{ id: params[0] }]));
-const kv = createKVStore<Session>(fakeKV({ "sess||abc": JSON.stringify(session) }), { codec: jsonCodec<Session>(), prefix: "sess" });
+const kv = createKVStore<StoredSession>(fakeKV({ "sess||abc": JSON.stringify(session) }), { codec: jsonCodec<StoredSession>(), prefix: "sess" });
 const store = createObjectStore(r2Backend(fakeR2({ "uploads/a.txt": "hello" })));
 ```
 
@@ -424,7 +461,9 @@ bound rather than concatenated. The fakes themselves are [`TEST_RUNNERS.md`][tr-
 `required: false` turns an absent binding into `null` instead of a throw, for a feature the app can serve without:
 
 ```ts
-const logStore = resolveKVStore(c, {
+import { jsonCodec, resolveKVStore } from "@y-core/forge/storage/kv";
+
+const logStore = resolveKVStore<Bindings>(c, {
   binding: (c) => c.env.LOGS_KV,
   required: false, // null when absent — drop the KV log channel locally
   store: { codec: jsonCodec() },
@@ -445,7 +484,7 @@ through the listing for you:
 import { listD1Backups } from "@y-core/forge/storage/backup";
 
 const dumps = await listD1Backups(c.env.BACKUPS, { databaseId: c.env.D1_DATABASE_ID });
-return Response.json(dumps);
+const page = Response.json(dumps);
 ```
 
 Pass the same `prefix` the backup was given, if it was given one; it defaults to `d1-backups`. `databaseId` is the deployed database's id, the
@@ -546,4 +585,4 @@ reserved `||` separator, and an empty-string `prefix` on `createKVStore` (it wou
 [sb-4c]: ../../docs/STORAGE_BINDINGS.md#4c-structural-contracts--cast-free-platform-bindings
 [sb-5a]: ../../docs/STORAGE_BINDINGS.md#5a-absent-bindings-in-local-dev
 [sb-5b]: ../../docs/STORAGE_BINDINGS.md#5b-never-degrade-security
-[tr-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-storage-fakes--fakekv-faked1-faker2
+[tr-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-fakes--each-refuses-what-the-platform-refuses

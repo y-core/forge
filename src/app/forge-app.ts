@@ -1,7 +1,7 @@
 import type { MatchData, Middleware, RequestHandler } from "@remix-run/fetch-router";
 import { createRouter, RequestContext } from "@remix-run/fetch-router";
-import type { MatcherLimits, Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
-import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/match";
+import type { Match, MatcherLimits, Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
+import { createMatcher, createMultiMatcher, MatcherResourceError } from "@remix-run/route-pattern/match";
 
 import { disclosedErrorMessage } from "#relax/error-page";
 
@@ -11,13 +11,15 @@ import { mergePendingHeaders } from "../context/pending-headers";
 import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
+import { csrfVerifyStage } from "../form/csrf";
 import { CacheControl } from "../http/headers";
 import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
-import { requestLog } from "../logging/request-logger";
+import { loggerFor } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
 import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
+import { createRefusalAnswer } from "../security/refusal";
 import { requestIdCtx } from "../security/request-id";
 import { fallbackErrorDocument } from "./error-page";
 import { BASELINE_HEADERS, hardenedText } from "./hardened-response";
@@ -56,8 +58,8 @@ function assertGuardPattern(path: string): void {
   );
 }
 
-/** Compiles `use()` paths into one matcher, or `null` when any of them is the catch-all. */
-function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiMatcher<null> | null {
+/** Compiles `use()` paths into one matcher, or `null` when any of them is the catch-all. @internal */
+export function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiMatcher<null> | null {
   // Every path is checked before the catch-all short-circuit: otherwise `["*", "/bad*"]` would
   // register a guard on every path and never look at the typo sitting beside it.
   for (const path of paths) assertGuardPattern(path);
@@ -68,21 +70,67 @@ function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiM
   return multi;
 }
 
-/** Wraps a matcher so every route it registers first stamps its pattern source on the context. */
-function stampingMatcher(inner: MultiMatcher<MatchData>): MultiMatcher<MatchData> {
+/** The refusal of a `context.url` changed after forge resolved the request's route. */
+function urlRewriteError(resolvedPath: string, rewrittenPath: string): Error {
+  return new Error(
+    `Forge: context.url changed after route resolution, from "${resolvedPath}" to "${rewrittenPath}" — it is read-only once forge has the request. Rewrite the URL in the Worker's fetch export and pass app.fetch a rebuilt Request.`,
+  );
+}
+
+/** The URL object and `href` `resolveRoute` resolved each request's route on. */
+const resolvedUrls = new WeakMap<RequestContext, { url: URL; href: string }>();
+
+/** Throws when `context.url` is no longer the object, or the `href`, its route was resolved on. */
+function assertUrlUnchanged(context: RequestContext): void {
+  const resolved = resolvedUrls.get(context);
+  if (resolved === undefined || (resolved.url === context.url && resolved.href === context.url.href)) return;
+  throw urlRewriteError(new URL(resolved.href).pathname, context.url.pathname);
+}
+
+function checkedStep(step: (...args: Parameters<Middleware>) => ReturnType<Middleware>): Middleware {
+  return (context, next) => {
+    assertUrlUnchanged(context);
+    return step(context, next);
+  };
+}
+
+/** Wraps a matcher so every route's middleware and handler refuse a URL changed since resolution. */
+function checkingRoutes(inner: MultiMatcher<MatchData>): MultiMatcher<MatchData> {
   return {
     ignoreCase: inner.ignoreCase,
-    add(pattern, data) {
-      const source = data.pattern.source;
-      const stamp: Middleware = (context, next) => {
-        matchedRoutePattern.set(context, source);
-        return next();
-      };
-      data.middleware = [stamp, ...(data.middleware ?? [])];
-      inner.add(pattern, data);
-    },
+    add: (pattern, data) =>
+      inner.add(pattern, {
+        ...data,
+        middleware: data.middleware?.map(checkedStep),
+        handler: (context) => {
+          assertUrlUnchanged(context);
+          return data.handler(context);
+        },
+      }),
     match: (url, options) => inner.match(url, options),
     matchAll: (url, options) => inner.matchAll(url, options),
+  };
+}
+
+/** Wraps a matcher so `matchAll` answers each URL object once, refusing it once its `href` has changed. */
+function memoizingMatcher(inner: MultiMatcher<MatchData>): MultiMatcher<MatchData> {
+  const resolved = new WeakMap<URL, { href: string; matches?: Match<string, MatchData>[] }>();
+  return {
+    ignoreCase: inner.ignoreCase,
+    add: (pattern, data) => inner.add(pattern, data),
+    match: (url, options) => inner.match(url, options),
+    matchAll(url, options) {
+      if (typeof url === "string" || options !== undefined) return inner.matchAll(url, options);
+      let entry = resolved.get(url);
+      if (entry === undefined) {
+        entry = { href: url.href };
+        resolved.set(url, entry);
+      } else if (entry.href !== url.href) {
+        throw urlRewriteError(new URL(entry.href).pathname, url.pathname);
+      }
+      entry.matches ??= inner.matchAll(url);
+      return entry.matches;
+    },
   };
 }
 
@@ -111,7 +159,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   constructor(logger?: Logger) {
     this._logger = logger ?? createLogger("app");
     this._matcher = createMultiMatcher<MatchData>({ limits: MATCHER_LIMITS });
-    this._setup = createRouter({ matcher: stampingMatcher(this._matcher) });
+    this._setup = createRouter({ matcher: checkingRoutes(this._matcher) });
   }
 
   setOnError(fn: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>): void {
@@ -158,6 +206,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   /** Builds the dispatching router once, with a static middleware stack. */
   private _buildRouter(): ReturnType<typeof createRouter> {
+    const routeMatcher = memoizingMatcher(this._matcher);
+
     const provideRequestState: Middleware = (context, next) => {
       const state = this._requestState.get(context.request);
       if (!state) {
@@ -178,8 +228,24 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       return privatizeCookieResponse(headers === null ? res : rebuildResponse(res, headers));
     };
 
+    // fetch-router's own pick: the most specific match can be another method's route, and `fetch` has already made HEAD a GET.
+    const resolveRoute: Middleware = (context, next) => {
+      resolvedUrls.set(context, { url: context.url, href: context.url.href });
+      let matches: Match<string, MatchData>[];
+      try {
+        matches = routeMatcher.matchAll(context.url);
+      } catch (err) {
+        // Left unset for dispatch's own uncached `matchAll` to re-throw inside `requestLogger`, which records the failure.
+        if (err instanceof MatcherResourceError) return next();
+        throw err;
+      }
+      const route = matches.find(({ data }) => data.method === context.method || data.method === "ANY");
+      if (route) matchedRoutePattern.set(context, route.data.pattern.source);
+      return next();
+    };
+
     const guarded: Middleware[] = this._globals.flatMap(({ matcher, handlers }) => {
-      if (matcher === null) return handlers;
+      if (matcher === null) return handlers.map(checkedStep);
       const verdicts = new WeakMap<RequestContext, boolean>();
       const matchesRequest = (context: RequestContext): boolean => {
         const cached = verdicts.get(context);
@@ -188,12 +254,16 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
         verdicts.set(context, verdict);
         return verdict;
       };
-      return handlers.map(
-        (handler): Middleware =>
-          (context, next) =>
-            matchesRequest(context) ? handler(context, next) : next(),
-      );
+      return handlers
+        .map(
+          (handler): Middleware =>
+            (context, next) =>
+              matchesRequest(context) ? handler(context, next) : next(),
+        )
+        .map(checkedStep);
     });
+
+    const csrfVerify = checkedStep(csrfVerifyStage(createRefusalAnswer<Bindings>()));
 
     const errorBoundary: Middleware = async (context, next) => {
       try {
@@ -206,7 +276,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     const answerMethodMismatch: Middleware = async (context, next) => {
       const res = await next();
       if (res.status !== 405) return res;
-      const matches = this._matcher.matchAll(context.url);
+      assertUrlUnchanged(context);
+      const matches = routeMatcher.matchAll(context.url);
       if (matches.length === 0) return res;
       // Sound only because `fetch` rewrites HEAD to GET: the router's dispatch loop breaks on its
       // HEAD fallback, so a surviving HEAD would make this rewrite a handler's own answer.
@@ -220,6 +291,9 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       return hardenedText("Method Not Allowed", 405, allow === null ? undefined : { allow });
     };
 
+    // Ahead of dispatch, whose `matchAll` would read a replacement URL object as a fresh request's.
+    const refuseRewrittenUrl = checkedStep((_context, next) => next());
+
     // Twice deliberately: the inner boundary keeps an error response flowing back out through guards
     // that queue `set-cookie` after `next()`; the outer one catches a guard's own throw.
     const defaultHandler: RequestHandler = (context) => {
@@ -228,9 +302,19 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     };
 
     return createRouter({
-      matcher: this._matcher,
+      matcher: routeMatcher,
       defaultHandler,
-      middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary, answerMethodMismatch],
+      middleware: [
+        provideRequestState,
+        applyHeaders,
+        errorBoundary,
+        resolveRoute,
+        ...guarded,
+        csrfVerify,
+        errorBoundary,
+        answerMethodMismatch,
+        refuseRewrittenUrl,
+      ],
     });
   }
 
@@ -274,24 +358,27 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     // A disconnected client is cancellation, not a failure: nothing to report and nobody to render
     // for. Checked before the override so a consumer's page is not built for a gone request.
     if (context.request.signal.aborted) return new Response(null, { status: 499 });
-    if (this._onError) {
-      try {
-        return await this._onError(err, context);
-      } catch (overrideErr) {
-        // Attributed to the hook, not folded into the original: the records below still report that.
-        this._logger.error("onError override threw", { error: serializeError(overrideErr), original: serializeError(err) });
-      }
-    }
-    const reqLog = requestLog.getOptional(context);
-    if (reqLog) reqLog.error("unhandled error", { error: serializeError(err) });
-    this._logger.error("Unhandled error", { error: serializeError(err) });
-    // Nothing else covers either core: `requestLogger`'s `finally` has already run on the guard-throw path,
-    // and the app logger has no middleware to flush it at all.
-    const flush = Promise.all([reqLog?.flush(), this._logger.flush()]);
+    const log = loggerFor(context, "app", this._logger);
+    log.error("Unhandled error", { error: serializeError(err) });
+    const res = await this._renderError(err, context, log);
+    // Nothing else covers the core: `requestLogger`'s `finally` has already run on the guard-throw path,
+    // and the fallback logger has no middleware to flush it at all.
+    const flush = log.flush();
     try {
       context.executionCtx.waitUntil(flush);
     } catch {
       await flush;
+    }
+    return res;
+  }
+
+  private async _renderError(err: Error, context: AppContext<Bindings>, log: Logger): Promise<Response> {
+    if (this._onError) {
+      try {
+        return await this._onError(err, context);
+      } catch (overrideErr) {
+        log.error("onError override threw", { error: serializeError(overrideErr), original: serializeError(err) });
+      }
     }
     // Only ever echoed, never generated here: an id exists only where `requestId` middleware ran.
     const reference = requestIdCtx.getOptional(context);

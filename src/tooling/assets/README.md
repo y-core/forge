@@ -95,6 +95,16 @@ An unset `env()` variable substitutes `undefined` rather than failing, so a bund
 
 A bundle's own `minify` overrides `--minify` for that bundle's code; content hashing still follows the build-wide flag.
 
+**A program compiled under `"types": []` — a Worker app's tests — takes the config types from `@y-core/forge/tooling/assets/types`.** The barrel
+pulls in Node-only modules, so importing a type from it fails that program's typecheck.
+
+```ts
+import type { AssetsConfig } from "@y-core/forge/tooling/assets/types";
+import type { SiteConfig } from "@y-core/forge/site";
+
+type AssetsSiteBlock = (site: SiteConfig) => AssetsConfig;
+```
+
 ---
 
 ## Building a service-worker bundle
@@ -114,63 +124,23 @@ export default defineAssetsConfig({
 ```
 
 The worker imports two constants the build fills in. `PRECACHE_URLS` is the app shell, and `PRECACHE_VERSION` changes whenever any file
-under `publicDir` changes, so name the cache after it. A deploy that changes anything then installs a new worker, which drops the old cache:
+under `publicDir` changes. `attachPrecache` names its cache after the version, so a deploy that changes anything installs a new worker, which
+drops the old cache:
 
 ```ts
+import { attachPrecache } from "@y-core/forge/assets/client";
+import type { ServiceWorkerScope } from "@y-core/forge/assets/client";
 import { PRECACHE_URLS, PRECACHE_VERSION } from "@y-core/forge/assets/precache";
 
-declare const self: ServiceWorkerGlobalScope;
+declare const self: ServiceWorkerScope;
 
-const PREFIX = "/assets/"; // your publicPrefix
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(PRECACHE_VERSION).then((cache) => cache.addAll(PRECACHE_URLS)));
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== PRECACHE_VERSION).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
-  );
-});
-
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith(PREFIX)) return;
-  event.respondWith(
-    caches.open(PRECACHE_VERSION).then(async (cache) => {
-      const cached = await cache.match(event.request);
-      if (cached !== undefined) return cached;
-      const response = await fetch(event.request);
-      if (response.ok) await cache.put(event.request, response.clone());
-      return response;
-    }),
-  );
-});
+attachPrecache(self, { urls: PRECACHE_URLS, version: PRECACHE_VERSION, fallback: "/offline" });
 ```
 
-**Typecheck the worker under its own `tsconfig`.** Neither a Worker's types nor the DOM library declare `ServiceWorkerGlobalScope`, so the
-snippet fails under the app's config. Give it a `tsconfig.sw.json` of its own, and list `src/client/sw.ts` under `exclude` in the app's
-`tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "lib": ["ESNext", "WebWorker"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noEmit": true,
-    "types": []
-  },
-  "include": ["src/client/sw.ts"]
-}
-```
-
-Run both in the `typecheck` script: `bun check && bun check -p tsconfig.sw.json`.
+A precached URL is served from the cache, and anything else is left to the network. `fallback` is precached with the shell and answers a
+navigation the network cannot reach; leave it out and an offline navigation fails as it would with no worker. **`ServiceWorkerScope` declares
+only what `attachPrecache` uses**, so the worker typechecks under the app's own `tsconfig`, and `ServiceWorkerGlobalScope` satisfies it where the
+`WebWorker` library is loaded.
 
 **The shell is what a first page needs.** It holds every `css` output, every sprite sheet, and each `js.bundles` entry together with every chunk
 and stylesheet it statically imports. A chunk reached only through `import()` is left out. Set `precache: false` on a bundle a first visit does
@@ -483,7 +453,9 @@ fractions. `<path>`, `<circle>`, `<ellipse>`, `<rect>` and `<polygon>` convert; 
 PDF's own operators draw.
 
 Some inputs are refused by name rather than converted badly: an elliptical arc (`A`) — export the mark with its arcs flattened; a colour written
-as anything but `#rgb` or `#rrggbb`; and an SVG declaring neither a `viewBox` nor a width and height, which has no coordinate space to scale out of.
+as anything but `#rgb` or `#rrggbb`; a `stroke-width` with a unit, such as `1.5px`, or one that is not a number; a coordinate that is not a finite
+number, such as `1e999`; and an SVG declaring neither a `viewBox` nor a width and height, or one whose `viewBox`, width or height is not above 0,
+which has no coordinate space to scale out of.
 
 ---
 

@@ -14,11 +14,13 @@ const CORPUS = "Declaration of interest AV";
 
 const built = await buildFontPacks([{ family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: CORPUS }]);
 
-const FONT: PdfEmbeddedFont = readPdfEmbeddedFonts(
-  built.packs[0]!,
+const read = readPdfEmbeddedFonts(
+  built.packs[0],
   (path) => built.sfnt.get(path) ?? new Uint8Array(),
   () => "oswald",
-)[0]!;
+);
+if (!read.ok) throw new Error(read.error.message);
+const FONT: PdfEmbeddedFont = read.data[0]!;
 
 const codePoints = [...new Set([...CORPUS].map((character) => character.codePointAt(0) ?? 0))];
 

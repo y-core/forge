@@ -104,11 +104,12 @@ interface AsyncDialogTriggerProps {
   swap?: string;
 }
 
-/** Builds `hx-*` plus `data-dialog-open`/ARIA attributes for a trigger that loads dialog content. @public */
+/** Builds `hx-*` plus `show-modal` invoker and ARIA attributes for a `<button type="button">` that opens and loads a dialog. @public */
 export function asyncDialogTrigger(p: AsyncDialogTriggerProps): HxAttrs {
   return {
     ...hxAttrs({ get: p.get, target: p.target, swap: p.swap ?? SWAP.innerHtml }),
-    "data-dialog-open": p.dialogId,
+    command: "show-modal",
+    commandfor: p.dialogId,
     "aria-haspopup": "dialog",
     "aria-controls": p.dialogId,
   };

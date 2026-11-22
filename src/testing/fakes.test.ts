@@ -6,7 +6,7 @@ import { requireRowsWritten, sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import { nullLogger } from "./context";
-import { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";
+import { fakeAssetsFetcher, fakeCacheStorage, fakeD1, fakeKV, fakeR2 } from "./fakes";
 
 describe("fakeKV", () => {
   it("round-trips put/get in text mode", async () => {
@@ -437,6 +437,75 @@ describe("fakeAssetsFetcher", () => {
     expect(res.status).toBe(404);
     expect(await res.text()).toBe("Not Found");
   });
+
+  it("serves the same body for a string, a URL and a Request", async () => {
+    const assets = fakeAssetsFetcher({ "/app.css": "body{margin:0}" });
+    const url = "http://test/app.css";
+    const bodies = await Promise.all([url, new URL(url), new Request(url)].map(async (input) => (await assets.fetch(input)).text()));
+    expect(bodies).toEqual(["body{margin:0}", "body{margin:0}", "body{margin:0}"]);
+  });
+
+  it("answers HEAD with headers and no body", async () => {
+    const assets = fakeAssetsFetcher({ "/app.css": "body{margin:0}" });
+    const viaRequest = await assets.fetch(new Request("http://test/app.css", { method: "HEAD" }));
+    const viaInit = await assets.fetch("http://test/app.css", { method: "HEAD" });
+    for (const res of [viaRequest, viaInit]) {
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/css; charset=utf-8");
+      expect(res.body).toBeNull();
+    }
+  });
+
+  it("serves bytes with the content type their extension maps to", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const assets = fakeAssetsFetcher({ "/logo.png": png });
+    const res = await assets.fetch("http://test/logo.png");
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(png);
+  });
+
+  it("serves a script with its active content type rather than the storage downgrade", async () => {
+    const assets = fakeAssetsFetcher({ "/sw.js": "self.skipWaiting()" });
+    const res = await assets.fetch("http://test/sw.js");
+    expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+  });
+
+  it("prefers an entry's explicit type over its extension", async () => {
+    const assets = fakeAssetsFetcher({ "/manifest.json": { body: "{}", type: "application/manifest+json" } });
+    const res = await assets.fetch("http://test/manifest.json");
+    expect(res.headers.get("content-type")).toBe("application/manifest+json");
+    expect(await res.text()).toBe("{}");
+  });
+
+  it("serves an extension the table does not map, or one spelling an Object prototype key, as octet-stream", async () => {
+    const assets = fakeAssetsFetcher({ "/LICENSE": "MIT", "/data.constructor": "x", "/notes.__proto__": "y" });
+    const types = await Promise.all(
+      ["/LICENSE", "/data.constructor", "/notes.__proto__"].map(async (path) =>
+        (await assets.fetch(`http://test${path}`)).headers.get("content-type"),
+      ),
+    );
+    expect(types).toEqual(["application/octet-stream", "application/octet-stream", "application/octet-stream"]);
+  });
+
+  it("serves a byte body under an entry's explicit type", async () => {
+    const font = new Uint8Array([0x77, 0x4f, 0x46, 0x32]);
+    const assets = fakeAssetsFetcher({ "/fonts/body": { body: font, type: "font/woff2" } });
+    const res = await assets.fetch(new Request("http://test/fonts/body"));
+    expect({ type: res.headers.get("content-type"), body: new Uint8Array(await res.arrayBuffer()) }).toEqual({ type: "font/woff2", body: font });
+  });
+
+  it("answers a HEAD for a missing path 404", async () => {
+    const res = await fakeAssetsFetcher({}).fetch("http://test/missing.css", { method: "HEAD" });
+    expect(res.status).toBe(404);
+  });
+
+  it("records every requested path in order, missing ones included", async () => {
+    const assets = fakeAssetsFetcher({ "/a.css": "a" });
+    await assets.fetch("http://test/a.css");
+    await assets.fetch(new URL("http://test/missing.js"));
+    await assets.fetch(new Request("http://test/a.css?v=2"));
+    expect(assets.requests).toEqual(["/a.css", "/missing.js", "/a.css"]);
+  });
 });
 
 describe("fakeKV — platform refusals", () => {
@@ -583,5 +652,40 @@ describe("fakeD1 — platform refusals", () => {
       { logger: nullLogger },
     );
     expect((await client.batch([sql`SELECT 1`, requireRowsWritten()])).ok).toBe(true);
+  });
+});
+
+describe("fakeCacheStorage", () => {
+  const server = fakeAssetsFetcher({ "/a.css": "a", "/b.js": "b" });
+
+  it("stores what addAll fetched and answers each match with a fresh body", async () => {
+    const cache = await fakeCacheStorage({ fetch: server.fetch }).open("v1");
+    await cache.addAll(["/a.css", "http://test/b.js"]);
+    expect(await (await cache.match("http://test/a.css"))?.text()).toBe("a");
+    expect(await (await cache.match(new Request("http://test/a.css")))?.text()).toBe("a");
+    expect(await (await cache.match("/b.js"))?.text()).toBe("b");
+  });
+
+  it("refuses the whole addAll when any response is not ok, as a real Cache does", async () => {
+    const cache = await fakeCacheStorage({ fetch: server.fetch }).open("v1");
+    await expect(cache.addAll(["/a.css", "/missing"])).rejects.toThrow(TypeError);
+    expect(await cache.match("/a.css")).toBeUndefined();
+  });
+
+  it("rejects addAll with no network, and matches no non-GET request", async () => {
+    const storage = fakeCacheStorage();
+    const cache = await storage.open("v1");
+    await expect(cache.addAll(["/a.css"])).rejects.toThrow("Failed to fetch");
+    expect(await cache.match(new Request("http://test/a.css", { method: "POST" }))).toBeUndefined();
+  });
+
+  it("lists, keeps and deletes caches by name", async () => {
+    const storage = fakeCacheStorage();
+    await storage.open("v1");
+    await storage.open("v2");
+    expect(await storage.keys()).toEqual(["v1", "v2"]);
+    expect(await storage.delete("v1")).toBe(true);
+    expect(await storage.delete("v1")).toBe(false);
+    expect(await storage.keys()).toEqual(["v2"]);
   });
 });

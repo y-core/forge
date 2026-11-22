@@ -10,7 +10,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": [],
-    "paths": { "@y-core/forge/*": ["../../../src/*"] }
+    "paths": { "@y-core/forge/assets/client": ["../../../src/assets/client/mod.ts"], "@y-core/forge/*": ["../../../src/*"] }
   },
   "include": ["sw.ts"]
 }

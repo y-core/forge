@@ -67,9 +67,15 @@ preference:
 
 - Such a package typically overrides a standard global's signature with runtime-specific properties — `fetch` is the usual casualty.
 - That override breaks type-checking of Worker code and of test fakes that implement platform interfaces.
-- The stub declares exactly the lifecycle and assertion globals in use, and nothing more.
+- The stub declares exactly the lifecycle, assertion and runtime calls in use, as module declarations, and nothing more. It adds no global, so a
+  spec imports the runtime's API from its module by name.
 
 **A change that adds the runtime's type package must be rejected**, including as a transitive dependency of a convenience plugin.
+
+**The lint base bans a runtime global in Worker source; the stub cannot.** Runtime source uses Web APIs only, so it reaches for no `process`, no
+`Buffer` and no runtime namespace, even where `nodejs_compat` would supply the first two. A program that declares one elsewhere typechecks the
+reference, so the library's shipped lint base refuses each one outside build-time trees. In a spec only the runtime namespace stays banned. An
+imported name is a local binding the global ban never reaches, so the base refuses the import of the module that supplies it too.
 
 ### 1c. The Browser Set
 

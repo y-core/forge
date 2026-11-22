@@ -1,32 +1,62 @@
 import { LABEL_DEFAULTS } from "../contracts/labels";
-import type { NavContribution, NavDefinition, NavGroup, NavItem, NavLink, NavSectionItem, NavSlot, NavStateResolver, PrimaryNav } from "./types";
+import type {
+  NavContribution,
+  NavDefinition,
+  NavGroup,
+  NavItem,
+  NavLink,
+  NavMegaMenu,
+  NavMenu,
+  NavSectionItem,
+  NavSlot,
+  NavState,
+  NavStateResolver,
+  PrimaryNav,
+} from "./types";
 
 type KeyedSectionItem = NavContribution<string, unknown, unknown>["items"][number];
 type KeyedGroup = Extract<KeyedSectionItem, { heading: string }>;
-type KeyedItem = Exclude<KeyedSectionItem, KeyedGroup>;
+type KeyedItem = Extract<KeyedSectionItem, { items: unknown }>["items"][number];
 type KeyedEntry = KeyedGroup["group"][number];
+type BarEntry = { readonly key: string; readonly item: NavMenu | NavMegaMenu } | { readonly key?: undefined; readonly item: NavSectionItem };
+
+function freeze<T extends object>(value: T): T {
+  Object.freeze(value);
+  return value;
+}
 
 function copyNavLeaf<T extends { filters?: readonly string[] | undefined }>(leaf: T): Omit<T, "filters"> & { filters?: string[] } {
   const { filters, ...rest } = leaf;
-  return filters === undefined ? rest : { ...rest, filters: [...filters] };
+  return filters === undefined ? rest : { ...rest, filters: freeze([...filters]) };
 }
 
 function copyNavEntry(entry: KeyedEntry): NavLink | NavSlot {
-  return "slot" in entry ? copyNavLeaf(entry) : copyNavLeaf(entry);
+  return freeze("slot" in entry ? copyNavLeaf(entry) : copyNavLeaf(entry));
 }
 
 function copyNavGroup(group: KeyedGroup): NavGroup {
-  return { ...copyNavLeaf(group), group: group.group.map(copyNavEntry) };
+  return freeze({ ...copyNavLeaf(group), group: freeze(group.group.map(copyNavEntry)) });
+}
+
+function copyNavMenu(menu: Extract<KeyedItem, { items: unknown }>): NavMenu {
+  return freeze({ ...copyNavLeaf(menu), items: freeze(menu.items.map(copyNavItem)) });
+}
+
+function copyNavMegaMenu(menu: Extract<KeyedItem, { groups: unknown }>): NavMegaMenu {
+  return freeze({ ...copyNavLeaf(menu), groups: freeze(menu.groups.map(copyNavGroup)) });
 }
 
 function copyNavItem(item: KeyedItem): NavItem {
-  if ("items" in item) return { ...copyNavLeaf(item), items: item.items.map(copyNavItem) };
-  if ("groups" in item) return { ...copyNavLeaf(item), groups: item.groups.map(copyNavGroup) };
+  if ("items" in item) return copyNavMenu(item);
+  if ("groups" in item) return copyNavMegaMenu(item);
   return copyNavEntry(item);
 }
 
-function copyNavSectionItem(item: KeyedSectionItem): NavSectionItem {
-  return "heading" in item ? copyNavGroup(item) : copyNavItem(item);
+function copyBarEntry(item: KeyedSectionItem): BarEntry {
+  if ("heading" in item) return { item: copyNavGroup(item) };
+  if (!("key" in item)) return { item: copyNavItem(item) };
+  const { key, ...menu } = item;
+  return { key, item: "items" in menu ? copyNavMenu(menu) : copyNavMegaMenu(menu) };
 }
 
 function refuseToggleLabel(items: readonly NavSectionItem[]): void {
@@ -41,36 +71,134 @@ function refuseToggleLabel(items: readonly NavSectionItem[]): void {
   }
 }
 
-/** Creates one app's primary navbar, to which each feature contributes its entries at registration. @public */
-export function createPrimaryNav<K extends string, C, S>(): PrimaryNav<K, C, S> {
-  const bar: NavSectionItem[] = [];
+function refuseUnresolvedHref(link: Pick<NavLink, "label" | "href">, hrefs: ReadonlyMap<string, string>): void {
+  if (!hrefs.has(link.href)) {
+    throw new Error(`createPrimaryNav: the link "${link.label}" names the key "${link.href}", which no contribution gives an href.`);
+  }
+}
+
+function refuseUnresolvedHrefs(items: readonly NavSectionItem[], hrefs: ReadonlyMap<string, string>): void {
+  for (const item of items) {
+    if ("href" in item) refuseUnresolvedHref(item, hrefs);
+    if ("items" in item) refuseUnresolvedHrefs(item.items, hrefs);
+    if ("group" in item) refuseUnresolvedHrefs(item.group, hrefs);
+    if ("groups" in item) refuseUnresolvedHrefs(item.groups, hrefs);
+  }
+}
+
+function isMenu(item: NavSectionItem): item is NavMenu {
+  return "items" in item;
+}
+
+function isMegaMenu(item: NavSectionItem): item is NavMegaMenu {
+  return "groups" in item;
+}
+
+function sameTokens(held: readonly string[] | undefined, declared: readonly string[]): boolean {
+  if (held === undefined) return false;
+  const heldSet = new Set(held);
+  const declaredSet = new Set(declared);
+  return heldSet.size === declaredSet.size && [...declaredSet].every((token) => heldSet.has(token));
+}
+
+function refuseDifferingFilters(existing: NavMenu | NavMegaMenu, incoming: NavMenu | NavMegaMenu): void {
+  if (incoming.filters !== undefined && !sameTokens(existing.filters, incoming.filters)) {
+    throw new Error(`createPrimaryNav: the menu "${incoming.label}" declares filters that differ from the menu it merges into.`);
+  }
+}
+
+function mergeMenu(existing: NavMenu, incoming: NavMenu): NavMenu {
+  refuseDifferingFilters(existing, incoming);
+  return freeze({ ...existing, items: freeze([...existing.items, ...incoming.items]) });
+}
+
+function mergeMegaMenu(existing: NavMegaMenu, incoming: NavMegaMenu): NavMegaMenu {
+  refuseDifferingFilters(existing, incoming);
+  if (incoming.align !== undefined && incoming.align !== existing.align) {
+    throw new Error(`createPrimaryNav: the menu "${incoming.label}" declares an align that differs from the menu it merges into.`);
+  }
+  return freeze({ ...existing, groups: freeze([...existing.groups, ...incoming.groups]) });
+}
+
+function mergeKeyed(key: string, existing: NavMenu | NavMegaMenu, incoming: NavMenu | NavMegaMenu): NavMenu | NavMegaMenu {
+  if (isMenu(existing) && isMenu(incoming)) return mergeLabelled(key, existing, incoming, mergeMenu);
+  if (isMegaMenu(existing) && isMegaMenu(incoming)) return mergeLabelled(key, existing, incoming, mergeMegaMenu);
+  throw new Error(`createPrimaryNav: the menu "${incoming.label}" shares the key "${key}" with a menu of another kind.`);
+}
+
+function mergeLabelled<M extends NavMenu | NavMegaMenu>(key: string, existing: M, incoming: M, merge: (existing: M, incoming: M) => M): M {
+  if (incoming.label !== existing.label) {
+    throw new Error(
+      `createPrimaryNav: the menu "${incoming.label}" shares the key "${key}" with the menu "${existing.label}", under another label.`,
+    );
+  }
+  return merge(existing, incoming);
+}
+
+function mergeIntoBar(bar: readonly BarEntry[], incoming: readonly BarEntry[]): BarEntry[] {
+  const merged = [...bar];
+  for (const entry of incoming) {
+    const index = entry.key === undefined ? -1 : merged.findIndex((held) => held.key === entry.key);
+    const existing = merged[index];
+    if (entry.key === undefined || existing?.key === undefined) merged.push(entry);
+    else merged[index] = { key: entry.key, item: mergeKeyed(entry.key, existing.item, entry.item) };
+  }
+  return merged;
+}
+
+type AppNavContribution<K extends string, C, S> = Omit<NavContribution<K, C, S>, "hrefs"> & {
+  readonly hrefs: Readonly<Partial<Record<K, string>>>;
+};
+
+/** Composes one app's frozen navbar from every contribution in array order, merging menus by `key`; throws on a link with no href. @public */
+export function createPrimaryNav<K extends string, C, S>(contributions: readonly AppNavContribution<K, C, S>[]): PrimaryNav<C, S> {
+  let bar: BarEntry[] = [];
   const footer: Pick<NavLink, "label" | "href">[] = [];
   const states: NavStateResolver<C, S>[] = [];
   const hrefs = new Map<string, string>();
+
+  for (const contribution of contributions) {
+    const entries = contribution.items.map(copyBarEntry);
+    refuseToggleLabel(entries.map((entry) => entry.item));
+    for (const [key, href] of Object.entries<string | undefined>(contribution.hrefs)) {
+      if (hrefs.has(key)) throw new Error(`createPrimaryNav: the key "${key}" is already contributed.`);
+      if (href !== undefined) hrefs.set(key, href);
+    }
+    bar = mergeIntoBar(bar, entries);
+    for (const link of contribution.footer ?? []) footer.push(freeze({ label: link.label, href: link.href }));
+    if (contribution.state !== undefined) states.push(contribution.state);
+  }
+  const barItems = bar.map((entry) => entry.item);
+  refuseUnresolvedHrefs(barItems, hrefs);
+  for (const link of footer) refuseUnresolvedHref(link, hrefs);
 
   const resolveHref = (key: string): string => {
     const href = hrefs.get(key);
     if (href === undefined) throw new Error(`createPrimaryNav: no href is contributed for the key "${key}".`);
     return href;
   };
+  const definition: NavDefinition = freeze({ sections: freeze([freeze({ items: freeze(barItems) })]) });
+  const heldStates = freeze(states);
 
-  const contribute = <L extends K>(contribution: NavContribution<L, C, S>): void => {
-    const items = contribution.items.map(copyNavSectionItem);
-    refuseToggleLabel(items);
-    const taken = Object.keys(contribution.hrefs).find((key) => hrefs.has(key));
-    if (taken !== undefined) throw new Error(`createPrimaryNav: the key "${taken}" is already contributed.`);
-
-    for (const [key, href] of Object.entries<string>(contribution.hrefs)) hrefs.set(key, href);
-    bar.push(...items);
-    footer.push(...(contribution.footer ?? []));
-    if (contribution.state !== undefined) states.push(contribution.state);
-  };
-
-  return {
-    contribute,
-    definition: (): NavDefinition => ({ sections: [{ items: [...bar] }] }),
+  return freeze({
+    definition: () => definition,
     footer: () => footer.map((link) => ({ label: link.label, href: resolveHref(link.href) })),
     resolveHref,
-    states: () => [...states],
-  };
+    states: () => heldStates,
+  });
+}
+
+/** Runs every contributed state resolver for this request and merges the results, in contribution order, into one `Navbar` state. @public */
+export async function resolveNavState<C, S extends NavState>(nav: PrimaryNav<C, S>, c: C): Promise<NavState> {
+  const resolved = await Promise.all(nav.states().map((state) => state(c)));
+  const activeFilters = new Set<string>();
+  const slots: NavState["slots"] = {};
+  for (const state of resolved) {
+    for (const filter of state.activeFilters) activeFilters.add(filter);
+    for (const [key, slot] of Object.entries(state.slots)) {
+      if (Object.hasOwn(slots, key)) throw new Error(`resolveNavState: the slot "${key}" is filled by two contributions.`);
+      slots[key] = slot;
+    }
+  }
+  return { activeFilters: [...activeFilters], slots };
 }

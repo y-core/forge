@@ -1,11 +1,16 @@
-// Generated from src/testing/d1.ts by `bun run gen:bundles` — do not edit.
+// Generated from src/testing/d1/mod.ts by `bun run gen:bundles` — do not edit.
 
-// src/testing/d1.ts
-import { existsSync as existsSync2, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// src/testing/d1/mod.ts
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join as join3 } from "node:path";
+import process2 from "node:process";
+import { getPlatformProxy } from "wrangler";
+
+// src/testing/d1/migrations.ts
+import { existsSync as existsSync2, readdirSync, readFileSync } from "node:fs";
 import { join as join2, resolve as resolve3 } from "node:path";
 import process from "node:process";
-import { getPlatformProxy } from "wrangler";
 
 // src/storage/db/migrations.ts
 var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json", types: "config/db/tables.ts" };
@@ -34,24 +39,24 @@ var INVENTORY_SELECT = "SELECT type, name, tbl_name, sql FROM sqlite_master WHER
 
 // src/tooling/db/backup/split.ts
 var WORD = /[A-Za-z_][A-Za-z0-9_$]*/y;
-function pastQuoted(sql2, index, quote) {
+function pastQuoted(sql, index, quote) {
   let at = index;
   do {
-    const close = sql2.indexOf(quote, at + 1);
-    if (close === -1) return sql2.length;
+    const close = sql.indexOf(quote, at + 1);
+    if (close === -1) return sql.length;
     at = close + 1;
-  } while (sql2[at] === quote);
+  } while (sql[at] === quote);
   return at;
 }
-function pastMarker(sql2, from, marker) {
-  const at = sql2.indexOf(marker, from);
-  return at === -1 ? sql2.length : at + marker.length;
+function pastMarker(sql, from, marker) {
+  const at = sql.indexOf(marker, from);
+  return at === -1 ? sql.length : at + marker.length;
 }
 function opensTrigger(lead) {
   const [create, second, third] = lead;
   return create === "CREATE" && (second === "TRIGGER" || (second === "TEMP" || second === "TEMPORARY") && third === "TRIGGER");
 }
-function sqlStatementSpans(sql2) {
+function sqlStatementSpans(sql) {
   const spans = [];
   let start = 0;
   let index = 0;
@@ -69,20 +74,20 @@ function sqlStatementSpans(sql2) {
     useful = false;
     lead = [];
   };
-  while (index < sql2.length) {
-    const char = sql2[index] ?? "";
-    const next = sql2[index + 1];
+  while (index < sql.length) {
+    const char = sql[index] ?? "";
+    const next = sql[index + 1];
     if (char === "'" || char === '"' || char === "`") {
       token("");
-      index = pastQuoted(sql2, index, char);
+      index = pastQuoted(sql, index, char);
     } else if (char === "[") {
       token("");
-      index = pastMarker(sql2, index + 1, "]");
-    } else if (char === "-" && next === "-") index = pastMarker(sql2, index, "\n");
-    else if (char === "/" && next === "*") index = pastMarker(sql2, index + 2, "*/");
+      index = pastMarker(sql, index + 1, "]");
+    } else if (char === "-" && next === "-") index = pastMarker(sql, index, "\n");
+    else if (char === "/" && next === "*") index = pastMarker(sql, index + 2, "*/");
     else if (/[A-Za-z_]/.test(char)) {
       WORD.lastIndex = index;
-      const word = (WORD.exec(sql2)?.[0] ?? char).toUpperCase();
+      const word = (WORD.exec(sql)?.[0] ?? char).toUpperCase();
       token(word);
       if (word === "BEGIN" || word === "CASE") depth += 1;
       else if (word === "END") depth = Math.max(0, depth - 1);
@@ -95,15 +100,15 @@ function sqlStatementSpans(sql2) {
       index += 1;
     }
   }
-  finish(sql2.length, false);
+  finish(sql.length, false);
   return spans;
 }
-function cutSqlStatements(sql2) {
-  return sqlStatementSpans(sql2).filter((span) => span.useful).map((span) => sql2.slice(span.start, span.end).trim());
+function cutSqlStatements(sql) {
+  return sqlStatementSpans(sql).filter((span) => span.useful).map((span) => sql.slice(span.start, span.end).trim());
 }
 
 // src/tooling/db/declared.ts
-import { createRequire } from "node:module";
+import { createRequire as createRequire2 } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve as resolve2 } from "node:path";
 
 // src/validation/validation.ts
@@ -111,6 +116,7 @@ import * as v from "valibot";
 
 // src/tooling/cli/config-module.ts
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 async function loadConfigModule(request) {
@@ -120,6 +126,7 @@ async function loadConfigModule(request) {
     if (explicit) throw new Error(`No ${what} at \`${path}\` \u2014 ${option} names a module that does not exist.`);
     return void 0;
   }
+  delete createRequire(import.meta.url).cache[resolved];
   const module = await import(pathToFileURL(resolved).href);
   if (module.default === void 0) {
     throw new Error(`\`${path}\` has no default export \u2014 a ${what} module must \`export default\` the value it holds.`);
@@ -159,7 +166,7 @@ async function loadHostConfig(root, path, explicit, option) {
 function declaredPath(root, declared) {
   if (!declared.startsWith("@")) return { path: isAbsolute(declared) ? declared : resolve2(root, declared), declared };
   try {
-    return { path: createRequire(join(root, "package.json")).resolve(declared), declared };
+    return { path: createRequire2(join(root, "package.json")).resolve(declared), declared };
   } catch {
     throw new CliError(
       "invalid-args",
@@ -175,65 +182,25 @@ function quoteSqlIdentifier(name) {
   return `"${name.replaceAll('"', '""')}"`;
 }
 
-// src/storage/db/sql.ts
-var SQL_PLACEHOLDER = "?";
-var SQL_FRAGMENT_BRAND = /* @__PURE__ */ Symbol("forge.storage.db.SqlFragment");
-function sql(strings, ...values) {
-  let text = strings[0] ?? "";
-  const params = [];
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i];
-    const next = strings[i + 1] ?? "";
-    if (isSqlFragment(value)) {
-      text += value.text + next;
-      params.push(...value.params);
-    } else {
-      text += SQL_PLACEHOLDER + next;
-      params.push(value);
-    }
-  }
-  return { [SQL_FRAGMENT_BRAND]: true, text, params };
+// src/testing/d1/migrations.ts
+async function readTestMigrations(options, caller) {
+  const root = resolve3(options.root ?? process.cwd());
+  const { hostConfig } = options;
+  const host = options.migrations === void 0 ? await loadHostConfig(root, hostConfig ?? DEFAULT_DB_CONFIG, hostConfig !== void 0, "`hostConfig`") : {};
+  const directory = declaredPath(root, options.migrations ?? host.migrations ?? DB_LAYOUT.migrations).path;
+  if (!existsSync2(directory)) throw new Error(`${caller}: no migrations directory at ${directory}`);
+  return inMigrationOrder(
+    readdirSync(directory).filter(isMigrationFileName).map((name) => ({ name, sql: readFileSync(join2(directory, name), "utf-8") }))
+  );
 }
-function isSqlFragment(x) {
-  return typeof x === "object" && x !== null && x[SQL_FRAGMENT_BRAND] === true;
-}
-
-// src/testing/d1.ts
-async function openPlatformD1(configPath, persistPath) {
-  const proxy = await getPlatformProxy({ configPath, persist: { path: persistPath }, remoteBindings: false, envFiles: [] });
-  let open = true;
-  const dispose = async () => {
-    if (!open) return;
-    open = false;
-    live.delete(dispose);
-    await proxy.dispose();
-  };
-  live.add(dispose);
-  sweepOnSignal();
-  return { binding: proxy.env.DB, dispose };
-}
-var live = /* @__PURE__ */ new Set();
-var bound = false;
-function sweepOnSignal() {
-  if (bound) return;
-  bound = true;
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-    process.once(signal, () => {
-      void Promise.allSettled([...live].map((dispose) => dispose())).then(() => process.exit(130));
+async function applyTestMigrations(db, migrations, caller) {
+  for (const migration of migrations) {
+    const statements = cutSqlStatements(migration.sql);
+    if (statements.length === 0) continue;
+    await db.batch(statements.map((statement) => db.prepare(statement))).catch((error) => {
+      throw new Error(`${caller}: ${migration.name} failed to apply: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     });
   }
-}
-function testD1Config() {
-  return `${JSON.stringify(
-    {
-      name: "forge-test-d1",
-      compatibility_date: "2026-01-01",
-      d1_databases: [{ binding: "DB", database_name: "forge-test-d1", database_id: "forge-test-d1" }]
-    },
-    null,
-    2
-  )}
-`;
 }
 function dropStatements(objects, parents) {
   const of = (type) => objects.filter((object) => object.type === type).map((object) => object.name);
@@ -254,67 +221,90 @@ function dropStatements(objects, parents) {
   }
   return drops;
 }
+async function dropAppObjects(db) {
+  const rows = async (query) => (await db.prepare(query).all()).results;
+  const objects = await rows(INVENTORY_SELECT);
+  const parents = /* @__PURE__ */ new Map();
+  for (const { type, name } of objects) {
+    if (type !== "table") continue;
+    const keys = await rows(`PRAGMA foreign_key_list(${quoteSqlIdentifier(name)})`);
+    parents.set(
+      name,
+      keys.map((key) => key.table)
+    );
+  }
+  const drops = dropStatements(objects, parents);
+  if (drops.length > 0) await db.batch(["PRAGMA defer_foreign_keys = true", ...drops].map((statement) => db.prepare(statement)));
+}
+
+// src/testing/d1/mod.ts
+async function openPlatformD1(configPath, persistPath) {
+  const proxy = await getPlatformProxy({ configPath, persist: { path: persistPath }, remoteBindings: false, envFiles: [] });
+  let open = true;
+  const dispose = async () => {
+    if (!open) return;
+    open = false;
+    live.delete(dispose);
+    await proxy.dispose();
+  };
+  live.add(dispose);
+  sweepOnSignal();
+  return { binding: proxy.env.DB, dispose };
+}
+var live = /* @__PURE__ */ new Set();
+var bound = false;
+function sweepOnSignal() {
+  if (bound) return;
+  bound = true;
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process2.once(signal, () => {
+      void Promise.allSettled([...live].map((dispose) => dispose())).then(() => process2.exit(130));
+    });
+  }
+}
+function testD1Config() {
+  return `${JSON.stringify(
+    {
+      name: "forge-test-d1",
+      compatibility_date: "2026-01-01",
+      d1_databases: [{ binding: "DB", database_name: "forge-test-d1", database_id: "forge-test-d1" }]
+    },
+    null,
+    2
+  )}
+`;
+}
 async function openTestD1(options = {}) {
-  const root = resolve3(options.root ?? process.cwd());
-  const { hostConfig } = options;
-  const host = options.migrations === void 0 ? await loadHostConfig(root, hostConfig ?? DEFAULT_DB_CONFIG, hostConfig !== void 0, "`hostConfig`") : {};
-  const directory = declaredPath(root, options.migrations ?? host.migrations ?? DB_LAYOUT.migrations).path;
-  if (!existsSync2(directory)) throw new Error(`openTestD1: no migrations directory at ${directory}`);
-  const migrations = inMigrationOrder(
-    readdirSync(directory).filter(isMigrationFileName).map((name) => ({ name, sql: readFileSync(join2(directory, name), "utf-8") }))
-  );
-  const home = mkdtempSync(join2(tmpdir(), "forge-test-d1-"));
-  writeFileSync(join2(home, "wrangler.jsonc"), testD1Config());
-  const platform = await openPlatformD1(join2(home, "wrangler.jsonc"), join2(home, "state")).catch((error) => {
+  const migrations = await readTestMigrations(options, "openTestD1");
+  const home = mkdtempSync(join3(tmpdir(), "forge-test-d1-"));
+  writeFileSync(join3(home, "wrangler.jsonc"), testD1Config());
+  const platform = await openPlatformD1(join3(home, "wrangler.jsonc"), join3(home, "state")).catch((error) => {
     rmSync(home, { recursive: true, force: true });
     throw error;
   });
   const db = platform.binding;
-  const rows = async (sql2) => (await db.prepare(sql2).all()).results;
-  const migrate = async () => {
-    for (const migration of migrations) {
-      const statements = cutSqlStatements(migration.sql);
-      if (statements.length === 0) continue;
-      await db.batch(statements.map((statement) => db.prepare(statement))).catch((error) => {
-        throw new Error(`openTestD1: ${migration.name} failed to apply: ${error instanceof Error ? error.message : String(error)}`, {
-          cause: error
-        });
-      });
-    }
-  };
   const dispose = async () => {
     await platform.dispose();
     rmSync(home, { recursive: true, force: true });
   };
   try {
-    await migrate();
+    await applyTestMigrations(db, migrations, "openTestD1");
   } catch (error) {
     await dispose();
     throw error;
   }
   return {
     binding: db,
-    rows,
+    rows: async (query) => (await db.prepare(query).all()).results,
     async reset() {
-      const objects = await rows(INVENTORY_SELECT);
-      const parents = /* @__PURE__ */ new Map();
-      for (const { type, name } of objects) {
-        if (type !== "table") continue;
-        const keys = await rows(`PRAGMA foreign_key_list(${quoteSqlIdentifier(name)})`);
-        parents.set(
-          name,
-          keys.map((key) => key.table)
-        );
-      }
-      const drops = dropStatements(objects, parents);
-      if (drops.length > 0) await db.batch(["PRAGMA defer_foreign_keys = true", ...drops].map((statement) => db.prepare(statement)));
-      await migrate();
+      await dropAppObjects(db);
+      await applyTestMigrations(db, migrations, "openTestD1");
     },
     dispose
   };
 }
-async function explainPlan(d1, fragment) {
-  const res = await d1.binding.prepare(`EXPLAIN QUERY PLAN ${fragment.text}`).bind(...fragment.params).all();
+async function explainPlan(d1, query, params = []) {
+  const res = await d1.binding.prepare(`EXPLAIN QUERY PLAN ${query}`).bind(...params).all();
   return res.results.map(({ id, parent, detail }) => ({ id, parent, detail }));
 }
 var quoted = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -327,12 +317,10 @@ function scansTable(plan, name) {
   return plan.some((step) => pattern.test(step.detail));
 }
 export {
-  dropStatements,
   explainPlan,
   openPlatformD1,
   openTestD1,
   scansTable,
-  sql,
   testD1Config,
   usesIndex
 };

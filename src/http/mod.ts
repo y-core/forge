@@ -11,6 +11,8 @@ export type {
   SetCookieInit,
   VaryInit,
 } from "./headers";
+export type { CookieAttributes, UnsignedCookie, UnsignedCookieOptions } from "./types";
+export { COOKIE_ATTRIBUTES_DEFAULT, createUnsignedCookie } from "./cookie";
 export {
   Accept,
   CacheControl,

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { SpawnOptions, SpawnOutcome } from "../cli/types";
-import { syncForge } from "./sync";
+import { syncForge, syncReport } from "./sync";
 
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
 // so it reaches whatever loads `node:child_process` after this file and decides by load order.
@@ -22,6 +22,7 @@ function consumer(installed: boolean): string {
     const dir = join(root, "node_modules", "@y-core", "forge");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "stale.ts"), "export const stale = true;\n", "utf-8");
+    writeFileSync(join(dir, ".bun-tag"), "sha512-pinned", "utf-8");
   }
   return root;
 }
@@ -62,6 +63,19 @@ describe("syncForge()", () => {
     expect(existsSync(join(root, "node_modules", "@y-core", "forge", "stale.ts"))).toBe(false);
   });
 
+  // Bun counts a package as installed while its directory holds `.bun-tag`; deleting it is what makes `bun i` the undo.
+  it("removes the install tag before extracting, so a plain `bun i` reinstalls the pinned release", () => {
+    const root = consumer(true);
+    const tag = join(root, "node_modules", "@y-core", "forge", ".bun-tag");
+    let taggedAtExtract: boolean | undefined;
+    spawn.mockImplementation((command: string) => {
+      if (command === "tar") taggedAtExtract = existsSync(tag);
+      return { status: 0 };
+    });
+    syncForge(root, spawn);
+    expect(taggedAtExtract).toBe(false);
+  });
+
   it("throws with the command and its stderr when a step exits non-zero", () => {
     spawn.mockImplementation(() => ({ status: 1, stderr: "pack refused" }));
     expect(() => syncForge(consumer(true), spawn)).toThrow(/bun pm pack .* exited 1[\s\S]*pack refused/);
@@ -70,6 +84,10 @@ describe("syncForge()", () => {
   it("treats the null status a signalled process reports as a failure, never as the zero it is not", () => {
     spawn.mockImplementation(() => ({ status: null }));
     expect(() => syncForge(consumer(true), spawn)).toThrow(/bun pm pack .* exited 1/);
+  });
+
+  it("ends its report with the undo, so the consumer knows how to return to the release", () => {
+    expect(syncReport("/app").split("\n").slice(-2)).toEqual(["Restore the pinned release:", "  bun i"]);
   });
 
   it("defaults to a real spawner, so the command path is not one only a test supplies", () => {

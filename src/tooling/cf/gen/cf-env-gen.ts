@@ -1,6 +1,6 @@
 import { parseDevVars } from "../account/handlers/devvars";
 import { REGISTRY } from "./cf-env-registry";
-import type { BindingDef, Entry, GenOptions } from "./types";
+import type { BindingDef, Entry, GenOptions, RateLimitWindow } from "./types";
 
 function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
@@ -104,8 +104,56 @@ export function collectPolicyVars(declared: ReadonlySet<string>, opts: GenOption
     .map((name) => ({ name, expr: `v.optional(${refine(name, "v.string()", opts)})` }));
 }
 
-/** Renders the env-schema module for the collected entries, its header naming `command`, the invocation that regenerates it. @internal */
-export function emit(entries: Entry[], command: string): string {
+function rateLimitEntries(scope: unknown): Record<string, unknown>[] {
+  const list = (scope as Record<string, unknown> | null)?.ratelimits;
+  return Array.isArray(list) ? list.filter((item): item is Record<string, unknown> => item !== null && typeof item === "object") : [];
+}
+
+function rateLimitWindow(name: string, entry: Record<string, unknown>): RateLimitWindow {
+  const limit = getPath(entry, "simple.limit");
+  const period = getPath(entry, "simple.period");
+  if (period !== 10 && period !== 60) throw new Error(`ratelimits "${name}": simple.period must be 10 or 60, got ${JSON.stringify(period)}`);
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1) {
+    throw new Error(`ratelimits "${name}": simple.limit must be a positive integer, got ${JSON.stringify(limit)}`);
+  }
+  return { limit, period };
+}
+
+/** Each top-level `ratelimits` binding's window; throws on a bad `simple` or a named env that changes a binding's `period`, which `Retry-After` reports. @internal */
+export function collectRateLimits(cfg: Record<string, unknown>): Record<string, RateLimitWindow> {
+  const table: Record<string, RateLimitWindow> = {};
+  for (const entry of rateLimitEntries(cfg)) {
+    if (typeof entry.name === "string" && entry.name) table[entry.name] = rateLimitWindow(entry.name, entry);
+  }
+  const envs = cfg.env !== null && typeof cfg.env === "object" ? Object.entries(cfg.env) : [];
+  for (const [envName, env] of envs) {
+    for (const entry of rateLimitEntries(env)) {
+      const top = typeof entry.name === "string" ? table[entry.name] : undefined;
+      if (!top) continue;
+      const period = getPath(entry, "simple.period");
+      if (period === top.period) continue;
+      throw new Error(
+        `ratelimits "${entry.name}": env.${envName} declares period ${JSON.stringify(period)}, the top level ${top.period} — ` +
+          `a binding has one period across environments`,
+      );
+    }
+  }
+  return table;
+}
+
+function renderRateLimits(rateLimits: Readonly<Record<string, RateLimitWindow>>, key: (name: string) => string): string {
+  const rows = Object.entries(rateLimits).map(([name, w]) => `  ${key(name)}: { limit: ${w.limit}, period: ${w.period} },`);
+  if (rows.length === 0) return "";
+  return `
+/** Each rate-limit binding's top-level window from \`wrangler.jsonc\`'s \`ratelimits\`; an environment may set its own \`limit\`, never its \`period\`. */
+export const RATELIMITS = {
+${rows.join("\n")}
+} as const;
+`;
+}
+
+/** Renders the env-schema module for the collected entries and top-level rate-limit windows, its header naming `command`, the invocation that regenerates it. @internal */
+export function emit(entries: Entry[], command: string, rateLimits: Readonly<Record<string, RateLimitWindow>> = {}): string {
   // `.dev.vars` accepts names an object literal does not, so `WEIRD-KEY` must be
   // quoted or the generated module is a syntax error.
   const key = (name: string) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name));
@@ -121,7 +169,7 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 export const EnvSchema = v.object({
 ${body}
 });
-
+${renderRateLimits(rateLimits, key)}
 declare module "@y-core/forge/config" {
   interface DeclaredEnv extends Env {}
 }

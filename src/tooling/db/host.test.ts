@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { forgeSchema } from "./declared";
 
-const BUNDLE_URL = pathToFileURL(resolve(import.meta.dir, "host.mjs")).href;
+const BUNDLE_URL = pathToFileURL(resolve(import.meta.dir, "host.node.mjs")).href;
 
 function runUnderNode(script: string): unknown {
   const child = spawnSync("node", ["--input-type=module", "-e", script], { encoding: "utf-8" });

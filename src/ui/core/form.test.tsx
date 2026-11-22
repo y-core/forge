@@ -79,7 +79,7 @@ describe("Form component", () => {
   });
 
   // An `hx-delete` request carries no body, so a header name the app renamed is the only token
-  // `csrfProtection` can read — a mismatch 403s with nothing on the page to explain it.
+  // the CSRF policy can read — a mismatch 403s with nothing on the page to explain it.
   it("writes the app's own header name into hx-headers when it renamed one, on its own or merged", async () => {
     expect(attrOf(await render(<Form csrfToken='abc123' csrfHeader='X-App-Csrf' />), "hx-headers")).toBe(
       "{&quot;X-App-Csrf&quot;:&quot;abc123&quot;}",

@@ -33,7 +33,7 @@ audience: internal
 - §2h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
-- §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
+- §2k `dev:forge` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
 - §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:scheduled` alone, and where component coverage is checked
 - §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
 - §2n A Node-Reached Export Is Declared Under `forge.node`: the one list every bundle, drift row and check is derived from
@@ -44,8 +44,7 @@ audience: internal
 
 ## 1. tooling/cli Namespace
 
-Signatures, worked examples, and the full flag-parsing table live in `src/tooling/cli/README.md`. This section carries only the decisions behind
-them.
+Signatures, worked examples and the flag-parsing table live in `src/tooling/cli/README.md`. This section carries only the decisions behind them.
 
 ### 1a. Commands Are Values
 
@@ -346,6 +345,9 @@ lower tiers twice, which the resolver refuses as a duplicate label.
 **Generation leads judgement**: the `wrangler types` step and the asset-types emitter both write files `typecheck` then reads, so they precede it
 — a stale generated type surfaces as a type error rather than as a green run over yesterday's output.
 
+**`validate-service-worker` follows `validate-asset-manifest`** and fails a built `sw.js` that is behind the files its last build read, so the
+test row never reads a stale worker. The record it reads is [`ASSET_PIPELINE.md`][ap-4d] §4d's.
+
 **The preset generates runtime types only** (`--no-include-env`). The `Env` interface is the one `forge cf gen env` commits in `env.schema.ts`, so
 no second generator describes a binding. `--config` goes on that invocation when `workerConfig` is set, because runtime types follow the config's
 compatibility date and flags. `validate-generated-types` follows it and fails any other wrangler-generated file under `.types/`: nothing
@@ -493,17 +495,17 @@ pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, wh
 (§2b) names the prefix as the remedy for its refusal: `--allow-semver` silences the guard rather than answering it, and is for a shrink where a
 patch bump is genuinely correct.
 
-### 2k. `forge dev sync` Is Asked For, Never Automatic
+### 2k. `dev:forge` Is Asked For, Never Automatic
 
 **`syncForge` replaces the forge installed under a consumer's `node_modules` with this checkout, packed as it would be published** — `bun pm pack`
-into a staging tarball, then extracted over the installed tree. It is the only way to exercise an unreleased change against a real consumer without
-cutting a tag, and it runs `--ignore-scripts` so the pack cannot execute anything the publish would not.
+into a staging tarball, extracted over the installed tree, with `--ignore-scripts` so the pack runs nothing the publish would not. A consumer
+runs it as its `dev:forge` script, never a `forge` subcommand, to exercise an unreleased change without a tag.
 
 **It is deliberately not a `postinstall` hook, and that is the capability forge does not have.** The result disagrees with the consumer's lockfile
-on purpose: the installed tree stops matching the tag the lockfile pins. Making it automatic would mean every `bun i` in the consumer silently
-swapped a published dependency for a working copy, and the failure mode — a bug reproducing only on one machine, against code no tag contains — is
-the worst kind to diagnose. Because it is a command, a plain `bun i` restores the pinned tag and the override has to be asked for again, which is
-the behaviour a consumer can reason about.
+on purpose: the installed tree stops matching the tag the lockfile pins. Made automatic, every `bun i` in the consumer would silently swap a
+published dependency for a working copy, and a bug reproducing only on one machine, against code no tag contains, is the worst kind to diagnose.
+As a command, a plain `bun i` restores the pinned tag, because the sync deletes the installed directory, and with it the `.bun-tag` file bun
+reads to treat the package as installed; the override has to be asked for again.
 
 ### 2l. A Forge Release Never Waits on a Consumer
 
@@ -513,7 +515,7 @@ the dependency inverted.
 
 **A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it
 installs, so a release that publishes a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead
-of a release, the demonstrator runs that spec after `forge dev sync` (§2k).
+of a release, the demonstrator runs that spec after `dev:forge` (§2k).
 
 **`verify:scheduled` holds the cross-engine row, so a release needs both Playwright servers up.** At `scheduled` an absent requirement fails, and
 `forge release` refuses to tag a tree its gate has not passed. A machine without `playwright-compat` cannot cut a release
@@ -527,16 +529,28 @@ support for a Bun no run has tested. Raising one means raising the other in the 
 
 ### 2n. A Node-Reached Export Is Declared Under `forge.node`
 
-**A subpath a Node process imports is listed under `forge.node` in `package.json`, and its export points `import` at a generated `.mjs`** beside a
-`types` naming the `.ts` entry. `bun run gen:bundles` writes the `.mjs`; nothing else is edited. Node refuses to strip types under `node_modules`,
-and forge's extensionless imports do not resolve under Node ESM, so a `.ts` target there breaks the consumer rather than forge
-([`NAMESPACES.md`][namespaces-3c] §3c).
+**A subpath a Node process imports is listed under `forge.node` in `package.json`, and its export points `import` at a generated `<stem>.node.mjs`**
+beside a `types` naming the `.ts` entry. `bun run gen:bundles` writes the `.node.mjs`; nothing else is edited. Node refuses to strip types
+under `node_modules`, and forge's extensionless imports do not resolve under Node ESM, so a `.ts` target there breaks the consumer rather than
+forge ([`NAMESPACES.md`][namespaces-3c] §3c).
 
 **Everything else is derived from that list.** `nodeBundles` turns each entry into a bundle row — the `validate-<subpath>-bundle` drift check,
 watching the entry's relative-import closure — and `gen:bundles` writes the same rows. `validate-node-exports` fails a listed subpath whose export
 is missing or does not point `import` at a `.mjs`, and an `.mjs` export the list leaves out. `tests/workerd/harness-consumer.workerd.ts` loads every
 listed subpath under node from the packed tarball. Its consumer root links forge's `dependencies` and every package a listed bundle
 imports, derived from the bundles themselves.
+
+**A bundle is never named `<stem>.mjs`, because an extensionless import would reach it.** Inside `node_modules`, Bun resolves `../validation/mod`
+to a `mod.mjs`, `mod.js` or `mod.cjs` ahead of `mod.ts`, so forge's own modules load the bundle while their siblings load the source, and module
+state such as `safeCheck`'s registry splits in two. `validate-bundle-shadows` refuses any `.mjs`, `.js` or `.cjs`, or an `index` of one, that an
+extensionless relative import in `src/` reaches, and `config/bundles.test.ts` installs forge as `dev:forge` does and checks a `safeCheck`
+message survives `createConfig` under bun.
+
+**A bundle is request-free, by a build condition rather than by convention.** `bundleSource` passes esbuild the `forge-node-bundle` condition
+and nothing else resolves it. Under it, `#request-scope` in `package.json` `imports` picks `src/context/request-scope.node.ts`, which throws
+`RequestFreeBundleError` on any read or write of a request's context. Everywhere else, `default` picks `src/context/request-scope.ts`. Creating a
+context key at module load still succeeds, so a bundle loads and its request-free exports answer. A bundle's own request keys would otherwise
+split from the source's. The one split left is `validation`'s `safeCheck` registry, which fails closed ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 **An export nobody lists still passes.** Nothing infers which exports Node reaches, so the declaration is the claim and the checks hold the export
 map to it.
@@ -586,6 +600,7 @@ flags from source, not from any config, and this check cannot see it.
 ---
 
 [ap]: ./ASSET_PIPELINE.md
+[ap-4d]: ./ASSET_PIPELINE.md#4d-the-service-workers-input-record
 [canon-testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
 [cb-6]: ../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
 [fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
@@ -598,3 +613,4 @@ flags from source, not from any config, and this check cannot see it.
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
 [testing-6e]: ../warden/canon/libs/TESTING.md#6e-what-the-runner-promises
+[testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel

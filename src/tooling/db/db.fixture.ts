@@ -290,7 +290,9 @@ export function fakeDbIo(
     },
     splitD1: (_home, sql) => Promise.resolve(cutSqlStatements(sql)),
     buckets: new Map(),
+    bindingCalls: [],
     bucket(home, binding) {
+      io.bindingCalls.push({ kind: "bucket", binding, home: home.label, configPath: home.configPath });
       const bucket = io.buckets.get(binding);
       if (bucket === undefined)
         return Promise.reject(new CliError("invalid-args", `${home.configPath} declares no r2_buckets binding named ${binding}`));
@@ -298,6 +300,7 @@ export function fakeDbIo(
     },
     databases: new Map(),
     database(home, binding) {
+      io.bindingCalls.push({ kind: "database", binding, home: home.label, configPath: home.configPath });
       const database = io.databases.get(binding);
       if (database === undefined)
         return Promise.reject(new CliError("invalid-args", `${home.configPath} declares no d1_databases binding named ${binding}`));

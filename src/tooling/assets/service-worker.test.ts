@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { spawnSync } from "bun";
+
 import { buildServiceWorker, precacheUrls, precacheVersion, removeServiceWorker } from "./service-worker";
 
 function workerProject(source: string): string {
@@ -99,7 +101,7 @@ describe("buildServiceWorker", () => {
         { outDir: join(root, "public"), precache: ["/assets/js/main.js"], version: "3f9a" },
       );
 
-      expect(JSON.parse(Bun.spawnSync(["bun", written]).stdout.toString())).toEqual({ urls: ["/assets/js/main.js"], version: "3f9a" });
+      expect(JSON.parse(spawnSync(["bun", written]).stdout.toString())).toEqual({ urls: ["/assets/js/main.js"], version: "3f9a" });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -115,7 +117,7 @@ describe("buildServiceWorker", () => {
       );
 
       expect(written).toBe(join(outDir, "sw.js"));
-      expect(Bun.spawnSync(["bun", written]).stdout.toString().trim()).toBe(
+      expect(spawnSync(["bun", written]).stdout.toString().trim()).toBe(
         JSON.stringify(["/assets/js/main-AB12.js", "/assets/js/chunks/editor.mount-CD34.js"]),
       );
     } finally {

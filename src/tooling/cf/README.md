@@ -370,6 +370,24 @@ command would and fails when the file is missing or differs, naming the command 
 path states the same path to the row, as `envSchema: { out: "src/app/env-schema.ts" }`. The row also fails a `wrangler.jsonc` that declares no
 `secrets`: `.dev.vars` is gitignored, so names read from it would differ between your machine and CI. Declare them in `secrets.required`.
 
+### The rate-limit table
+
+**Each `ratelimits` entry's window is emitted as `RATELIMITS`**, beside `EnvSchema`, so code that needs a limit's period reads the one
+wrangler declares rather than restating it:
+
+```ts
+export const RATELIMITS = {
+  MAIN_LIMITER: { limit: 100, period: 60 },
+} as const;
+```
+
+**A binding has one `period` across environments, because `Retry-After` reports it.** Generation fails, naming the binding and the environment,
+when an `env.<name>` block changes it; give the other period its own binding name. An environment may set its own `limit`, and `RATELIMITS`
+carries the top-level one.
+
+**A `simple.period` other than 10 or 60 fails generation, naming the binding**, as a missing one does, because Cloudflare enforces no other.
+`validate-env-schema` holds the table to `wrangler.jsonc` like the rest of the module, so a changed period fails the gate until you regenerate.
+
 ### Typing a binding gen env leaves out
 
 An `unsafe.bindings` or `logfwdr` binding gets no `EnvSchema` entry, so `validateBindings` does not check it. The binding is still on `env`; only

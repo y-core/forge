@@ -1,5 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
+import type { Refusal } from "../context/types";
 import type { KeyRingResolver } from "../crypto/keyring/types";
 import type { GuardResult } from "../result/types";
 
@@ -63,40 +64,25 @@ export interface TurnstileVerifyOptions {
 }
 
 /** Why `verifyCsrfToken` refused a token. @public */
-export type CsrfFailure =
-  | "expired"
-  | "future-timestamp"
-  | "invalid-format"
-  | "invalid-signature"
-  | "missing-token"
-  | "path-mismatch"
-  | "subject-mismatch"
-  | "unknown-key";
+export type CsrfFailure = Exclude<CsrfRefusal, "unbound-subject">;
 
 /** Result of a CSRF token verification. @public */
 export type CsrfResult = GuardResult<CsrfFailure>;
 
-/** Why `csrfProtection` refused a mutation: a token failure, or a `subject` resolver that returned nothing to bind to. @public */
-export type CsrfRefusal = CsrfFailure | "unbound-subject";
+/** Why the CSRF policy refused a mutation: a token failure, or a `subject` resolver that returned nothing to bind to. @public */
+export type CsrfRefusal = Extract<Refusal, { guard: "csrf"; status: 403 }>["reason"];
 
-/** Options for `csrfMinter`, which are `csrfProtection`'s minting half. @public */
-export interface CsrfMinterOptions {
-  ring: KeyRingResolver;
-  /** Binds the token to a subject — pass the same resolver the `csrfProtection` guarding the path was given, or `false` where it opted out. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
-}
-
-/** Options for the `csrfProtection` middleware. @public */
-export interface CsrfProtectionOptions {
-  ring: KeyRingResolver;
+/** Options for the app's CSRF policy, as `MiddlewareCsrfPolicy` and `csrfMintStage` take them. @public */
+export interface CsrfPolicyOptions<Bindings = Record<string, unknown>> {
+  ring: KeyRingResolver<Bindings>;
   tokenField?: string;
   headerName?: string;
+  /** `"session"` binds every token to the chain session's id, resolved by `applyMiddlewareChain`; `false` mints path-only tokens. */
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
+  subject: "session" | ((context: RequestContext<any, any>) => string | undefined) | false;
   maxBytes?: number;
-  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  onForbidden?: (context: RequestContext<any, any>, reason: CsrfRefusal) => Response | Promise<Response>;
+  /** How long a token verifies, in milliseconds; defaults to `CSRF_MAX_AGE_MS_DEFAULT`, 24 hours. */
+  maxAgeMs?: number;
 }
 
 /** Whether `secretKey` may verify a Turnstile token against siteverify's fixed testing answer. @internal */

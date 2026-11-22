@@ -13,6 +13,7 @@ import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
 import { PLAYWRIGHT_RESULTS } from "./playwright-results";
+import { cloudflareWorkerSteps } from "./presets";
 import { clearReceipt, readReceipt, recordReceipt } from "./receipt";
 import { tier } from "./tiers";
 import type { CommandStep, GateRunReport, Step, StepResults, StepTiers, TestFailure } from "./types";
@@ -432,6 +433,15 @@ describe("createGateCommand() — --list", () => {
 
     expect(logs).toEqual(["verify --tier unit — 2 steps\n  alpha\n  validate-class-groups (conditional — tailwindcss required)"]);
     expect(code).toBeUndefined();
+  });
+
+  it("lists the service-worker check for an app with an asset config, between the manifest check and the tests that read the worker", async () => {
+    const root = fixtureRoot();
+    const { logs } = await run(cloudflareWorkerSteps({ root, assetConfig: "assets.config.ts" }), { list: true, tier: "unit" }, { cwd: root });
+    const rows = (logs[0] ?? "").split("\n").map((line) => line.trim());
+    const at = (label: string) => rows.indexOf(label);
+
+    expect([at("validate-asset-manifest") + 1 === at("validate-service-worker"), at("validate-service-worker") < at("test")]).toEqual([true, true]);
   });
 
   it("states the dependency as required at the scheduled tier, where its absence is a failure", async () => {

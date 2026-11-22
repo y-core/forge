@@ -11,7 +11,7 @@ import { createUserStore } from "../../src/auth/stores/users";
 import { createD1Client } from "../../src/storage/db/client";
 import type { D1Client, SqlFragment } from "../../src/storage/db/types";
 import { uuidv7 } from "../../src/storage/db/uuid";
-import { explainPlan, scansTable, type TestD1, usesIndex } from "../../src/testing/d1";
+import { explainPlan, scansTable, type TestD1, usesIndex } from "../../src/testing/d1/mod";
 import { openAuthD1 } from "./auth-d1.fixture";
 
 let db: TestD1;
@@ -180,9 +180,9 @@ const lookups: { title: string; run: (client: D1Client) => Promise<unknown>; at:
 
 for (const { title, run, at, index } of lookups) {
   test(title, async () => {
-    const fragment = (await preparedBy(db, run))[at];
+    const fragment = (await preparedBy(db, run))[at] as SqlFragment;
     expect(fragment).toBeDefined();
-    expect(usesIndex(await explainPlan(db, fragment as SqlFragment), index)).toBe(true);
+    expect(usesIndex(await explainPlan(db, fragment.text, fragment.params), index)).toBe(true);
   });
 }
 
@@ -196,9 +196,11 @@ const purges: { title: string; table: string; index: string }[] = [
 
 for (const { title, table, index } of purges) {
   test(`purgeAuthEphemera reaches ${title} through ${index} and never scans ${table}`, async () => {
-    const fragment = (await preparedBy(db, (c) => purgeAuthEphemera(c, 1))).find((prepared) => prepared.text.startsWith(`DELETE FROM ${table} `));
+    const fragment = (await preparedBy(db, (c) => purgeAuthEphemera(c, 1))).find((prepared) =>
+      prepared.text.startsWith(`DELETE FROM ${table} `),
+    ) as SqlFragment;
     expect(fragment).toBeDefined();
-    const plan = await explainPlan(db, fragment as SqlFragment);
+    const plan = await explainPlan(db, fragment.text, fragment.params);
     expect(usesIndex(plan, index)).toBe(true);
     expect(scansTable(plan, table)).toBe(false);
   });

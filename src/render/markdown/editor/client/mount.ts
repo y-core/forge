@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands";
 import { forceParsing, syntaxTree } from "@codemirror/language";
-import { Annotation, Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
+import { Annotation, Compartment, EditorSelection, EditorState, Prec, Transaction } from "@codemirror/state";
 import type { Extension, Line, StateEffect, TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
@@ -89,7 +89,7 @@ export function createViewportState(options: ViewportStateOptions): EditorState 
       keymap.of([...viewportKeymap, { key: "Enter", run: insertNewline }, ...historyKeymap, ...defaultKeymap]),
       EditorView.lineWrapping,
       editorTheme,
-      options.dialect === undefined ? [] : [viewportDialect.of(options.dialect), options.dialect.theme ?? []],
+      options.dialect === undefined ? [] : [viewportDialect.of(options.dialect), Prec.high(options.dialect.theme ?? [])],
       EditorView.contentAttributes.of({ "aria-label": options.label, "aria-multiline": "true" }),
       MODE.of(modeExtension(effectiveMode(options.mode, options.rendering))),
       RENDERING.of(renderingExtension(options.rendering)),

@@ -46,16 +46,31 @@ map.
 name defined, and it is a test: it compiles against the real signatures and drives signup → code → enrolment → step-up → a guarded page, once per
 step-up factor. Copy the wiring from there. This section rules on the order it follows.
 
-**Order is load-bearing, and one order works: the session, then `globals`, then the guard groups, then the routes.** `applyMiddlewareChain` takes
-the first three and produces the chain order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states. `registerAuth`, `registerAccount` and
-`registerAdmin` mount the routes after it.
+**Order is load-bearing, and one order works: the session, then the `csrf` policy, then `globals`, then the guard groups, then the routes.**
+`applyMiddlewareChain` takes the first four, the guard groups as the contribution `createAuthGuards` returns, and produces the chain order
+[`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states. `registerAuth`,
+`registerAccount` and `registerAdmin` mount the routes after it.
 
-**`csrfProtection` goes in `globals`, never ahead of the session.** Its subject resolver runs before `next()` on a mutation, so mounted ahead of
-the session every mutation is refused.
+**CSRF is the chain's `csrf` policy, the app's one**, never a contribution's; where it arms, the order it verifies in and how it refuses are
+the guard policy table's ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 
-**That `csrfProtection` takes `onForbidden: authCsrfRefusal(paths.auth)`.** A sign-out posted from a page open past the token's hour then lands on
-the `GET` sign-out confirm page, not on a bare 403 that leaves the session alive. Both paths come off the same `authPaths` map, so they move with
-the mount point. The hook is single: a mount that answers refusals its own way must choose between the two.
+**The `csrf` policy must cover the whole mount, or the chain throws at registration.** Every auth page mints a token, so every group
+`createAuthGuards` returns carries a sample URL for every form of every route its `routes` maps, an optional segment kept and dropped and each
+param or wildcard filled with its own name, and `approval.contribution` its prompt's `path`, as `csrfCovers`; a group spread into an app's own
+contribution keeps them. `applyMiddlewareChain` refuses a chain with no `csrf` policy, `paths` that miss one of them, or an `exclude` entry that
+matches one, naming the route, the contribution or guard group listing it, and the `paths` or the entry. So keep
+`exclude` beside the mount: `["/public/*"]` registers, and `["/members/*"]` over a mount at `/members` throws. The check tries those samples, not
+every value, so an `exclude` must not name an auth route at any value: `/members/account/passkeys/abc` registers, and leaves that passkey's page
+answering `500`.
+
+**`createAuthGuards` sends a CSRF-refused sign-out to its confirm page itself, with no hook passed.** A sign-out posted from a page open past
+the token's life lands on the `GET` sign-out confirm page, or gets a `204` with `HX-Redirect` under htmx, not a bare 403 that leaves the session
+alive. Both paths are read off `routes.auth`, so they move with the mount point. It answers even where an app's own group also covers the path,
+since a contribution's groups register after the root's and the last-registered one answers. Every other refusal on the HTML groups goes to the
+`onRefuse` passed to `createAuthGuards`; one that hook declines by returning `undefined`, or any refusal when none is passed, goes on to the
+chain's `onRefuse`, then to forge's default ([`FORGE_ERRORS.md`][eh-3e] §3e). So the hook answers only what it owns, such as the admin page's
+`admin` refusal, and the rest of the app keeps the chain's. The JSON groups, `ceremony` and `passkeyCeremony`, answer with `refuseAsProblem`
+whatever the app passes.
 
 **Every store handed to `createAuthGuards` is a resolver, not a value.** On a Worker a store needs `c.env`, which exists only per request. The
 factor registry is the same: the test's `factorRegistryFor` builds a `createFactorRegistry` over this request's factor store.
@@ -77,7 +92,7 @@ the flow believes settled. Building one registry per request and handing it to b
 and, once they sign in, the token naming their `auth_sessions` row; the identity is the row. So a signed-in visitor keeps their identity on a
 route outside the auth groups, and an anonymous funnel on the same app needs no second session. A second mount on a path the first also
 matches throws ([`src/session/README.md`][session-readme]). KV storage works too, and is the choice only for visitor state too large for a
-cookie.
+cookie. The canonical mount test uses cookie storage.
 
 **Under cookie storage, the address a visitor typed sits readable in their cookie until sign-in completes.** The cookie is signed, so nobody
 can alter it, and httpOnly, so page JavaScript cannot read it. It is not encrypted, so anyone holding the device's cookie store can read the
@@ -88,11 +103,23 @@ token, which is the worse leak. Forge does not encrypt the address, because the 
 Sign-in and step-up write it, but the idle touch that keeps a session alive writes only D1, so a shorter `maxAge` ends an active session before
 its row does. For the default lifetime that is 7 days, `AUTH_SESSION_MAX_MS / 1000` seconds; `createAnonymousSession`'s default of 365 days
 already clears it. The row's absolute and idle bounds then decide when a session ends. The cost is that an abandoned sign-in leaves the
-address in the cookie for up to `maxAge`.
+address in the cookie for up to `maxAge`. **The chain enforces it at build**: a `maxAge` shorter than the absolute lifetime, or none, throws at
+registration once auth is mounted, naming both values ([`ROUTING_AND_MIDDLEWARE.md`][ram-3h] §3h). The contribution `createAuthGuards`
+returns carries the lifetime, read off `services.absoluteLifetimeMs`. The 24-hour idle bound stays, and a
+bound over 20 hours is exempt from WCAG 2.2.1; one shortened below that owes the visitor a warning before expiry and a way to extend.
+
+**Sign-out deletes the row, then destroys the session.** `clearAuthSession` removes the D1 row and calls `destroy()`, so the next request starts
+a fresh session with no visitor data, which is what a shared device needs. An app that must keep visitor data across sign-out passes
+`signOut: { keepVisitorData: true }`, which drops only the auth keys and regenerates the id. Either way a token bound to the old session id
+fails in another open tab, because the id changes.
+
+**The guards and the services share one session store.** `authRequestServices` builds the auth session store once per request and holds it on
+the context. The guards take that resolver as `services` and resolve the session through its store rather than building a second, and a guard
+given none throws when it is built ([`ROUTING_AND_MIDDLEWARE.md`][ram-3h] §3h).
 
 **Use `createAnonymousSession`, not `sessionMiddleware`, on a Worker.** `sessionMiddleware(storage, cookie)` takes both eagerly, and
-`createKVSessionStorage` needs a KV binding that exists only per request; `createAnonymousSession` resolves the secret and the binding from the
-request and caches the middleware on `env` identity — see [`src/session/README.md`][session-readme] section “Anonymous sessions”. Reach for
+`createKVSessionStorage` needs a KV binding that exists only per request; `createAnonymousSession` resolves both from `env` and
+caches the middleware on `env` identity ([`src/session/README.md`][session-readme-start], “Getting started”). Reach for
 `sessionMiddleware` only where you already hold a `SessionStorage`.
 
 **Building the storage yourself per request is not that case.** A middleware that constructs a `createKVSessionStorage` and a `createSignedCookie`
@@ -102,9 +129,9 @@ cookie name is part of the keying, and a `__Host-` prefix additionally constrain
 re-keys every live session silently — every signed-in visitor is anonymous on the next request, with no error anywhere. Change it where you can
 verify a live session survives, not as a tidy-up.
 
-`applyMiddlewareChain` encodes the order inside a group — origin, then rate limit, then the guards — so a consumer never writes it, and
-`buildGuardChain` is that same expansion exported for anyone mounting a group by hand. `origin` and `rateLimit` on a group are **policy data the
-chain expands into middleware**: a consumer who spreads `group.guards` alone mounts neither, and on a guard-less group mounts nothing at all.
+`applyMiddlewareChain` encodes the order inside a group, so a consumer never writes it ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). `origin`
+and `rateLimit` on a group are **policy data the chain expands into middleware**: a consumer who spreads `group.guards` alone mounts neither,
+and on a guard-less group mounts nothing at all.
 
 **`origin` is required, and omitting it throws.** `createAuthGuards` refuses to return at all once any group it is wiring answers a state-changing
 method with no allowlist behind it — the throw names the group, and it happens inside `app.use(…)`, which is isolate startup on a Worker. Forge
@@ -112,9 +139,14 @@ cannot pick your origins and an absent allowlist is not an opt-out, so the alter
 with no cross-origin defence at all and telling nobody. `admin` never reaches this check, because it is never emitted (§2).
 
 **`rateLimit` is keyed by the group's own dotted path** — the `path.join(".")` of each `AUTH_ROUTE_GROUPS` entry. Forge picks no numbers and ships
-no binding, since a window right for the sign-in POST is wrong for the admin console. A group nothing is named for gets no limit, and a guard-less
-group named for one is emitted for the limit alone. Do not instead match the returned array by path and mutate it: that is the second
-copy of the group table this design exists to prevent.
+no binding, since a window right for the sign-in POST is wrong for the admin console. Omit `rateLimit` and no group gets a limit. Pass it and
+**a group with no key of its own inherits its nearest keyed ancestor's limit, keyed per route**: every options object, stacked ones included,
+gets the matched route pattern appended to its key (`routeKeySuffix`, or `${key(c)}:<pattern>` for a custom `key`), so `auth.verify`'s and
+`auth.enrol`'s routes each spend a budget of their own and never the parent's, and a request is charged once
+([`SECURITY_HARDENING.md`][sh-4e] §4e). `false` mounts a group, and every keyless group under it, with no limit. A group holding a route of its
+own with no keyed ancestor throws, so a dropped key cannot leave a ceremony unlimited unnoticed. A guard-less group keyed a limit is emitted for
+the limit alone. A missing group, a key naming no group, or a key on a route-less group that no subgroup inherits, throws at construction. Do not
+instead match the returned array by path and mutate it: that is the second copy of the group table this design exists to prevent.
 
 **`Forge` builds its dispatching router once, lazily, on the first request**, so an `app.use` after that request throws rather than register a stack
 that would never run — everything above happens at bootstrap.
@@ -168,8 +200,8 @@ signed such a user in counts as that proof, so a fresh sign-in is inside the win
 
 **`auth` carries no guards and is still emitted**, because `origin` is required and every mutating leaf of a group gets the allowlist check — its
 sign-in and sign-up POSTs are exactly the mutations with no identity to check. A group with an empty `guards` array is dropped only where it has no
-mutating leaf and no rate limit was named for it. `admin` never appears: its own level has no direct leaf, `users` and `elevate` registering their
-own.
+mutating leaf and no rate limit was named for it, and a limit named for a dropped group throws. `admin` never appears: its own level has no
+direct leaf, `users` and `elevate` registering their own.
 
 ---
 
@@ -185,11 +217,11 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A D1 binding and the applied auth schema | Every auth store — the durable ones, the signed-in sessions, and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
 | A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row until something deletes it. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong, for those rows. Nothing else deletes an account that never verified its address or a security event past its retention. One run deletes a bounded amount, names any table an app key's constraint blocked, and answers whether it reached every lapsed row, so how often to schedule it is the app's call; [`src/auth/README.md`][auth-readme]'s "Clearing expired challenges, nonces and sessions" reads the report. |
 | A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
-| An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` send an anonymous visitor to sign-in and answer a signed-in one with **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
+| An `Approval` passed to `createAuthGuards` as `approval`, its `contribution` passed to `applyMiddlewareChain` and its prompt mapped with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` send an anonymous visitor to sign-in and answer a signed-in one with **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
 | Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **`storage: "cookie"`**: the session carries only the row token and visitor state, so an anonymous request writes nothing server-side, and deleting the row ends a sign-in under either storage (§1). |
-| `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
+| A `csrf` policy on `applyMiddlewareChain`, taking [`@y-core/forge/form`][form-readme]'s `CsrfPolicyOptions` | `mintCsrf` has no minter without it, so every rendered form carries no token. Pass it as `csrf` on the chain, never in `globals`. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | With `AuthWebOptions.turnstile` set: `import "@y-core/forge/ui/client/htmx"` before `resume()`, the `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` bindings, and a CSP that admits Cloudflare's challenge | Without that import nothing mounts the widget or holds the press, so no token reaches the server and every guarded form is refused (§8). Without either binding every guarded page answers 500 naming it. The CSP takes either `NONCE` with `'strict-dynamic'` in `scriptSrc`, or `TURNSTILE_CSP` there, and `TURNSTILE_CSP` in `frameSrc` and `connectSrc` either way — [`src/security/README.md`][security-readme] section “Widening the policy for a third-party origin”. Where Trusted Types are enforced, the `trusted-types` directive lists `TURNSTILE_TRUSTED_TYPES_POLICY` beside `HTMX_TRUSTED_TYPES_POLICY` ([`SECURITY_HARDENING.md`][sh-2g] §2g). |
 | `@import "@y-core/forge/auth/sources.css";` in your stylesheet | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The file carries the `@source` lines for `src/auth/`; [`src/auth/README.md`][auth-readme] has the detail. |
@@ -221,9 +253,10 @@ stops at the guard line only because the guard runs before dispatch.
 **`rateLimit` is keyed by the group's dotted path rather than declared on `AuthRouteGroup`** (§1), so the group table stays the one description of
 what a group is and a consumer never restates it.
 
-**Mounting the session middleware is yours, and nothing checks it at bootstrap.** `createAuthGuards` takes no `session` option: an option can only
-be checked for presence, and a middleware other than the one actually mounted satisfies that check while protecting nothing. The check that holds
-runs per request — `requireAuth` throws when the request carries no session, naming what to mount. So: session middleware first, then the guard
+**Mounting the session middleware is yours.** `createAuthGuards` takes no `session` option: an option can only be checked for presence, and a
+middleware other than the one actually mounted satisfies that check while protecting nothing. At bootstrap the chain refuses the guards'
+contribution with no session slot, or with a slot whose cookie lifetime is shorter than it needs (§1). The check that the session is set runs
+per request — `requireAuth` throws when the request carries no session, naming what to mount. So: session middleware first, then the guard
 chain — a special case of the order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states, which `applyMiddlewareChain` produces from both.
 
 ---
@@ -242,8 +275,8 @@ last:
 
 | Bound | Default | Set with |
 | --- | --- | --- |
-| Absolute lifetime, from sign-in | 7 days, `AUTH_SESSION_MAX_MS` | `absoluteLifetimeMs` on `createAuthSessionStore` |
-| Idle bound, from the last request | 24 h, `AUTH_SESSION_IDLE_MS` | `idleTimeoutMs` on `createAuthSessionStore`; `null` for none |
+| Absolute lifetime, from sign-in | 7 days, `AUTH_SESSION_MAX_MS` | `sessionOptions.absoluteLifetimeMs` on `authRequestServices` |
+| Idle bound, from the last request | 24 h, `AUTH_SESSION_IDLE_MS` | `sessionOptions.idleTimeoutMs` on `authRequestServices`; `null` for none |
 | How long a step-up satisfies a second-factor demand | 24 h, `AUTH_STEP_UP_MAX_MS` | `stepUpMaxAgeMs` on the guards; `null` lasts the session |
 | How recent a step-up a state-changing request needs | 15 min, `AUTH_FRESH_STEP_UP_MS` | `freshStepUpMaxAgeMs` (§2) |
 | The session cookie, from its last write | 365 days | `maxAge` on `createAnonymousSession`; at least `AUTH_SESSION_MAX_MS / 1000` (§1) |
@@ -254,13 +287,13 @@ meet. AAL2 asks for re-authentication at least every 24 hours and after an hour 
 factor and wants AAL2's bounds sets both:
 
 ```ts
-createAuthSessionStore(db, { absoluteLifetimeMs: 86_400_000, idleTimeoutMs: 3_600_000 });
+authRequestServices<Env>({ ...servicesOptions, sessionOptions: { absoluteLifetimeMs: 86_400_000, idleTimeoutMs: 3_600_000 } });
 ```
 
-**Build every session store a request uses from one helper**, because the bounds are split between them: the store `resolveServices` returns sets
-a new session's expiry and lists the sessions page, and the store the guards' `sessions` resolver returns decides whether a request is still
-signed in. Configured apart, a session takes its lifetime from one and its idle bound from the other. The helper is in
-[`src/auth/README.md`][auth-readme] section “Getting started”.
+**Set the bounds once, on `authRequestServices`, and hand its resolver to the guards as `services`.** The one store it builds per request
+sets a new session's expiry, lists the sessions page and decides whether a request is still signed in. A second store, configured apart,
+would give a session its lifetime from one and its idle bound from the other. The resolver is in [`src/auth/README.md`][auth-readme] section
+“Getting started”.
 
 **What one signed-in request reads.** It reads its session row joined to the owner's id, address and administrator flag. Under `requireAuth` it
 also reads which second factors the owner has confirmed — their kinds, never a secret — but only where the registry offers a second factor;
@@ -307,7 +340,7 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 
 **`require-auth`, `require-admin` and `require-approval` are re-checked here and are not taken on trust.** `require-auth` reads the identity off
 `authCtx` and nowhere else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin`
-off that identity and answers with the `onForbidden` that `requireAdmin` was given, and with the plain 403 where it was given none.
+off that identity and refuses as `requireAdmin` does ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 `require-approval` reads `approvalCtx`, which only an admitting `requireApproval` sets, so an `adminElevate` embed on a route that skips it answers
 404 rather than showing the claim form to a visitor who never presented the code; the claim's own handler refuses the same way.
 `resolve-auth` and `require-fresh-step-up` are not re-checked because a render has nothing for either to refuse: `resolve-auth` admits every
@@ -317,10 +350,10 @@ whole check. That is why it is a claim a reviewer can check, and why a lie about
 lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
-the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a
-route embedding an auth view has to sit behind the same `csrfProtection` the auth prefixes do, not a second one configured differently: mint under a
-subject-less guard and the guarded path refuses the token, mint under none at all and `mintCsrf` throws before anything renders. Extending the path
-list of the guard you already mount is the whole fix.
+the action path — `authRoutes`' `signinSubmit` for the sign-in view — and CSRF binds a token to its subject as well as its path. So a route
+embedding an auth view has to sit inside the chain `csrf` policy's `paths` and outside its `exclude`: a route the policy does not cover has no
+minter, and `mintCsrf` throws before anything renders. The policy covers every path unless its `paths` narrow it, and widening them is the whole
+fix.
 
 **Placing the view in your layout is `class` and `level`.** Every view accepts both. `class` is composed onto the root after the view's own classes,
 so your width or margin wins; `level` sets the heading tag from the view's place in _your_ document, never from its size. Both default to what forge
@@ -439,6 +472,7 @@ swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
 [af-9b]: ./AUTH_FLOWS.md#9b-a-held-factor-is-passed-before-any-enrolment
 [auth-readme]: ../src/auth/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
+[eh-3e]: ./FORGE_ERRORS.md#3e-one-refusal-contract-for-every-guard
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../src/form/README.md
 [iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
@@ -447,12 +481,15 @@ swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-1e]: ./ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[ram-3h]: ./ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
 [security-readme]: ../src/security/README.md
 [session-readme]: ../src/session/README.md
+[session-readme-start]: ../src/session/README.md#getting-started
 [sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
+[sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
 [ucr-2h]: ./UI_CLIENT_RUNTIME.md#2h-turnstile--what-submit-mode-does-not-hold
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
-[ucr-4a]: ./UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
+[ucr-4a]: ./UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-and-marked-5xx
 [ui-readme]: ../src/ui/README.md

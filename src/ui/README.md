@@ -259,7 +259,7 @@ Render trees inside a route handler with `renderToString` (`@y-core/forge/render
 (`@y-core/forge/http`).
 
 **Pass `csrfToken` to `Form` and it does both halves**: the hidden field, and the token merged into `hx-headers`. Pass `csrfHeader` as well when
-`csrfProtection` renamed the header, because on some forms the header is the only copy that arrives.
+the app's CSRF policy renamed the header, because on some forms the header is the only copy that arrives.
 
 **A form htmx or the browser submits by GET or DELETE gets no hidden field**, only the header. Those verbs send the form's fields in the URL,
 and a token in a URL reaches every log that records one. A DELETE form that must also work without JavaScript keeps the plain form and moves the
@@ -1176,8 +1176,9 @@ If you set htmx's `extensions` config, it must name the policy too. What each co
 
 ### Answer a request that failed
 
-A 4xx `text/html` response swaps into the request's target and a 5xx leaves the target as it was. So answer a refused submission with the fragment
-the reader should see — the form re-rendered with its errors, at 422 — and let a server error fall through to your own error handling
+A 4xx `text/html` response swaps into the request's target, and so does a 5xx carrying `FAILURE_FRAGMENT_HEADER`, which `refuseAsFragment` and
+`defineAction`'s 500 fragment set; any other 5xx leaves the target as it was. So answer a refused submission with the fragment the reader should
+see — the form re-rendered with its errors, at 422 — and let a server error fall through to your own error handling
 ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a).
 
 **A 4xx in any other content type leaves the target alone and is announced instead**, so a CSRF refusal's plain-text `Forbidden` is spoken
@@ -1193,10 +1194,10 @@ the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An e
 ### Show a message on the page after a redirect
 
 ```tsx
-import { createKeyRingResolver, importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { createFlash, FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 
-const flash = createFlash({ ring: createKeyRingResolver<Env>((c) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET))) });
+const flash = createFlash<Env>({ ring: (env) => importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)) });
 
 await flash.success(c, "Profile saved.");   // in a POST handler, then redirect
 const messages = await flash.get(c);         // in the next loader; clears as it reads
@@ -1205,8 +1206,8 @@ const messages = await flash.get(c);         // in the next loader; clears as it
 <FlashOob messages={messages} />; // HTMX out-of-band swap
 ```
 
-`createFlash` takes a key-ring resolver, as the session does, and returns a flasher over a cookie signed under the ring it resolves for each
-request — so build the flasher once at module scope, and let `createKeyRingResolver` import the ring once per env. The session's resolver serves,
+`createFlash` takes a key-ring resolver, as the session does, and returns a flasher over a cookie signed under the ring it resolves once per
+env — so build the flasher once at module scope. The session's resolver serves,
 because each cookie name signs under a subkey of its own. The cookie's name, path, max-age and `sameSite` all have defaults, so pass one only when
 the app needs it to differ. `success` / `info` / `warning` / `error` are conveniences over `set`, and `get` clears as it reads.
 
@@ -1302,39 +1303,82 @@ therefore hides the item rather than showing it, so a token lookup that misses c
 
 ### Compose the bar from contributions
 
-Create one `createPrimaryNav<NavKey, Ctx, NavState>()` per app. Each feature calls `contribute` when it registers, and the layout hands the result
-to `Navbar`:
+Each feature slice exports its part of the bar as a `NavContribution`, and the app root passes the list of them to `createPrimaryNav`, once per
+app. The layout hands the result to `Navbar`:
 
 ```tsx
 import type { AppContext } from "@y-core/forge/context";
 import { Navbar, createPrimaryNav } from "@y-core/forge/ui/chrome";
+import type { NavContribution } from "@y-core/forge/ui/chrome";
 
-type NavKey = "home" | "notebooks" | "account";
-export const nav = createPrimaryNav<NavKey, AppContext, { signedIn: boolean }>();
+type NavKey = "home" | "notebooks" | "settings";
+type Viewer = { signedIn: boolean };
 
-nav.contribute({ items: [{ label: "Home", href: "home" }], hrefs: { home: routes.home.href() } });
-nav.contribute({
-  items: [{ label: "Notebooks", href: "notebooks" }, { label: "Account", items: [{ label: "Settings", href: "account" }] }],
-  hrefs: { notebooks: routes.notebooks.href(), account: routes.account.href() },
-  footer: [{ label: "Your account", href: "account" }],
+// the home slice
+export const homeNav: NavContribution<"home", AppContext, Viewer> = {
+  items: [{ label: "Home", href: "home" }],
+  hrefs: { home: routes.home.href() },
+};
+
+// the notebooks slice
+export const notebooksNav: NavContribution<"notebooks" | "settings", AppContext, Viewer> = {
+  items: [{ label: "Notebooks", href: "notebooks" }, { key: "account", label: "Account", items: [{ label: "Settings", href: "settings" }] }],
+  hrefs: { notebooks: routes.notebooks.href(), settings: routes.settings.href() },
+  footer: [{ label: "Your account", href: "settings" }],
   state: async (c) => ({ signedIn: await isSignedIn(c) }),
-});
+};
+
+// the app root
+export const nav = createPrimaryNav<NavKey, AppContext, Viewer>([homeNav, notebooksNav]);
 
 <Navbar config={nav.definition()} resolveHref={nav.resolveHref} icon={AppIcon} />;
 ```
 
-**A key a contribution's links name must be in its own `hrefs`.** A misspelled key in `items`, `hrefs` or `footer` fails `bun check`. A
-contribution built apart from the call must be `as const` or annotated `NavContribution<…>`, or its keys widen to `string` and the check is
-lost.
+**A key a contribution's links name must be in its own `hrefs`.** A misspelled key in `items`, `hrefs` or `footer` fails `bun check` when the
+contribution is annotated `NavContribution<…>`. Written `as const` or inline at the call site, it is checked only against the app's key set.
 
-**A key contributed twice throws at `contribute`**, and the refused contribution adds nothing to the bar. The bar renders in registration order.
+**An `hrefs` key two contributions both carry throws** when `createPrimaryNav` builds the bar. The bar renders in list order.
 
-**No entry may be labelled "Menu"**, at any depth, because the bar's collapse toggle owns that accessible name. `contribute` throws on one.
+**A bar or footer link, at any depth, whose key no contribution gives an href throws** when `createPrimaryNav` builds the bar, naming the link
+and the key.
+
+**Every bar-level menu and megamenu carries a `key`, and menus that share one render as one menu**, so independent slices fill one menu without
+importing each other. The merged menu keeps the first one's position and lists its children in list order. Megamenus merge their groups the
+same way. A nested submenu is never merged, and each contribution's links still resolve through its own `hrefs`. The `key` is never shown, so
+rewording a menu's `label` never splits or joins menus.
+
+`createPrimaryNav` throws when menus sharing a `key` differ in `label`, when a joining menu declares `filters` (or, on a megamenu, `align`) that
+differ from the first one's, or when a menu and a megamenu share a `key`. A joining menu that omits `filters` or `align` keeps the first one's.
+
+**No entry may be labelled "Menu"**, at any depth, because the bar's collapse toggle owns that accessible name. `createPrimaryNav` throws on one.
 
 **`resolveHref` throws on a key nobody contributed** rather than linking home, so a wiring mistake surfaces instead of rendering a link to the
 site root. `footer()` resolves its links the same way.
 
-**`states()` returns each contribution's resolver** for the layout to run once per request.
+**`states()` returns each contribution's resolver** for the layout to run once per request. When each resolver returns a `NavState` — the
+`activeFilters` and `slots` a `Navbar` takes, which is what `authNav` returns — `resolveNavState(nav, c)` runs them all and merges the results
+for you:
+
+```tsx
+import { Navbar, createPrimaryNav, resolveNavState } from "@y-core/forge/ui/chrome";
+import type { NavState } from "@y-core/forge/ui/chrome";
+import { authNav } from "@y-core/forge/auth/web";
+import type { AuthNavContext } from "@y-core/forge/auth/web";
+
+// the auth slice
+export const signoutNav = { items: [], hrefs: {}, state: authNav({ signoutPath }) };
+
+// the app root
+export const nav = createPrimaryNav<NavKey, AuthNavContext, NavState>([...featureNavs, signoutNav]);
+
+// …per request, in the layout:
+<Navbar config={nav.definition()} resolveHref={nav.resolveHref} icon={AppIcon} {...(await resolveNavState(nav, c))} />;
+```
+
+The resolvers run concurrently, and their results merge in list order. A filter token held by two contributions appears once, where it first
+appeared. **A slot filled by two contributions throws**, naming the slot, rather than letting the later one silently win.
+
+Why a slice exports data, and why a menu's identity is its `key` rather than its label, is [`ROUTING_AND_MIDDLEWARE.md`][ram-3g] §3g's.
 
 ### Choose how the bar collapses
 
@@ -1471,6 +1515,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [markdown-readme]: ../render/markdown/README.md
 [navigation]: ./design/reference/08-navigation.md
+[ram-3g]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3g-a-slice-exports-its-contribution-as-data
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
 [sh-2g]: ../../docs/SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [tg]: ../../docs/THEME_GENERATION.md
@@ -1497,7 +1542,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-3b]: ../../docs/UI_CLIENT_RUNTIME.md#3b-lazy-loading
 [ucr-3c]: ../../docs/UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ucr-4]: ../../docs/UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
-[ucr-4a]: ../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
+[ucr-4a]: ../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-and-marked-5xx
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md
 [udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-rule-tiers--floor-and-defaults
 [usc]: ../../docs/UI_SSR_COMPONENTS.md

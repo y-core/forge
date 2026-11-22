@@ -2,8 +2,8 @@ import type { Middleware, RequestContext, RequestHandler } from "@remix-run/fetc
 import type { Route } from "@remix-run/fetch-router/routes";
 import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 
-import type { AppContext } from "../context/types";
-import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
+import type { AppContext, BindingSpec, Refusal, RefuseHook } from "../context/types";
+import type { CsrfPolicyOptions, TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
 import type { Logger } from "../logging/types";
 import type { RequestLoggerOptions } from "../logging/types";
 import type { JSXNode } from "../render/jsx/types";
@@ -12,6 +12,7 @@ import type { RouteParams } from "../router/types";
 import type { OriginProtectionOptions } from "../security/types";
 import type { RateLimitOptions } from "../security/types";
 import type { SecurityHeadersOptions } from "../security/types";
+import type { SessionMiddleware } from "../session/types";
 import type { v } from "../validation/validation";
 import type { Forge } from "./forge-app";
 import type { PIPELINE_ONLY_KEYS } from "./pipeline";
@@ -23,7 +24,7 @@ export type MethodMismatch = "notFound" | "advertise";
 export interface AppOptions<Bindings = Record<string, unknown>> {
   config?: object;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
-  /** Custom logger injected into the app error handler. */
+  /** Takes the error handler's records only where no request logger is on the context; defaults to `createLogger("app")`. */
   logger?: Logger;
   /** The document shell every mounted page renders into; absent, forge renders a bare one. */
   shell?: PageShell<Bindings>;
@@ -55,13 +56,14 @@ export interface RouteRenderState<LoaderData = unknown, ActionData = unknown> {
   method: "GET" | "POST";
 }
 
-/** A page's data loader, run before its view. @internal */
+/** A page's data loader, run before its view, receiving the parsed query string as `query`. @internal */
 export type RouteLoader<
   Bindings = Record<string, unknown>,
   Params extends Record<string, string | undefined> = Record<string, string | undefined>,
   ConfigData = unknown,
   LoaderData = unknown,
-> = (c: AppContext<Bindings, Params>, config: ConfigData) => LoaderData | Response | Promise<LoaderData | Response>;
+  Query = unknown,
+> = (c: AppContext<Bindings, Params>, config: ConfigData, query: Query) => LoaderData | Response | Promise<LoaderData | Response>;
 
 /** A page's renderer, receiving the loader and action state for the request. @internal */
 export type RouteView<
@@ -97,14 +99,19 @@ export interface PageBase<
   LoaderData = unknown,
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
+  Q extends v.GenericSchema = v.GenericSchema,
 > {
-  loader?: RouteLoader<Bindings, Params, ConfigData, LoaderData>;
+  /** The query-string schema, parsed from `c.url.searchParams` before the action and the loader on every method. */
+  query?: Q;
+  loader?: RouteLoader<Bindings, Params, ConfigData, LoaderData, v.InferOutput<Q>>;
   action?: RouteAction<Bindings, Params, ConfigData, ActionData, v.InferOutput<S>>;
   view: RouteView<Bindings, Params, ConfigData, LoaderData, ActionData>;
   headers?: Record<string, string>;
   cache?: "no-store" | CacheDirective;
   /** Called when `view` throws; receives the error and context. */
   onError?: (error: Error, c: AppContext<Bindings, Params>) => Response | Promise<Response>;
+  /** Replaces the default `400` refusal for a query string `query` refused. */
+  onQueryError?: (issues: readonly v.BaseIssue<unknown>[], c: AppContext<Bindings, Params>) => Response | Promise<Response>;
 }
 
 /** Declarative definition of a page route for `definePage`; pipeline options are gated on `schema`. @public */
@@ -115,7 +122,8 @@ export type PageDefinition<
   LoaderData = unknown,
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
-> = PageBase<Bindings, Params, ConfigData, LoaderData, ActionData, S> &
+  Q extends v.GenericSchema = v.GenericSchema,
+> = PageBase<Bindings, Params, ConfigData, LoaderData, ActionData, S, Q> &
   (
     | ({ schema: S } & PagePipeline<S, Bindings, Params, ConfigData>)
     | ({ schema?: never } & { [K in keyof PagePipeline<S, Bindings, Params, ConfigData>]?: never })
@@ -148,6 +156,8 @@ export interface ActionDefinition<
   /** The body schema; prefer `v.strictObject`, which refuses an undeclared field rather than dropping it. */
   schema: S;
   handle: (data: v.InferOutput<S>, c: AppContext<Bindings, Params>, config: ConfigData) => Response | Promise<Response>;
+  /** Limits keyed by identity or route params, spent in order ahead of Turnstile; one refusal ends the submission. */
+  rateLimit?: RateLimitOptions<Bindings> | readonly RateLimitOptions<Bindings>[];
   /** Replaces the default validation-errors fragment. */
   onValidationError?: (issues: readonly v.BaseIssue<unknown>[], c: AppContext<Bindings, Params>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings, Params>) => Response | Promise<Response>;
@@ -155,18 +165,27 @@ export interface ActionDefinition<
   turnstile?: ActionTurnstileOptions<Bindings, Params, ConfigData>;
   /** Replaces the refusal a tripped guard renders. */
   onBotDetected?: (rejection: BotRejection, c: AppContext<Bindings, Params>) => Response | Promise<Response>;
-  /** Body-size cap for this route's form parse, in bytes; a `csrfProtection` on the route parses first, under its own `maxBytes`. */
+  /** Body-size cap for this route's form parse, in bytes; the app's CSRF policy parses first, under its own `maxBytes`. */
   maxBytes?: number;
 }
 
 /** The fetch surface of Cloudflare's static-asset binding. @public */
 export interface AssetsFetcher {
-  fetch(req: Request): Promise<Response>;
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
 /** Options for `healthCheck`. @public */
 export interface HealthCheckOptions {
   timeoutMs?: number;
+}
+
+/** One named probe a health route runs. @public */
+export type HealthCheckFn<Bindings = Record<string, unknown>> = (c: AppContext<Bindings>) => boolean | Promise<boolean>;
+
+/** A health route's merged, frozen checks and the handler that runs them on every request. @public */
+export interface HealthChecks<Bindings = Record<string, unknown>> {
+  checks: () => Readonly<Record<string, HealthCheckFn<Bindings>>>;
+  handler: (options?: HealthCheckOptions) => RequestHandler;
 }
 
 /** The aggregate verdict of a health endpoint's registered checks. @public */
@@ -192,9 +211,6 @@ export interface RequestState<Bindings> {
 /** A bindings shape that may carry a static-asset binding. @internal */
 export type HasAssets = { ASSETS?: AssetsFetcher };
 
-/** One named health check. @internal */
-export type CheckFn<Bindings = Record<string, unknown>> = (c: AppContext<Bindings>) => boolean | Promise<boolean>;
-
 /** Options for `createErrorPage`. @public */
 export interface ErrorPageOptions<Bindings = Record<string, unknown>> {
   /** Page `<title>` and heading. */
@@ -211,10 +227,16 @@ export type RouteHandler<R extends Route<any, any>> = RequestHandler<RequestCont
 
 /** Pre-bound `definePage`/`defineAction` pair returned by `createHandlerFactory`. @public */
 export interface HandlerFactory<Bindings = Record<string, unknown>, ConfigData = unknown> {
-  // oxlint-disable-next-line typescript/no-explicit-any -- any method and any pattern are both route shapes
-  definePage: <R extends Route<any, any>, LoaderData = unknown, ActionData = unknown, S extends v.GenericSchema = v.GenericSchema>(
+  definePage: <
+    // oxlint-disable-next-line typescript/no-explicit-any -- any method and any pattern are both route shapes
+    R extends Route<any, any>,
+    LoaderData = unknown,
+    ActionData = unknown,
+    S extends v.GenericSchema = v.GenericSchema,
+    Q extends v.GenericSchema = v.GenericSchema,
+  >(
     route: R,
-    def: PageDefinition<Bindings, RouteParams<R>, ConfigData, LoaderData, ActionData, S>,
+    def: PageDefinition<Bindings, RouteParams<R>, ConfigData, LoaderData, ActionData, S, Q>,
   ) => RouteHandler<R>;
   // oxlint-disable-next-line typescript/no-explicit-any -- any method and any pattern are both route shapes
   defineAction: <R extends Route<any, any>, S extends v.GenericSchema>(
@@ -240,7 +262,7 @@ export interface PageMeta {
   /** The `<title>`, and the default for `og:title` and `twitter:title`. */
   readonly title: string;
   readonly description?: string;
-  /** Absolute URL. Forge derives none: behind a proxy a Worker's own `c.url` is not the public one. */
+  /** Absolute and never derived — behind a proxy `c.url` is not the public URL. Dropped under a `noindex` `robots`, never one in `extra`. */
   readonly canonical?: string;
   readonly robots?: RobotsDirective | readonly RobotsDirective[];
   readonly og?: {
@@ -268,30 +290,99 @@ export interface MetaOptions {
 export interface MiddlewareGuardGroup<Bindings = Record<string, unknown>> {
   /** Path patterns, as accepted by `app.use`, the group applies to. */
   paths: readonly string[];
+  /** Path patterns, in the same syntax, the group skips even where `paths` matches. */
+  exclude?: readonly string[];
+  /** Request-shape guards — method, content type — run ahead of `origin`. */
+  shape?: Middleware[];
   /** Origin/Referer verification policy for state-changing routes. */
   origin?: OriginProtectionOptions<Bindings>;
-  rateLimit?: RateLimitOptions<Bindings>;
-  /** Prebuilt guards, chained after the middleware `origin` and `rateLimit` build into. */
+  /** Rate-limit policy, keyed under the chain's trust in the CF headers; an array stacks limits, run in order. */
+  rateLimit?: RateLimitOptions<Bindings> | readonly RateLimitOptions<Bindings>[];
+  /** Prebuilt guards, chained after `origin`, `rateLimit` and the verification a chain `csrf` policy armed. */
   guards?: Middleware[];
+  /** Answers this group's origin and rate-limit refusals a stage's own hook declines or lacks, and the CSRF refusal of a request it is the last-registered verifying group to match, declining with `undefined` to the chain's `onRefuse`. */
+  onRefuse?: RefuseHook<Bindings>;
+  /** Sample URLs, one per route this group's owner mints a CSRF token on; the chain refuses them at registration as it does a contribution's `csrfCovers`, so they survive a spread of the group into another contribution. */
+  csrfCovers?: readonly string[];
+}
+
+/** The panel a refusal is answered with, and the message the announcer speaks when it arrives. @public */
+export interface RefusalPanel {
+  readonly message: string;
+  readonly panel: JSXNode;
+}
+
+/** What `refuseAsFragment` swaps a refusal into, and how it renders the panel. @public */
+export interface RefuseAsFragmentOptions<Bindings = Record<string, unknown>> {
+  /** The CSS selector sent as `HX-Retarget`, since the request's own target is the form it submitted. */
+  readonly target: string;
+  /** Sent as `HX-Reswap`; defaults to `innerHTML`. */
+  readonly swap?: string;
+  readonly render: (c: AppContext<Bindings>, refusal: Refusal) => RefusalPanel | Promise<RefusalPanel>;
+}
+
+/** A `globals` entry that skips every request one of its `exclude` patterns matches. @public */
+export interface MiddlewareGlobal {
+  middleware: Middleware;
+  /** Path patterns, as accepted by `app.use`. */
+  exclude: readonly string[];
+}
+
+/** The app's one CSRF policy: minted on every request its `paths` match outside its `exclude`, verified after that request's origin check and rate limit. @public */
+export interface MiddlewareCsrfPolicy<Bindings = Record<string, unknown>> extends CsrfPolicyOptions<Bindings> {
+  /** Path patterns, as accepted by `app.use`, the policy mints on. Defaults to `["*"]`. */
+  readonly paths?: readonly string[];
+  /** Path patterns, in the same syntax, the policy skips even where `paths` matches: nothing is minted or verified there. */
+  readonly exclude?: readonly string[];
+  /** Path patterns, in the same syntax, whose tokens carry no subject: decided by the token's target path, at mint and at verify. */
+  readonly unboundPaths?: readonly string[];
 }
 
 /** Declarative input to `applyMiddlewareChain`. @public */
 export interface MiddlewareChainOptions<Bindings = Record<string, unknown>> {
-  /** Registered on `"*"` ahead of everything, including `requestId` — for tracing that must wrap the whole chain. */
+  /** Registered on `"*"` ahead of everything but the published `trustCfHeaders`, `onRefuse` and `rateLimits`, `requestId` included — for tracing that must wrap the whole chain. */
   before?: Middleware[];
   /** Adds `requestId()` first in the chain, after `before`. */
   requestId?: boolean;
-  /** Trust Cloudflare-injected request headers; only safe when the Worker is known to run behind Cloudflare. */
+  /** Trust Cloudflare-injected request headers, for `requestId` and every rate limit on the request; only safe when the Worker is known to run behind Cloudflare. */
   trustCfHeaders?: boolean;
+  /** Answers every guard refusal no group or guard answers itself; without it, each guard's plain-text default. */
+  onRefuse?: RefuseHook<Bindings>;
   logging?: RequestLoggerOptions<Bindings>;
   securityHeaders: SecurityHeadersOptions;
-  /** Env schema for `validateBindings`. */
+  /** Env schema for `validateBindings`; a valibot object schema wherever a guard group names a binding it declares. */
   bindings?: v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>;
-  session?: Middleware;
-  /** Registered on `"*"` after `session` and before the guard groups — where anything reading the session, such as `csrfProtection`, belongs. */
-  globals?: Middleware[];
+  /** The generated `RATELIMITS`, published on every request; every binding a guard group or route limit names must be a key of it. */
+  rateLimits?: Readonly<Record<string, { limit: number; period: number }>>;
+  /** Registered on `"*"`; a request it leaves without a session on `sessionCtx` throws. */
+  session?: SessionMiddleware;
+  /** The app's one CSRF policy, minted right after `session` and verified after the request's origin check and rate limit. */
+  csrf?: MiddlewareCsrfPolicy<NoInfer<Bindings>>;
+  /** Registered on `"*"` after `session` and before the guard groups — where anything reading the session belongs. */
+  globals?: (Middleware | MiddlewareGlobal)[];
   /** Per-path guard groups, registered after the global chain. */
   guards?: MiddlewareGuardGroup<Bindings>[];
+  /** Each owner's bindings, session, globals and guards, merged after this object's own in array order. */
+  contributions?: readonly MiddlewareContribution<Bindings>[];
+}
+
+/** What one owner adds to the global chain: the bindings it refuses to serve without, its session, its global and per-path guards, how long it needs the session cookie to last, and the paths it needs the CSRF policy to mint on. @public */
+export interface MiddlewareContribution<Bindings = Record<string, unknown>> {
+  bindings?: readonly BindingSpec[] | undefined;
+  session?: SessionMiddleware | undefined;
+  globals?: readonly (Middleware | MiddlewareGlobal)[] | undefined;
+  guards?: readonly MiddlewareGuardGroup<Bindings>[] | undefined;
+  /** The shortest session cookie `maxAge`, in milliseconds, this owner serves under; the chain refuses at registration a session slot whose cookie is shorter or sets none. */
+  sessionMaxAgeAtLeastMs?: number | undefined;
+  /** Sample URLs, one per route this owner mints a CSRF token on; the chain refuses at registration a CSRF policy whose `paths` miss one or whose `exclude` matches one, and no CSRF policy at all. */
+  csrfCovers?: readonly string[] | undefined;
+  /** Refused: the app root owns the CSRF policy, so it goes on `MiddlewareChainOptions.csrf`. */
+  readonly csrf?: never;
+}
+
+/** One app's named contribution slots, each a frozen list in contribution order. @public */
+export interface ContributionSlots<Shape extends object> {
+  contributions: <K extends keyof Shape & string>(slot: K) => readonly Shape[K][];
 }
 
 /** The half of a mutation route's definition the shared submission pipeline consumes. @internal */
@@ -331,7 +422,7 @@ export type PageShell<Bindings = Record<string, unknown>> = (
 export interface ShellDocument {
   /** Stylesheets to link; without one the page renders unstyled, since forge ships no URL it could guess. */
   readonly stylesheet?: string | readonly string[];
-  /** Scripts to load as modules at the end of `<body>`. */
+  /** Scripts to load as modules from `<head>`; a module script is deferred, so it runs after the document parses. */
   readonly script?: string | readonly string[];
   /** `<html lang>`. Defaults to `en`. */
   readonly lang?: string;

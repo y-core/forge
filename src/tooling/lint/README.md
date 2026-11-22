@@ -151,7 +151,7 @@ the gate.
 Forge loads the plugin from its source, `./src/tooling/lint/mod.ts`: it has no copy of itself under `node_modules`, so the restriction that forces
 the bundle does not apply and a rule edit takes effect with nothing regenerated.
 
-`plugin.mjs` — the file a consumer loads — is generated. Run `bun run gen:bundles` in the same commit as any rule change; the gate's
+`plugin.node.mjs` — the file a consumer loads — is generated. Run `bun run gen:bundles` in the same commit as any rule change; the gate's
 `validate-tooling-lint-plugin-bundle` step re-bundles the source and fails on the drift otherwise.
 
 **Spell the `.ts` extension on every import the plugin reaches.** oxlint loads the source through Node's ESM resolver, which does not resolve an

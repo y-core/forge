@@ -13,6 +13,11 @@ function makeApp(options: Parameters<typeof cors>[0]) {
 }
 
 describe("matchOrigin", () => {
+  it("accepts a readonly pattern list", () => {
+    const patterns: readonly string[] = Object.freeze(["https://example.com"]);
+    expect(matchOrigin("https://example.com", patterns)).toBe(true);
+  });
+
   it("returns true for an exact match", () => {
     expect(matchOrigin("https://example.com", ["https://example.com"])).toBe(true);
   });
@@ -383,5 +388,222 @@ describe("cors allowedHeaders", () => {
     const app = makeApp({ origins: [ORIGIN], allowedHeaders: ["Content-Type", "X-Custom_1.v2", "!#$%&'*+^`|~"] });
     const res = await app.request("/test", { method: "OPTIONS", headers: { Origin: ORIGIN, "Access-Control-Request-Method": "POST" } });
     expect(res.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type, X-Custom_1.v2, !#$%&'*+^`|~");
+  });
+});
+
+describe("cors origins resolver", () => {
+  const ALLOWED = "https://app.example.com";
+
+  function resolverApp(origins: Parameters<typeof cors<{ ORIGINS: string }>>[0]["origins"], credentials = false, errors: string[] = []) {
+    const app = new Forge<{ ORIGINS: string }>();
+    app.setOnError((err) => {
+      errors.push(err.message);
+      return new Response(null, { status: 500 });
+    });
+    app.use("*", cors({ origins, credentials }));
+    mapHandler(app, "GET", "/test", () => new Response("ok"));
+    return app;
+  }
+
+  it("hands the resolver the env alone, so an answer cannot be keyed on one request's host", () => {
+    // @ts-expect-error -- the resolver is cached per env, so it is given no request to read
+    const refused: Parameters<typeof resolverApp>[0] = (c: { url: URL }) => [c.url.origin];
+    expect(typeof refused).toBe("function");
+  });
+
+  it("allows an origin the resolver returns, read from env", async () => {
+    const app = resolverApp((env) => env.ORIGINS.split(","));
+    const res = await app.request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: ALLOWED });
+    expect({ acao: res.headers.get("Access-Control-Allow-Origin"), vary: res.headers.get("Vary") }).toEqual({ acao: ALLOWED, vary: "Origin" });
+  });
+
+  it("refuses an origin the resolver does not return", async () => {
+    const app = resolverApp(async () => [ALLOWED]);
+    const res = await app.request("/test", { headers: { Origin: "https://evil.com" } }, { ORIGINS: "" });
+    expect({ acao: res.headers.get("Access-Control-Allow-Origin"), vary: res.headers.get("Vary") }).toEqual({ acao: null, vary: "Origin" });
+  });
+
+  it("sends Vary: Origin even when the resolved list is the wildcard", async () => {
+    const app = resolverApp(() => ["*"]);
+    const res = await app.request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: "" });
+    expect({ acao: res.headers.get("Access-Control-Allow-Origin"), vary: res.headers.get("Vary") }).toEqual({ acao: "*", vary: "Origin" });
+  });
+
+  it("resolves once per env object", async () => {
+    let calls = 0;
+    const app = resolverApp(() => {
+      calls++;
+      return [ALLOWED];
+    });
+    const env = { ORIGINS: "" };
+    await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    expect(calls).toBe(1);
+  });
+
+  it("refuses a resolved wildcard with credentials at first resolution, as a 500", async () => {
+    const app = resolverApp(() => ["*"], true);
+    expect(() => cors({ origins: () => ["*"], credentials: true })).not.toThrow();
+    const res = await app.request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: "" });
+    expect(res.status).toBe(500);
+  });
+
+  function corsHeadersOf(res: Response) {
+    return {
+      status: res.status,
+      acao: res.headers.get("Access-Control-Allow-Origin"),
+      credentials: res.headers.get("Access-Control-Allow-Credentials"),
+      vary: res.headers.get("Vary"),
+    };
+  }
+
+  const resolverCases = [
+    { name: "a sync resolver allows a listed origin", origins: () => [ALLOWED], origin: ALLOWED, acao: ALLOWED },
+    { name: "an async resolver allows a listed origin", origins: async () => [ALLOWED], origin: ALLOWED, acao: ALLOWED },
+    { name: "a sync resolver refuses an unlisted origin", origins: () => [ALLOWED], origin: "https://evil.com", acao: null },
+    { name: "an async resolver refuses an unlisted origin", origins: async () => [ALLOWED], origin: "https://evil.com", acao: null },
+    {
+      name: "a resolved subdomain pattern allows a matching subdomain",
+      origins: async () => ["https://*.example.com"],
+      origin: "https://api.example.com",
+      acao: "https://api.example.com",
+    },
+    {
+      name: "a resolved subdomain pattern refuses the apex",
+      origins: async () => ["https://*.example.com"],
+      origin: "https://example.com",
+      acao: null,
+    },
+  ];
+
+  for (const { name, origins, origin, acao } of resolverCases) {
+    it(name, async () => {
+      const res = await resolverApp(origins).request("/test", { headers: { Origin: origin } }, { ORIGINS: "" });
+      expect(corsHeadersOf(res)).toEqual({ status: 200, acao, credentials: null, vary: "Origin" });
+    });
+  }
+
+  it("sends Vary: Origin on a request with no Origin header in resolver mode", async () => {
+    const res = await resolverApp(() => [ALLOWED]).request("/test", {}, { ORIGINS: "" });
+    expect(corsHeadersOf(res)).toEqual({ status: 200, acao: null, credentials: null, vary: "Origin" });
+  });
+
+  it("answers a preflight for a resolved origin with the full preflight header set", async () => {
+    const res = await resolverApp(async () => [ALLOWED]).request(
+      "/test",
+      { method: "OPTIONS", headers: { Origin: ALLOWED, "Access-Control-Request-Method": "GET" } },
+      { ORIGINS: "" },
+    );
+    expect({ status: res.status, headers: Object.fromEntries(res.headers) }).toEqual({
+      status: 204,
+      headers: {
+        "access-control-allow-origin": ALLOWED,
+        "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+        "access-control-allow-headers": "Content-Type",
+        "access-control-max-age": "86400",
+        vary: "Origin",
+      },
+    });
+  });
+
+  it("refuses a preflight for an origin the resolver does not return, still varying on Origin", async () => {
+    const res = await resolverApp(async () => [ALLOWED]).request(
+      "/test",
+      { method: "OPTIONS", headers: { Origin: "https://evil.com", "Access-Control-Request-Method": "GET" } },
+      { ORIGINS: "" },
+    );
+    expect({ status: res.status, headers: Object.fromEntries(res.headers) }).toEqual({ status: 204, headers: { vary: "Origin" } });
+  });
+
+  it("resolves afresh for a new env object, and that env's list governs", async () => {
+    let calls = 0;
+    const app = resolverApp((env) => {
+      calls++;
+      return env.ORIGINS.split(",");
+    });
+    const first = await app.request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: ALLOWED });
+    const second = await app.request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: "https://other.example.com" });
+    expect({ first: corsHeadersOf(first).acao, second: corsHeadersOf(second).acao, calls }).toEqual({ first: ALLOWED, second: null, calls: 2 });
+  });
+
+  it("resolves once for two concurrent first requests under one env", async () => {
+    let calls = 0;
+    const app = resolverApp(async () => {
+      calls++;
+      await Promise.resolve();
+      return [ALLOWED];
+    });
+    const env = { ORIGINS: "" };
+    const responses = await Promise.all([
+      app.request("/test", { headers: { Origin: ALLOWED } }, env),
+      app.request("/test", { headers: { Origin: ALLOWED } }, env),
+    ]);
+    expect({ acao: responses.map((res) => corsHeadersOf(res).acao), calls }).toEqual({ acao: [ALLOWED, ALLOWED], calls: 1 });
+  });
+
+  it("answers 500 when the resolver rejects, then retries under the same env", async () => {
+    let calls = 0;
+    const errors: string[] = [];
+    const app = resolverApp(
+      async () => {
+        calls++;
+        if (calls === 1) throw new Error("config unavailable");
+        return [ALLOWED];
+      },
+      false,
+      errors,
+    );
+    const env = { ORIGINS: "" };
+    const failed = await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    const retried = await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    expect({ failed: failed.status, retried: corsHeadersOf(retried), calls, errors }).toEqual({
+      failed: 500,
+      retried: { status: 200, acao: ALLOWED, credentials: null, vary: "Origin" },
+      calls: 2,
+      errors: ["config unavailable"],
+    });
+  });
+
+  function staticWildcardRefusal(): string {
+    try {
+      cors({ origins: ["*"], credentials: true });
+    } catch (err) {
+      return (err as Error).message;
+    }
+    throw new Error("the static wildcard-with-credentials list was not refused");
+  }
+
+  it("keeps refusing a resolved wildcard with credentials on every request, with the construction-time error", async () => {
+    const errors: string[] = [];
+    const app = resolverApp(() => ["*"], true, errors);
+    const env = { ORIGINS: "" };
+    const first = await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    const second = await app.request("/test", { headers: { Origin: ALLOWED } }, env);
+    const refusal = staticWildcardRefusal();
+    expect({ responses: [corsHeadersOf(first), corsHeadersOf(second)], errors }).toEqual({
+      responses: [
+        { status: 500, acao: null, credentials: null, vary: null },
+        { status: 500, acao: null, credentials: null, vary: null },
+      ],
+      errors: [refusal, refusal],
+    });
+  });
+
+  it("refuses a resolved list mixing an origin and the wildcard with credentials on a preflight", async () => {
+    const errors: string[] = [];
+    const res = await resolverApp(() => [ALLOWED, "*"], true, errors).request(
+      "/test",
+      { method: "OPTIONS", headers: { Origin: ALLOWED, "Access-Control-Request-Method": "GET" } },
+      { ORIGINS: "" },
+    );
+    expect({ headers: corsHeadersOf(res), errors }).toEqual({
+      headers: { status: 500, acao: null, credentials: null, vary: null },
+      errors: [staticWildcardRefusal()],
+    });
+  });
+
+  it("serves a resolved explicit list with credentials, echoing the origin", async () => {
+    const res = await resolverApp(() => [ALLOWED], true).request("/test", { headers: { Origin: ALLOWED } }, { ORIGINS: "" });
+    expect(corsHeadersOf(res)).toEqual({ status: 200, acao: ALLOWED, credentials: "true", vary: "Origin" });
   });
 });

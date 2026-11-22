@@ -14,16 +14,18 @@ export async function runStandbyReset(run: DbRunContext, options: StandbyResetOp
       `standby reset only builds a standby database, and --target names ${run.config.target.place} — pass --target standby[:<database>]`,
     );
   }
-  if (options.seed && readSeeds(run, options.dir).length === 0) {
+  const seed = options.seed && options.empty !== true;
+  if (seed && readSeeds(run, options.dir).length === 0) {
     throw new CliError(
       "invalid-args",
       `standby reset found no seeds${options.dir === undefined ? " in any directory config/db.config.ts names" : ` in ${options.dir}`} — add one, or pass --no-seed to build the standby database with every table empty`,
     );
   }
   await clearLocalState(run.io, run.home);
+  if (options.empty === true) return { database: run.home.database, applied: [], seeded: [], excluded: [] };
 
   const migrated = await runMigrate(run, { dryRun: false, bookmark: false, rehearse: false });
-  if (!options.seed) return { database: run.home.database, applied: migrated.applied, seeded: [], excluded: [] };
+  if (!seed) return { database: run.home.database, applied: migrated.applied, seeded: [], excluded: [] };
 
   const seeded = await runSeedApply(run, { ...(options.dir === undefined ? {} : { dir: options.dir }), rerun: false, bookmark: false });
   return { database: run.home.database, applied: migrated.applied, seeded: seeded.applied, excluded: seeded.excluded };

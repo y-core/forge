@@ -126,7 +126,12 @@ export const GOLDEN: readonly GoldenQuery[] = [
     within: 2,
     dimension: "reference",
   },
-  { query: "mintCsrf csrfMinter", expect: "project:src/form/README.md#~minting-a-token-for-another-path", within: 2, dimension: "reference" },
+  {
+    query: "mintCsrf token for another path",
+    expect: "project:src/form/README.md#~minting-a-token-for-another-path",
+    within: 2,
+    dimension: "reference",
+  },
   {
     query: "cacheControl header builder",
     expect: "project:src/http/README.md#~setting-a-header-other-than-content-type",

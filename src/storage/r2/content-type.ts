@@ -66,6 +66,12 @@ export function isActiveContentType(contentType: string): boolean {
   return ACTIVE_ESSENCES.has(essence) || essence.endsWith("+xml");
 }
 
+/** The MIME type the extension table maps `key`'s extension to, active types included, or `undefined` for none. @internal */
+export function extensionContentType(key: string): string | undefined {
+  const ext = key.split(".").pop()?.toLowerCase();
+  return ext !== undefined && Object.hasOwn(MIME_MAP, ext) ? MIME_MAP[ext] : undefined;
+}
+
 /** Infers MIME type from the file extension in `key`, refusing to guess an active one. @public */
 export function inferContentType(key: string): string {
   const ext = key.split(".").pop()?.toLowerCase();

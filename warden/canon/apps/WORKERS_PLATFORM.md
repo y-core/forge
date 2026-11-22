@@ -154,6 +154,9 @@ build never resolves is not ([`APP_ARCHITECTURE.md`][aa-1c] §1c). A test that n
 **The default key is the client IP**, read from the platform's own connecting-IP header. That header is trustworthy only because the request
 provably arrived through the platform edge — the trust boundary [`BOUNDARIES.md`][boundaries-3c] §3c states.
 
+**A custom key replaces the client-IP key, so the trust posture does not govern it.** A custom key that reads the connecting-IP header must
+honour that posture itself; extend the trusted IP key with `keySuffix` rather than reading the header.
+
 **After authentication, key on identity instead.** IP-keyed limits are simultaneously too loose for shared egress and too tight for a large NAT;
 once a request has an authenticated subject, that subject is the honest key.
 

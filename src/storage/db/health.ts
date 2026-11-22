@@ -4,11 +4,14 @@ import { getAppContext } from "../../context/types";
 import type { AppContext } from "../../context/types";
 import { bytesToHex, sha256 } from "../../crypto/primitives/mod";
 import { createLogger } from "../../logging/logger";
+import { loggerFor } from "../../logging/request-logger";
 import { serializeError } from "../../logging/serialize-error";
 import { INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, schemaFingerprintInput, toSchemaObjects } from "./schema";
 import type { D1DatabaseLike, SchemaHealth, SchemaHealthMemo, SchemaHealthMonitorOptions, SchemaHealthState, SchemaRecheckOptions } from "./types";
 
 const NO_SUCH_TABLE = /no such table/i;
+
+const fallbackLogger = createLogger("storage/db");
 
 /** Compares the fingerprint the last applied migration certified against the schema as it stands; reads only, never repairs. @public */
 export async function checkSchemaHealth(db: D1DatabaseLike): Promise<SchemaHealth> {
@@ -90,7 +93,6 @@ export function schemaHealthMonitorFrom<Bindings = Record<string, unknown>>(
   options: SchemaHealthMonitorOptions<Bindings>,
   memo: SchemaHealthMemo,
 ): Middleware {
-  const logger = options.logger ?? createLogger("storage/db");
   const recheckMs = options.recheckMs ?? SCHEMA_RECHECK_MS;
   const now = options.now ?? Date.now;
   let cachedEnvRef: unknown;
@@ -98,6 +100,7 @@ export function schemaHealthMonitorFrom<Bindings = Record<string, unknown>>(
   let observed: Promise<void> | undefined;
 
   async function observe(c: AppContext<Bindings>, at: number): Promise<void> {
+    const logger = options.logger ?? loggerFor(c, "storage/db", fallbackLogger);
     try {
       const db = options.binding(c);
       if (!db) {

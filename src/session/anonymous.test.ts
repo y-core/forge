@@ -4,13 +4,15 @@ import { createSession } from "@remix-run/session";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../app/forge-app";
+import { createKeyRingResolver } from "../crypto/keyring/resolver";
 import { importKeyRing } from "../crypto/keyring/ring";
 import { parseKeyRingSecrets } from "../crypto/keyring/secrets";
+import type { KeyRingResolver } from "../crypto/keyring/types";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
 import { createSignedCookie } from "./cookie";
 import { sessionCtx, sessionMiddleware } from "./session";
-import type { SessionKVBinding } from "./types";
+import type { AnonymousSessionOptions, SessionKVBinding } from "./types";
 
 const SECRET = "c15f22e5e9af45d15e1068ac2186b479735f5c60e4fc302f8916ab67aaf6b2c6";
 
@@ -30,11 +32,11 @@ function fakeSessionKV() {
 
 type Env = { SESSION_SECRET: string; SESSIONS: SessionKVBinding };
 
-const envRing = (c: { env: { SESSION_SECRET: string } }) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET));
+const envRing = (env: { SESSION_SECRET: string }) => importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET));
 
 function makeApp() {
   const app = new Forge<Env>();
-  app.use("*", createAnonymousSession<Env>({ cookieName: "test_session", ring: envRing, kv: (c) => c.env.SESSIONS }));
+  app.use("*", createAnonymousSession<Env>({ cookieName: "test_session", ring: envRing, kv: (env) => env.SESSIONS }));
   mapHandler(app, "POST", "/save", (context) => {
     const session = sessionCtx.get(context);
     session.set("settings", { theme: "dark" });
@@ -53,7 +55,7 @@ function rotatingApp(secrets: [string, ...string[]], reissue?: boolean) {
     "*",
     createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
       ring: () => importKeyRing(secrets),
-      kv: (c) => c.env.SESSIONS,
+      kv: (env) => env.SESSIONS,
       ...(reissue === undefined ? {} : { reissue }),
     }),
   );
@@ -97,7 +99,7 @@ describe("createAnonymousSession — KV mode", () => {
   it("emits a Secure cookie by default (secure omitted)", async () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (env) => env.SESSIONS }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("k", "v");
       return new Response("ok");
@@ -122,7 +124,7 @@ describe("createAnonymousSession — KV mode", () => {
     const legacy = createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
       cookieName: "__session",
       ring: () => importKeyRing([SECRET]),
-      kv: (c) => c.env.SESSIONS,
+      kv: (env) => env.SESSIONS,
     });
     const legacyApp = new Forge<{ SESSIONS: SessionKVBinding }>();
     legacyApp.use("*", legacy);
@@ -157,6 +159,37 @@ describe("createAnonymousSession — KV mode", () => {
 
     await app.request("/", {}, { SESSION_SECRET: "3434544ef1b4c1319a6f319f350d59a5ff41f0dd9e4547774ced1488d26d9738", SESSIONS: kv });
     expect(storageBuilds).toBe(2);
+  });
+
+  it("resolves its key ring once per env object", async () => {
+    let ringCalls = 0;
+    const { kv } = fakeSessionKV();
+    const app = new Forge<Env>();
+    app.use(
+      "*",
+      createAnonymousSession<Env>({
+        ring: (env) => {
+          ringCalls++;
+          return envRing(env);
+        },
+        kv: (env) => env.SESSIONS,
+      }),
+    );
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const env = { SESSION_SECRET: SECRET, SESSIONS: kv };
+    for (let i = 0; i < 3; i++) await app.request("/", {}, env);
+    const callsUnderOneEnv = ringCalls;
+    await app.request("/", {}, { SESSION_SECRET: SECRET, SESSIONS: kv });
+    expect({ callsUnderOneEnv, callsAfterSecondEnv: ringCalls }).toEqual({ callsUnderOneEnv: 1, callsAfterSecondEnv: 2 });
+  });
+
+  it("hands the kv resolver the env alone, so a binding cannot be keyed on one request's host", () => {
+    const { kv } = fakeSessionKV();
+    const kvByHost = new Map([["tenant.example", kv]]);
+    // @ts-expect-error -- the resolver is cached per env, so it is given no request to read
+    const refused: AnonymousSessionOptions<Env>["kv"] = (c: { url: URL }) => kvByHost.get(c.url.host) ?? kv;
+    expect(typeof refused).toBe("function");
   });
 
   describe("multi-tenant KV isolation", () => {
@@ -221,7 +254,7 @@ describe("createAnonymousSession — KV mode", () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<Env>();
     app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (env) => env.SESSIONS }));
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const res = await app.request("/", {}, { SESSION_SECRET: "abcd", SESSIONS: kv });
@@ -424,11 +457,37 @@ describe("createAnonymousSession — cookie-storage mode", () => {
   });
 });
 
+describe("createAnonymousSession — the maxAge it carries", () => {
+  async function announcedMaxAge(options: Pick<AnonymousSessionOptions<Env>, "maxAge">) {
+    const session = createAnonymousSession<Env>({ ring: envRing, storage: "cookie", ...options });
+    const app = new Forge<Env>();
+    app.use("*", session);
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("theme", "dark");
+      return new Response("saved");
+    });
+    const res = await app.request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: fakeSessionKV().kv });
+    const announced = res.headers
+      .getSetCookie()
+      .flatMap((header) => header.split("; "))
+      .find((part) => part.startsWith("Max-Age="));
+    return { maxAge: session.maxAge, announced };
+  }
+
+  it("carries one year in seconds by default, the Max-Age its cookie announces", async () => {
+    expect(await announcedMaxAge({})).toEqual({ maxAge: 31_536_000, announced: "Max-Age=31536000" });
+  });
+
+  it("carries the maxAge it was given, the Max-Age its cookie announces", async () => {
+    expect(await announcedMaxAge({ maxAge: 7200 })).toEqual({ maxAge: 7200, announced: "Max-Age=7200" });
+  });
+});
+
 describe("createAnonymousSession single mount", () => {
   async function mountedApp(order: "anonymous-first" | "explicit-first") {
     const app = new Forge<Env>();
     app.setOnError((err) => new Response(err.message, { status: 500 }));
-    const anonymous = createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS });
+    const anonymous = createAnonymousSession<Env>({ ring: envRing, kv: (env) => env.SESSIONS });
     const explicit = sessionMiddleware(createCookieSessionStorage(), createSignedCookie("explicit", { ring: await importKeyRing([SECRET]) }));
     for (const mw of order === "anonymous-first" ? [anonymous, explicit] : [explicit, anonymous]) app.use("*", mw);
     mapHandler(app, "POST", "/save", (context) => {
@@ -457,7 +516,7 @@ describe("createAnonymousSession single mount", () => {
     const { kv, data } = fakeSessionKV();
     const app = new Forge<Env>();
     app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (env) => env.SESSIONS }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("settings", { theme: "dark" });
       sessionCtx.set(context, createSession());
@@ -468,5 +527,119 @@ describe("createAnonymousSession single mount", () => {
     expect(await res.text()).toContain("holds a different session");
     expect(res.headers.getSetCookie()).toEqual([]);
     expect(data.size).toBe(0);
+  });
+});
+
+describe("createAnonymousSession — a ring wrapped in createKeyRingResolver", () => {
+  const UNWRAP = "createAnonymousSession: pass the `(env) => importKeyRing(…)` function itself, not `createKeyRingResolver(…)`";
+
+  it("is refused at bun check whatever Bindings it was made under, and throws at construction", () => {
+    const inferred = () =>
+      createAnonymousSession({
+        // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+        ring: createKeyRingResolver(() => importKeyRing([SECRET])),
+        storage: "cookie",
+      });
+    const typed = () =>
+      createAnonymousSession<Env>({
+        // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+        ring: createKeyRingResolver<Env>(envRing),
+        kv: (env) => env.SESSIONS,
+      });
+    expect(inferred).toThrow(new Error(UNWRAP));
+    expect(typed).toThrow(new Error(UNWRAP));
+  });
+
+  it("cast past the type, throws at construction naming createAnonymousSession and the fix", () => {
+    const wrapped = createKeyRingResolver<Env>(envRing) as unknown as KeyRingResolver<Env>;
+    expect(() => createAnonymousSession<Env>({ ring: wrapped, storage: "cookie" })).toThrow(new Error(UNWRAP));
+  });
+});
+
+describe("createAnonymousSession — a ring over the app's Bindings", () => {
+  it("refuses a binding Env does not declare at bun check, and takes one it does", () => {
+    const missing = () =>
+      createAnonymousSession<Env>({
+        // @ts-expect-error — `SESSION_SECRETS` is not a binding of Env
+        ring: (env) => importKeyRing([env.SESSION_SECRETS]),
+        storage: "cookie",
+      });
+    const declared = () => createAnonymousSession<Env>({ ring: (env) => importKeyRing([env.SESSION_SECRET]), storage: "cookie" });
+    void [missing, declared];
+  });
+});
+
+describe("createAnonymousSession — a resolver still written against the request context", () => {
+  const HANDED_ENV = "this resolver is handed `env`, not the request context — rewrite `(c) => c.env.X` as `(env) => env.X`";
+  // oxlint-disable-next-line typescript/no-explicit-any -- a 0.7.7 resolver typed against the context it is no longer handed
+  type ContextResolver = (c: any) => any;
+
+  async function firstRequestError(options: AnonymousSessionOptions<Env>): Promise<string> {
+    const app = new Forge<Env>();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    app.use("*", createAnonymousSession<Env>(options));
+    mapHandler(app, "GET", "/", () => new Response("reached"));
+    const res = await app.request("/", {}, { SESSION_SECRET: SECRET, SESSIONS: fakeSessionKV().kv });
+    return `${res.status} ${await res.text()}`;
+  }
+
+  const unconverted: { name: string; options: AnonymousSessionOptions<Env> }[] = [
+    {
+      name: "a ring reading c.env",
+      options: { ring: ((c) => importKeyRing([c.env.SESSION_SECRET])) as ContextResolver as KeyRingResolver<Env>, storage: "cookie" },
+    },
+    {
+      name: "a ring reading c.get",
+      options: { ring: ((c) => importKeyRing([c.get("SESSION_SECRET")])) as ContextResolver as KeyRingResolver<Env>, storage: "cookie" },
+    },
+    { name: "a kv reading c.env", options: { ring: envRing, kv: ((c) => c.env.SESSIONS) as ContextResolver as (env: Env) => SessionKVBinding } },
+  ];
+
+  for (const { name, options } of unconverted) {
+    it(`answers the first request with the rewrite for ${name}`, async () => {
+      expect(await firstRequestError(options)).toBe(`500 ${HANDED_ENV}`);
+    });
+  }
+
+  it("resolves a correct ring and kv once per env object across requests, and once more for another", async () => {
+    let rings = 0;
+    let kvs = 0;
+    const app = new Forge<Env>();
+    app.use(
+      "*",
+      createAnonymousSession<Env>({
+        ring: (env) => {
+          rings++;
+          return envRing(env);
+        },
+        kv: (env) => {
+          kvs++;
+          return env.SESSIONS;
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/", () => new Response("reached"));
+    const env = { SESSION_SECRET: SECRET, SESSIONS: fakeSessionKV().kv };
+    const bodies = [];
+    for (let i = 0; i < 3; i++) bodies.push(await (await app.request("/", {}, env)).text());
+    const underOneEnv = { rings, kvs };
+    await app.request("/", {}, { SESSION_SECRET: SECRET, SESSIONS: fakeSessionKV().kv });
+    expect({ bodies, underOneEnv, afterAnother: { rings, kvs } }).toEqual({
+      bodies: ["reached", "reached", "reached"],
+      underOneEnv: { rings: 1, kvs: 1 },
+      afterAnother: { rings: 2, kvs: 2 },
+    });
+  });
+
+  it("lets a real binding named env through to the ring", async () => {
+    type Named = { env: string };
+    const app = new Forge<Named>();
+    app.use("*", createAnonymousSession<Named>({ ring: (bindings) => importKeyRing([bindings.env]), storage: "cookie" }));
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("n", 1);
+      return new Response("saved");
+    });
+    const res = await app.request("/save", { method: "POST" }, { env: SECRET });
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 200, body: "saved" });
   });
 });

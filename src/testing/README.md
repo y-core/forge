@@ -49,21 +49,30 @@ empty `env`, an `ExecutionContext` whose members do nothing, no config, and `nul
 const c = createTestContext(buildRequest("/settings", { formData: { theme: "dark" } }), { env: { SETTINGS_KV: fakeKV() } });
 ```
 
-Pass `logger` when the assertion is about what was logged. Spreading `nullLogger` keeps the other methods silent:
+`definePage`, `defineAction` and `rateLimit` write their records to the context's request logger, so under that default they log nothing.
+
+Pass `logger` when the assertion is about what was logged. `captureLogs()` gives you a `logger` whose records collect in `records`, redacted
+the way a production logger's are, children included:
 
 ```ts
-const records: string[] = [];
-const logger = { ...nullLogger, info: (message: string) => records.push(message) };
+const capture = captureLogs();
 
-await auditMiddleware(createTestContext(buildRequest("/admin"), { logger }), next);
-expect(records).toEqual(["admin.viewed"]);
+await auditMiddleware(createTestContext(buildRequest("/admin"), { logger: capture.logger }), next);
+expect(capture.records.map((record) => record.message)).toEqual(["admin.viewed"]);
 ```
+
+A logger the app builds for itself, such as `createD1Client`'s, takes `capture.logger` through its own `logger` option. `capture.channel` is
+the same sink as a bare `LogChannel`, for `requestLogger({ channels: () => [capture.channel] })`.
 
 Pass `executionCtx` — usually `mockExecutionContext()`, held in a variable — when the assertion is about `waitUntil`.
 
 `buildRequest(path, options)` is there so no test writes `new Request(…)` or hardcodes an origin: a relative path resolves against `http://test`,
 the method is inferred from whether there is a body, and `formData`/`json` set their own content-type. Supply exactly one body helper
 ([`TEST_RUNNERS.md`][testing-7d] §7d).
+
+`mode` and `credentials` are set only when you pass them, and they hold under Bun alone. `buildRequest("/settings", { mode: "navigate" })` is how
+a service-worker test makes a navigation, which a browser's `Request` constructor refuses. Bun reports `"include"` for any `credentials`, so
+`buildRequest` pins the value you pass on the returned request.
 
 ---
 
@@ -86,17 +95,78 @@ the production registration path itself, register it that way instead ([`TEST_RU
 
 ---
 
+## Quieting or capturing the app's own logs
+
+A spec that goes through the app's composition root logs through the request logger the app built, and forge has no process-wide channel to
+swap ([`STRUCTURED_LOGGING.md`][sl-3d] §3d). Have the composition root take its channels as a parameter, defaulting to production's:
+
+```ts
+import { applyMiddlewareChain, createApp } from "@y-core/forge/app";
+import { consoleChannel, type LogChannel } from "@y-core/forge/logging";
+import { NONCE } from "@y-core/forge/security";
+
+export function buildApp(logChannels: () => LogChannel[] = () => [consoleChannel()]) {
+  return createApp<Bindings>({
+    middleware: (app) =>
+      applyMiddlewareChain(app, {
+        logging: { channels: logChannels },
+        securityHeaders: { scriptSrc: ["'self'", NONCE] },
+      }),
+    routes: registerRoutes,
+  });
+}
+
+export default buildApp();
+```
+
+A spec then passes `quietChannel()` to drop every record, or `captureLogs().channel` to assert on them:
+
+```ts
+import { captureLogs, quietChannel } from "@y-core/forge/testing";
+
+const res = await buildApp(() => [quietChannel()]).request("/orders", {}, TEST_ENV);
+expect(res.status).toBe(200);
+
+const capture = captureLogs();
+await buildApp(() => [capture.channel]).request("/orders", {}, TEST_ENV);
+expect(capture.records.map((record) => record.message)).toContain("request.completed");
+```
+
+The parameter's name and shape are the app's to choose. Build any other logger the app constructs, such as the one it hands
+`createD1Client`, from the same channels. `authRequestServices` logs its flows through the request logger, so these channels reach its
+records too.
+
+---
+
 ## Standing in for a Workers binding
 
-The fakes implement the structural contracts the `storage` and `app` namespaces consume, so they drop straight into an `env`. Each takes a seed of
-plain strings:
+The fakes implement the structural contracts the `storage` and `app` namespaces consume, so they drop straight into an `env`. Each takes a seed
+keyed by name or path:
 
 ```ts
 const TEST_ENV = {
   SETTINGS_KV: fakeKV({ "user:1": JSON.stringify({ theme: "dark" }) }),
   MEDIA: fakeR2({ "logo.svg": "<svg/>" }),
-  ASSETS: fakeAssetsFetcher({ "/assets/app.css": "body{margin:0}" }),
+  ASSETS: fakeAssetsFetcher({
+    "/assets/app.css": "body{margin:0}",
+    "/logo.png": PNG_BYTES,
+    "/site.webmanifest": { body: "{}", type: "application/manifest+json" },
+  }),
 };
+```
+
+`fakeAssetsFetcher` accepts a string, a `URL` or a `Request`, as the real binding does. It sets the content type from the entry's `type`, or else
+from the extension, and answers `HEAD` with headers and no body. Every path it was asked for is recorded on `requests`, in order.
+
+`fakeCacheStorage` stands in for `caches` when a test drives `attachPrecache` from `@y-core/forge/assets/client`. Its `addAll` fetches through
+the `fetch` you give it, and like a real `Cache` it stores nothing unless every response is ok. With no `fetch` the network is unreachable, so
+`addAll` rejects:
+
+```ts
+const caches = fakeCacheStorage({ fetch: fakeAssetsFetcher({ "/assets/app.css": "body{margin:0}" }).fetch });
+const cache = await caches.open("v1");
+await cache.addAll(["/assets/app.css"]);
+expect(await (await cache.match("/assets/app.css"))?.text()).toBe("body{margin:0}");
 ```
 
 `fakeD1` does two jobs. Its first argument answers the rows for a statement, and every bound statement is recorded on `calls`, so
@@ -158,19 +228,37 @@ process, which is far cheaper than a new handle. Each handle has its own databas
 `hostConfig` and `migrations` point it elsewhere than the current directory's `config/db.config.ts`, and the host config is loaded and refused
 exactly as `forge db` loads it.
 
-It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f). A node spec
-imports forge only through subpaths node can load, so it drives the database through `db.binding` rather than `createD1Client`, and the app's
-`config/db.config.ts` imports `defineDbConfig` from `@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
+It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f). A node spec, and
+every app module it imports, imports forge only through subpaths node can load. `@y-core/forge/storage/db` is one, so the spec can hand
+`db.binding` to the app's own service built on `createD1Client`. The app's `config/db.config.ts` imports `defineDbConfig` from
+`@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
+
+### Under `bun test`
+
+`openBunD1` from `@y-core/forge/testing/d1/bun` takes the same options and returns the same `TestD1`, on an in-memory `bun:sqlite` database with no
+workerd process. Migrations apply in wrangler's order, foreign keys are on, and a `batch` rolls back whole:
+
+```ts
+import { afterAll, beforeAll, beforeEach } from "bun:test";
+import { openBunD1, type TestD1 } from "@y-core/forge/testing/d1/bun";
+
+let db: TestD1;
+beforeAll(async () => (db = await openBunD1()));
+afterAll(() => db.dispose());
+beforeEach(() => db.reset());
+```
+
+The engine is SQLite, not D1, so a limit D1 enforces is still the workerd set's to assert.
 
 ### Asserting that a query uses its index
 
-`explainPlan` asks the test database how it would run a fragment. Assert on the plan, and a query that loses its index fails a test instead of
-showing up later as rows read on the bill:
+`explainPlan` asks the test database how it would run a query, binding its parameters as the client would. Assert on the plan, and a
+query that loses its index fails a test instead of showing up later as rows read on the bill:
 
 ```ts
-import { explainPlan, scansTable, sql, usesIndex } from "@y-core/forge/testing/d1";
+import { explainPlan, scansTable, usesIndex } from "@y-core/forge/testing/d1";
 
-const plan = await explainPlan(db, sql`SELECT id FROM posts WHERE user_id = ${userId} ORDER BY id`);
+const plan = await explainPlan(db, "SELECT id FROM posts WHERE user_id = ? ORDER BY id", [userId]);
 expect(usesIndex(plan, "posts_user")).toBe(true);
 expect(scansTable(plan, "posts")).toBe(false);
 ```
@@ -239,7 +327,7 @@ const res = await app.request(
 );
 ```
 
-A token is bound to the path it was minted for, so mint it for the path you are posting to. Where `csrfProtection` was mounted with a subject
+A token is bound to the path it was minted for, so mint it for the path you are posting to. Where the app's CSRF policy was given a subject
 resolver, pass the same subject — usually the session id — as `{ subject }`, or verification answers `subject-mismatch`.
 
 ---
@@ -296,10 +384,37 @@ expect(attrOf(elementOf(html, "form"), "action")).toBe("/auth/signout");
 carries that attribute spelled exactly as rendered; a void element such as `<meta>` is its opening tag. Reach for `innerOf` when the case is about
 an element's children, `attrOf`, `attrsOf` or `classesOf` when it is about one attribute, every attribute or the class list, and
 `variantClasses(html, baseline, selector?)` when it is about which class tokens one render added and dropped against another. Each answers `""` or
-an empty record for an element the page never rendered, which a `toBe` against the expected markup turns into a failure.
+an empty record for an element the page never rendered, which a `toBe` against the expected markup turns into a failure. `tagsOf`, `elementsOf`
+and `attrValuesOf` are the plural `tagOf`, `elementOf` and `attrOf`: every match in document order, a nested element of the same name an entry of
+its own, and an empty list when nothing matches.
 
-Children are cut at the first closing tag of the same name, so for an element nested inside another of its own kind, name the inner one by a
-selector rather than reaching for the outer.
+Children run to the closing tag that matches the opening one, so an element nested inside another of its own kind is read whole within the outer;
+an element whose closing tag never comes answers `""`.
+
+A spec that node runs, such as a Playwright or workerd spec, imports the same helpers from their prebuilt subpath:
+
+```ts
+import { attrOf, elementOf, innerOf } from "@y-core/forge/testing/markup";
+```
+
+---
+
+## Testing a zone allow-list
+
+`@y-core/forge/testing/zone` carries `zoneAllows(expression, path)`, which answers whether a `buildAllowExpression` predicate admits a request
+path, so an app tests its `zone.allow` surface against forge's own output rather than a parser of its own:
+
+```ts
+import { buildAllowExpression } from "@y-core/forge/site";
+import { zoneAllows } from "@y-core/forge/testing/zone";
+
+const expression = buildAllowExpression(zone);
+expect(zoneAllows(expression, "/admin/users/1")).toBe(true);
+expect(zoneAllows(expression, "/admin/users/1/unknown")).toBe(false);
+```
+
+It evaluates the path clauses `buildAllowExpression` emits and throws on any other syntax, a `buildAllowRule` expression's `http.host` included,
+rather than answering either way.
 
 ---
 
@@ -358,9 +473,19 @@ const token = await mintTestCsrfToken(CSRF_SECRET, "/api/contact");
 const res = await fetch(`${origin}/api/contact`, { method: "POST", headers: { [CSRF_HEADER_DEFAULT]: token }, body: new FormData() });
 ```
 
+**Submitting through Turnstile** takes Cloudflare's testing keys, which `TURNSTILE_TEST_KEYS` carries by the outcome each forces: `site` holds
+`pass`, `block`, `invisible` and `interactive`, `secret` holds `pass`, `fail` and `spent`, and `token` is the dummy token siteverify accepts
+under a testing secret. It is exported from `@y-core/forge/testing/form` and `@y-core/forge/testing`:
+
+```ts
+import { TURNSTILE_TEST_KEYS } from "@y-core/forge/testing/form";
+
+const served = await serveWorker({ config: "./wrangler.jsonc", dev: true, secrets: { TURNSTILE_SECRET_KEY: TURNSTILE_TEST_KEYS.secret.pass } });
+```
+
 Node refuses forge's TypeScript source under `node_modules`, so a workerd spec may import only forge's node subpaths — `testing/harness`,
-`testing/form` and `testing/totp` — and modules of its own that import nothing else from forge. A shared helper that imports
-`@y-core/forge/testing` stops every spec that imports it from loading.
+`testing/form`, `testing/markup`, `testing/totp` and `testing/zone` — and modules of its own that import nothing else from forge. A shared
+helper that imports `@y-core/forge/testing` stops every spec that imports it from loading.
 
 ---
 
@@ -447,8 +572,8 @@ never exposes.
 **`fakeD1.calls` records at `bind`, not at `prepare`.** Everything `createD1Client` issues binds, so this only bites a test driving `db.prepare(…)`
 by hand, or one asserting on an `exec()` that was never a prepared statement.
 
-**`createD1Client` logs every statement at debug** through a logger of its own unless you pass one. `{ logger: nullLogger }` keeps the test output
-readable.
+**`createD1Client` logs slow statements and query-budget trips at warn** through a logger of its own unless you pass one. Pass
+`captureLogs().logger` to assert on them, or `nullLogger` to drop them.
 
 **A statement `fakeAuthD1` does not model answers no rows** rather than throwing — which reads as "absent", not "failed". A test that needs a value
 to survive a round trip through an unmodelled table hands the code its own store instead ([`src/auth/README.md`][auth-readme]).
@@ -468,12 +593,13 @@ to survive a round trip through an unmodelled table hands the code its own store
 [canon-testing-4]: ../../warden/canon/libs/TESTING.md#4-fakes-over-mocks
 [canon-testing-5c]: ../../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
 [db-host-config]: ../tooling/db/README.md#declaring-what-forge-reads
+[sl-3d]: ../../docs/STRUCTURED_LOGGING.md#3d-forges-own-records-follow-the-request-logger
 [storage-readme]: ../storage/README.md
 [testing-1b]: ../../docs/TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types
 [testing-1f]: ../../docs/TEST_RUNNERS.md#1f-the-workerd-set
 [testing-3c]: ../../docs/TEST_RUNNERS.md#3c-render-once-assert-once
 [testing-7]: ../../docs/TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting
-[testing-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-storage-fakes--fakekv-faked1-faker2
+[testing-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-fakes--each-refuses-what-the-platform-refuses
 [testing-7d]: ../../docs/TEST_RUNNERS.md#7d-buildrequest--request-builder
 [testing-7e]: ../../docs/TEST_RUNNERS.md#7e-maphandler-and-testaction--single-route-registrar
 [testing-7f]: ../../docs/TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel

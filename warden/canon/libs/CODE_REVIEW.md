@@ -170,8 +170,10 @@ library signature?_ ([`LIBRARY_ARCHITECTURE.md`][la-4a] §4a.)
 **Namespace classification.** Read the new imports in the changed namespace. _Does this introduce a cross-namespace edge the classification does not
 declare?_ ([`NAMESPACE_DESIGN.md`][nd-3b] §3b.)
 
-**Guard placement.** Read the controller, not the handler. _Is the guard in the route's middleware list, or inline inside the handler?_ Inline
-guards are invisible to a reader auditing the route map.
+**Guard placement.** Read the chain declaration and the controller, not the handler. _Is each guard declared — a check that needs only the request
+in a chain guard group covering the route, an identity or parameter check in the route's middleware list — or inline inside the handler?_ A route
+guarded by neither is the finding; an empty middleware list under a covering group is not. Inline guards are invisible to a reader auditing the
+routes.
 
 **Async lifetime.** Read every function whose returned promise reaches a `waitUntil` or a flush. _Does the returned promise cover every piece of
 work the function started, or only the headline one?_ [`LIBRARY_ARCHITECTURE.md`][la-6] §6 owns the rule and the failure it prevents.

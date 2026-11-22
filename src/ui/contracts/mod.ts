@@ -24,7 +24,7 @@ export {
 } from "./bind-contract";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "./dialog-contract";
-export { HTMX_TRUSTED_TYPES_POLICY } from "./htmx-contract";
+export { FAILURE_FRAGMENT_HEADER, HTMX_TRUSTED_TYPES_POLICY } from "./htmx-contract";
 export { descriptionId, nameAttrs, tabId, titleId, triggerId } from "./naming";
 export type { ContainerNaming, DialogNaming, MenuPopupNaming } from "./types";
 export { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "./island-contract";

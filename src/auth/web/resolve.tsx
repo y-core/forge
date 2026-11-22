@@ -258,7 +258,7 @@ async function resolveSignin<Bindings>(
   const turnstile = await authTurnstileWidget(c, options, "signin");
 
   return ok({
-    // The action carries the return-to and the token is minted without it: `csrfProtection` binds a
+    // The action carries the return-to and the token is minted without it: the CSRF policy binds a
     // token to the path alone, so a query on the minted path is a 403 on every submission.
     submitPath: authReturnQuery(c, options, submitPath),
     signupPath: auth.signup(),
@@ -368,7 +368,7 @@ async function resolveVerify<Bindings>(
     ...(resendPath === undefined ? {} : { resendPath: authReturnQuery(c, options, resendPath) }),
     signinPath: auth.signin(),
     csrfToken: await mintCsrf(c, submitPath),
-    // Its own token: `csrfProtection` binds one to the path it was minted for, and this page posts to two.
+    // Its own token: the CSRF policy binds one to the path it was minted for, and this page posts to two.
     ...(resendPath === undefined ? {} : { resendToken: await mintCsrf(c, resendPath) }),
     resent: c.url.searchParams.has(AUTH_RESENT_PARAM),
     ...(reproof && c.method === "GET" && !c.url.searchParams.has(AUTH_RESENT_PARAM) ? { codeSent: false } : {}),
@@ -456,7 +456,7 @@ async function passkeyPage<Bindings>(
       credentials.map(async (credential) => ({
         credential,
         // `passkeyRename` and `passkeyRemove` are one pathname under two methods, and
-        // `csrfProtection` keys on the pathname, so this token authorises both writes on this row.
+        // The CSRF policy keys on the pathname, so this token authorises both writes on this row.
         csrfToken: await mintCsrf(c, account.passkeyRemove({ id: credential.id })),
       })),
     ),

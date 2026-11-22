@@ -24,7 +24,9 @@ progress rather than work awaiting a verdict. Given an epic or a wave instead, r
 
 **The task is the brief.** Its `doneWhen` is the criterion it was filed against, its `resolution` is
 the developer's claim, and anything constraining how to read the code is in its details. Review
-against `doneWhen` — the point of a second reader is to check that the two agree.
+against `doneWhen` — the point of a second reader is to check that the two agree. A clause that
+only another repository can check is not a criterion here (`AGENT_WORKFLOW.md` §5): judge the task
+on the rest, and name the clause in your reply rather than holding the task on it.
 
 If none of the ids is in `review`, the handoff is stale: say so, message `forge-dev`, and stop.
 
@@ -40,9 +42,9 @@ shows the true remaining work rather than a whole epic blocked on one defect.
 
 - **Clean** — `move_lane` to `done`, carrying its resolution.
 - **A finding** — `create_task` as a `bug` in the same epic and wave, its details carrying the
-  `file:line`, the failure and the rule it came from, and its `doneWhen` falsifiable. Then
-  `move_lane` the offender back to `doing`; that kickback is what keeps the work counted as
-  unfinished.
+  `file:line`, the failure and the rule it came from, and its `doneWhen` falsifiable inside this
+  repository (`AGENT_WORKFLOW.md` §5). Then `move_lane` the offender back to `doing`; that kickback
+  is what keeps the work counted as unfinished.
 
 Then `SendMessage` `forge-dev`:
 

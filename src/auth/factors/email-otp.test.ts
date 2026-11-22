@@ -355,9 +355,27 @@ describe("createEmailOtpFactor — verifying", () => {
     const code = lastCode(notifier);
     const before = await factor.verifyChallenge(USER_ID, code, NOW + 900_000 - 1, fakeFactorCaller());
     const lapsed = await factor.verifyChallenge(USER_ID, code, NOW + 900_000, fakeFactorCaller());
-    expect({ before, lapsed }).toEqual({
+    expect({ stated: factor.attemptWindowMs, before, lapsed }).toEqual({
+      stated: 900_000,
       before: { ok: false, error: "too-many-attempts" },
       lapsed: { ok: true, data: { kind: "email-otp", userId: USER_ID, verifiedAt: NOW + 900_000 } },
+    });
+  });
+
+  it("states its configured guess window as the attempt window, the span from the first guess that a spent budget refuses", async () => {
+    const { factor, notifier } = await harness({ maxAttempts: 3, guessWindowMs: 120_000 });
+    await factor.createChallenge(USER_ID, NOW, fakeFactorCaller());
+    const code = lastCode(notifier);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let ordinal = 1; ordinal <= 3; ordinal++) await factor.verifyChallenge(USER_ID, wrong, NOW, fakeFactorCaller());
+
+    const stated = factor.attemptWindowMs ?? 0;
+    const before = await factor.verifyChallenge(USER_ID, code, NOW + stated - 1, fakeFactorCaller());
+    const lapsed = await factor.verifyChallenge(USER_ID, code, NOW + stated, fakeFactorCaller());
+    expect({ stated, before, lapsed }).toEqual({
+      stated: 120_000,
+      before: { ok: false, error: "too-many-attempts" },
+      lapsed: { ok: true, data: { kind: "email-otp", userId: USER_ID, verifiedAt: NOW + 120_000 } },
     });
   });
 

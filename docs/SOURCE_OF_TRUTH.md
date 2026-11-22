@@ -176,6 +176,11 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `crypto/keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/crypto/keyring/README.md` |
 | The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
 | Which forge files the comment budget holds, and a stylesheet comment's form | [`FORGE_STRUCTURE.md`][fs-10] §10 |
+| The app's one CSRF policy — supplied by the chain, verified exactly once, no inline verifier | [`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f |
+| How a slice contributes — plain data the app root passes each factory as a list, a duplicate key throws, the result is frozen | [`ROUTING_AND_MIDDLEWARE.md`][ram-3g] §3g |
+| The session as a chain slot — the asserted `SessionMiddleware`, `subject: "session"`, the root-owned CSRF policy, one auth store, the lifetime check, sign-out destroys, cookie primitives in `http` | [`ROUTING_AND_MIDDLEWARE.md`][ram-3h] §3h |
+| How a rate limit is declared — the binding by name checked at registration, the window from the generated `RATELIMITS`, the one `RateLimit` type, trust on the chain alone, group versus route placement, the entry points | [`SECURITY_HARDENING.md`][sh-4e] §4e |
+| How a guard refuses — one `onRefuse(c, refusal)` hook declared on the chain and overridable per group, plain-text defaults, the media helpers, `Retry-After`, the `security.<guard>.refused` log line, the fixed statuses | [`FORGE_ERRORS.md`][eh-3e] §3e |
 
 **The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
 per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
@@ -231,6 +236,11 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [am-7]: ./AUTH_MOUNTING.md#7-rotating-the-key-ring
 [cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
+[eh-3e]: ./FORGE_ERRORS.md#3e-one-refusal-contract-for-every-guard
 [fs-10]: ./FORGE_STRUCTURE.md#10-stylesheets-take-the-source-comment-forms
 [namespaces-3a]: ./NAMESPACES.md#3a-a-namespace-is-described-by-its-own-readme
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification
+[ram-3f]: ./ROUTING_AND_MIDDLEWARE.md#3f-one-csrf-policy-per-app-verified-once
+[ram-3g]: ./ROUTING_AND_MIDDLEWARE.md#3g-a-slice-exports-its-contribution-as-data
+[ram-3h]: ./ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
+[sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit

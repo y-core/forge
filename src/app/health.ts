@@ -1,7 +1,7 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
 
 import { getAppContext } from "../context/types";
-import type { CheckFn, HealthCheckOptions, HealthCheckResult } from "./types";
+import type { HealthCheckFn, HealthCheckOptions, HealthCheckResult, HealthChecks } from "./types";
 
 function checkWithin(run: () => boolean | Promise<boolean>, timeoutMs: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -13,7 +13,7 @@ function checkWithin(run: () => boolean | Promise<boolean>, timeoutMs: number): 
 
 /** Returns a RequestHandler that runs named check functions concurrently and responds with JSON health status. @public */
 export function healthCheck<Bindings = Record<string, unknown>>(
-  checks: Record<string, CheckFn<Bindings>>,
+  checks: Record<string, HealthCheckFn<Bindings>>,
   options?: HealthCheckOptions,
 ): RequestHandler {
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 5_000);
@@ -32,4 +32,19 @@ export function healthCheck<Bindings = Record<string, unknown>>(
 
     return Response.json(payload, { status: allOk ? 200 : 503, headers: { "cache-control": "no-store" } });
   };
+}
+
+/** Merges each slice's checks, in array order, into one frozen health route; throws on a check name two contributions share. @public */
+export function createHealthChecks<Bindings = Record<string, unknown>>(
+  contributions: readonly Record<string, HealthCheckFn<Bindings>>[],
+): HealthChecks<Bindings> {
+  const merged: Record<string, HealthCheckFn<Bindings>> = {};
+  for (const checks of contributions) {
+    const taken = Object.keys(checks).find((name) => Object.hasOwn(merged, name));
+    if (taken !== undefined) throw new Error(`createHealthChecks: the check "${taken}" is already contributed.`);
+    Object.assign(merged, checks);
+  }
+  const held = Object.freeze(merged);
+
+  return Object.freeze({ checks: () => held, handler: (options?: HealthCheckOptions) => healthCheck<Bindings>(held, options) });
 }

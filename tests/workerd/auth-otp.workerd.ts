@@ -5,7 +5,7 @@ import { createUserStore } from "../../src/auth/stores/users";
 import type { OtpStateStore, UserStore } from "../../src/auth/types";
 import { createD1Client } from "../../src/storage/db/client";
 import { uuidToBytes } from "../../src/storage/db/uuid";
-import type { TestD1 } from "../../src/testing/d1";
+import type { TestD1 } from "../../src/testing/d1/mod";
 import { openAuthD1, signedUp, tokenHash } from "./auth-d1.fixture";
 
 const MAX_ATTEMPTS = 3;

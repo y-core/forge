@@ -5,12 +5,12 @@ import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { unstable_splitSqlQuery } from "wrangler";
+import { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
 
 import { CliError } from "../cli/errors";
 import { cutSqlStatements } from "./backup/split";
 import { installedWranglerVersion, isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
-import type { Home, WranglerD1Module } from "./types";
+import type { Home, PlatformProxyOpener, WranglerD1Module } from "./types";
 
 const roots: string[] = [];
 
@@ -301,6 +301,11 @@ describe("installedWranglerVersion()", () => {
 describe("missingWranglerExport()", () => {
   it("names getPlatformProxy for a wrangler without it, and answers null for one exporting it", () => {
     expect([missingWranglerExport({}), missingWranglerExport({ getPlatformProxy: () => undefined })]).toEqual(["getPlatformProxy", null]);
+  });
+
+  it("takes the installed wrangler's own getPlatformProxy as the opener it declares", () => {
+    const opener: PlatformProxyOpener = getPlatformProxy;
+    expect(missingWranglerExport({ getPlatformProxy: opener })).toBeNull();
   });
 });
 

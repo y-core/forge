@@ -33,3 +33,11 @@ describe("the published testing stubs", () => {
     expect(topLevel('declare module "x" {}\ninterface Buffer { length: number }\n').trim()).toBe("interface Buffer");
   });
 });
+
+describe("forge's own program", () => {
+  it('declares no global `Bun`, so its source and specs import one from "bun"', () => {
+    // @ts-expect-error -- a global `Bun` here would let a Worker module typecheck a call it cannot make
+    const declared: typeof Bun | undefined = undefined; // oxlint-disable-line eslint/no-restricted-globals -- the reference is the subject
+    expect(declared).toBeUndefined();
+  });
+});

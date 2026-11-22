@@ -1,4 +1,4 @@
-import type { Middleware } from "@remix-run/fetch-router";
+import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
 import { matchedRoutePattern } from "../context/route-pattern";
@@ -9,6 +9,12 @@ import type { Logger, LogLevel, RequestLoggerOptions } from "./types";
 
 /** Typed accessor for the per-request logger that `requestLogger` sets on the context. @public */
 export const requestLog = contextVar<Logger>("logger");
+
+/** The context's request logger bound to `source`, or `fallback` when no request logger is set. @internal */
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
+export function loggerFor(c: RequestContext<any, any>, source: string, fallback: Logger): Logger {
+  return requestLog.getOptional(c)?.child({ source }) ?? fallback;
+}
 
 function levelForStatus(status: number): LogLevel {
   if (status >= 500) return "error";

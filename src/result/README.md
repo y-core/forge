@@ -25,26 +25,34 @@ The contract — one failure field, never `null | T`, never a throw for an expec
 ```ts
 import { result } from "@y-core/forge/result";
 
-const parsed = result(() => new URL(input));
-if (!parsed.ok) {
-  return new Response(parsed.error.message, { status: 400 });
+function readUrl(input: string) {
+  const parsed = result(() => new URL(input));
+  if (!parsed.ok) {
+    return new Response(parsed.error.message, { status: 400 });
+  }
+  const url = parsed.data; // URL
 }
-const url = parsed.data; // URL
 ```
 
 Hand it an async function or a bare promise and you get a promise back, so `await` moves to the front and nothing else changes.
 
 ```ts
-const remote = await result(async () => fetchRemote(id));
-if (!remote.ok) return new Response("Upstream unavailable", { status: 502 });
+import { result } from "@y-core/forge/result";
 
-const response = await result(fetch("https://example.com"));
+async function load(id: string) {
+  const remote = await result(async () => fetchRemote(id));
+  if (!remote.ok) return new Response("Upstream unavailable", { status: 502 });
+
+  const response = await result(fetch("https://example.com"));
+}
 ```
 
 Anything thrown or rejected arrives on `error` as a real `Error`. Outside a `result()` wrapper — in a hand-written `catch`, where the caught value
 is typed `unknown` — `toError()` performs the same coercion on its own.
 
 ```ts
+import { toError } from "@y-core/forge/result";
+
 try {
   doRiskyThing();
 } catch (thrown) {
@@ -74,13 +82,17 @@ when the caller will branch on it, because that is the only version a `switch` c
 A caller that cannot handle a failure returns it unchanged. Doing that at each step keeps the success path at the left margin instead of nesting.
 
 ```ts
-const parsed = result(() => JSON.parse(raw));
-if (!parsed.ok) return parsed;
+import { ok, result } from "@y-core/forge/result";
 
-const validated = validateContact(parsed.data);
-if (!validated.ok) return validated;
+function readContact(raw: string) {
+  const parsed = result(() => JSON.parse(raw));
+  if (!parsed.ok) return parsed;
 
-return ok(validated.data);
+  const validated = validateContact(parsed.data);
+  if (!validated.ok) return validated;
+
+  return ok(validated.data);
+}
 ```
 
 ---
@@ -100,8 +112,10 @@ function verifyOrigin(origin: string | null, allowed: string[]): GuardResult<"mi
   return allowed.includes(origin) ? ok() : err("disallowed");
 }
 
-const origin = verifyOrigin(request.headers.get("Origin"), allowed);
-if (!origin.ok) return new Response("Forbidden", { status: 403 }); // log `origin.error`; never send it
+function guard(request: Request, allowed: string[]) {
+  const origin = verifyOrigin(request.headers.get("Origin"), allowed);
+  if (!origin.ok) return new Response("Forbidden", { status: 403 }); // log `origin.error`; never send it
+}
 ```
 
 **`ValidationResult<T>` is the alias you give your own input-parsing function.** Forge exports the type, not a helper that returns one: its `error`
@@ -109,8 +123,13 @@ is a `readonly string[]` of already-formatted field messages, so a UI can surfac
 `renderValidationErrors` from `@y-core/forge/render/htmx` takes that list directly.
 
 ```ts
-const contact = validateContact(form);
-if (!contact.ok) return fragmentResponse(renderValidationErrors(contact.error), 422);
+import { fragmentResponse } from "@y-core/forge/http";
+import { renderValidationErrors } from "@y-core/forge/render/htmx";
+
+function submit(form: FormData) {
+  const contact = validateContact(form);
+  if (!contact.ok) return fragmentResponse(renderValidationErrors(contact.error), 422);
+}
 ```
 
 ---

@@ -6,16 +6,14 @@ import type { RouteMap } from "@remix-run/fetch-router/routes";
 
 import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
-import type { AppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
 import type { KeyRing } from "../../crypto/keyring/types";
 import { base32Decode, timingSafeEqualBytes, totpCode } from "../../crypto/primitives/mod";
-import { csrfProtection, mintCsrf } from "../../form/csrf";
+import { mintCsrf } from "../../form/csrf";
 import { requestLog } from "../../logging/request-logger";
 import type { Logger } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import { createAnonymousSession } from "../../session/anonymous";
-import { sessionCtx } from "../../session/session";
 import type { KVNamespace } from "../../storage/kv/types";
 import { nullLogger } from "../../testing/context";
 import { fakeKV } from "../../testing/fakes";
@@ -52,6 +50,7 @@ import {
   fakeAuthCredentialStore,
   fakeAuthIcon,
   fakeAuthServices,
+  fakeAuthServicesResolver,
   fakeAuthSessionStore,
   fakeChallengeStore,
   textOf,
@@ -397,8 +396,9 @@ async function harness(requirement: AuthSecondFactorRequirement, stepUpMaxAgeMs?
   };
 
   const window = stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs };
+  const services = fakeAuthServicesResolver<ResilienceEnv>({ sessions: store.sessionStore });
   const memberGuard = requireAuth<ResilienceEnv>({
-    sessions: () => store.sessionStore,
+    services,
     signinPath: paths.auth.signin(),
     factors: () => registry(),
     stepUpPath: paths.auth.verify.show(),
@@ -410,17 +410,12 @@ async function harness(requirement: AuthSecondFactorRequirement, stepUpMaxAgeMs?
   applyMiddlewareChain<ResilienceEnv>(app, {
     before: [invariant],
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<ResilienceEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
-    globals: [
-      csrfProtection({
-        ring: (c) => importKeyRing([(c as AppContext<ResilienceEnv>).env.CSRF_SECRET]),
-        subject: (c) => sessionCtx.getOptional(c)?.id,
-      }),
-    ],
-    guards: [
-      ...createAuthGuards<ResilienceEnv>({
+    session: createAnonymousSession<ResilienceEnv>({ ring: (env) => importKeyRing([env.SESSION_SECRET]), kv: (env) => env.KV }),
+    csrf: { ring: (env) => importKeyRing([env.CSRF_SECRET]), subject: "session" },
+    contributions: [
+      createAuthGuards<ResilienceEnv>({
         routes: { auth: authMap, account: accountMap, admin: adminMap },
-        auth: { sessions: () => store.sessionStore, signinPath: paths.auth.signin(), now: () => clock.now },
+        auth: { services, signinPath: paths.auth.signin(), now: () => clock.now },
         enrolment: {
           factors: () => registry(),
           enrolmentPaths: authEnrolmentPaths(paths.auth),
@@ -431,7 +426,7 @@ async function harness(requirement: AuthSecondFactorRequirement, stepUpMaxAgeMs?
         },
         origin: { allowedOrigins: [ORIGIN] },
       }),
-      { paths: [MEMBER_PAGE], guards: [memberGuard] },
+      { guards: [{ paths: [MEMBER_PAGE], guards: [memberGuard] }] },
     ],
   });
   registerAuth(app, authMap, options);

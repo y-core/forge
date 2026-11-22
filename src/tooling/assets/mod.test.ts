@@ -29,3 +29,29 @@ describe("the tooling/assets entry, type-checked by a consumer with no optional 
     TYPECHECK_TIMEOUT,
   );
 });
+
+describe("the tooling/assets/types entry, resolved through the package's exports map", () => {
+  it(
+    "hands a consumer AssetsConfig by type without the tooling/assets barrel",
+    () => {
+      const source =
+        'import type { AssetsConfig } from "@y-core/forge/tooling/assets/types";\n\nexport const config: AssetsConfig | undefined = undefined;\n';
+      const { status, output } = consumer.typecheck(source);
+      expect(output).not.toContain("error TS");
+      expect(status).toBe(0);
+    },
+    TYPECHECK_TIMEOUT,
+  );
+
+  it(
+    "refuses a subpath the map does not declare, so the clean check above is the export's",
+    () => {
+      const { status, output } = consumer.typecheck(
+        'import type * as gone from "@y-core/forge/tooling/assets/absent";\n\nexport type Gone = typeof gone;\n',
+      );
+      expect(output).toContain("Cannot find module '@y-core/forge/tooling/assets/absent'");
+      expect(status).not.toBe(0);
+    },
+    TYPECHECK_TIMEOUT,
+  );
+});

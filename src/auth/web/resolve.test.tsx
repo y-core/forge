@@ -74,6 +74,7 @@ import {
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthServices,
+  fakeAuthServicesResolver,
   fakeAuthSessionStore,
   fakeAuthUser,
   fakeAuthUserStore,
@@ -688,9 +689,9 @@ describe("resolveAuthView holds a host to the guards the page's data assumes", (
     expect(await res.text()).toBe("Forbidden");
   });
 
-  /** An app serving `name` behind the admin stack `createAuthGuards` wires from `onForbidden`, for an administrator the chain admits, demoted after it when `demoted`. */
-  function adminViewApp(onForbidden: AuthAdminGuardOptions["onForbidden"], demoted: boolean, name: AdminViewName = "adminUsers"): Forge {
-    const guards = [...fakeAdminGuardChain(onForbidden), ...(demoted ? [demoteAuthIdentity] : [])];
+  /** An app serving `name` behind the admin stack `createAuthGuards` wires from `onRefuse`, for an administrator the chain admits, demoted after it when `demoted`. */
+  function adminViewApp(onRefuse: AuthAdminGuardOptions["onRefuse"], demoted: boolean, name: AdminViewName = "adminUsers"): Forge {
+    const guards = [...fakeAdminGuardChain(onRefuse), ...(demoted ? [demoteAuthIdentity] : [])];
     return guardedApp(
       async (c) => {
         const view = await resolveAuthView(c, options, { name, guarded: AUTH_VIEW_GUARDS[name] } as AuthViewRequest<typeof name>);
@@ -702,33 +703,33 @@ describe("resolveAuthView holds a host to the guards the page's data assumes", (
     );
   }
 
-  it("refuses a non-admin on every admin-gated view through the `onForbidden` given only to `createAuthGuards`, handed the request's app context", async () => {
-    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
+  it("refuses a non-admin on every admin-gated view through the `onRefuse` given only to `createAuthGuards`, handed the request's app context", async () => {
+    const onRefuse = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
     const answers = [];
     for (const name of ADMIN_VIEWS) {
-      const res = await adminViewApp(onForbidden, true, name).request("/page");
+      const res = await adminViewApp(onRefuse, true, name).request("/page");
       answers.push({ name, status: res.status, type: res.headers.get("content-type"), body: await res.text() });
     }
     expect(answers).toEqual(ADMIN_VIEWS.map((name) => ({ name, status: 403, type: "text/html", body: "admin only: /page" })));
   });
 
-  it("answers a non-admin with what an async `onForbidden` given to `createAuthGuards` resolves to", async () => {
+  it("answers a non-admin with what an async `onRefuse` given to `createAuthGuards` resolves to", async () => {
     const res = await adminViewApp(async () => new Response("later", { status: 451 }), true).request("/page");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 451, body: "later" });
   });
 
-  it("refuses a non-admin with a plain-text 403 behind a `createAuthGuards` chain given no `onForbidden`", async () => {
+  it("refuses a non-admin with a plain-text 403 behind a `createAuthGuards` chain given no `onRefuse`", async () => {
     const res = await adminViewApp(undefined, true).request("/page");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
   });
 
-  it("serves an administrator the page without consulting `onForbidden`", async () => {
+  it("serves an administrator the page without consulting `onRefuse`", async () => {
     const consulted: string[] = [];
-    const onForbidden = (c: AppContext) => {
+    const onRefuse = (c: AppContext) => {
       consulted.push(c.url.pathname);
       return new Response("admin only", { status: 403 });
     };
-    const res = await adminViewApp(onForbidden, false).request("/page");
+    const res = await adminViewApp(onRefuse, false).request("/page");
     expect({ status: res.status, consulted }).toEqual({ status: 200, consulted: [] });
   });
 
@@ -1126,7 +1127,7 @@ describe("the verify page for a session holding no second factor", () => {
       pages.push({
         prompt: textOf(html, "div", 'data-slot="card-description"'),
         button: textOf(html, "button", 'data-ref="verify-resend"'),
-        resends: html.includes('action="/auth/verify/resend?next=%2Fapp"'),
+        resends: tagOf(html, 'action="/auth/verify/resend?next=%2Fapp"') !== "",
       });
     }
     await Promise.all(deferred);
@@ -1161,7 +1162,7 @@ describe("the verify page for an owed enrolment beside a confirmed second factor
 
   /** The verify page behind the `resolve-auth` its group mounts, whose window is 30 seconds, for a session marked `stepUpAt`. */
   const verifyMarked = async (stepUpAt: number | null) => {
-    const guard = resolveAuth({ sessions: () => fakeAuthSessionStore([viewer]), stepUpMaxAgeMs: 30_000 });
+    const guard = resolveAuth({ services: fakeAuthServicesResolver({ sessions: fakeAuthSessionStore([viewer]) }), stepUpMaxAgeMs: 30_000 });
     const res = await guardedApp((c) => loadVerify(c as never, owing), { ...member, stepUpAt }, "/page", [guard]).request("/page");
     return { status: res.status, location: res.headers.get("location"), prompt: textOf(await res.text(), "div", 'data-slot="card-description"') };
   };
@@ -1184,7 +1185,7 @@ describe("the verify page for an owed enrolment beside a confirmed second factor
   });
 
   it("navigates an htmx request on to the enrolment it still owes with HX-Redirect, and a plain one with 303", async () => {
-    const guard = resolveAuth({ sessions: () => fakeAuthSessionStore([viewer]), stepUpMaxAgeMs: 30_000 });
+    const guard = resolveAuth({ services: fakeAuthServicesResolver({ sessions: fakeAuthSessionStore([viewer]) }), stepUpMaxAgeMs: 30_000 });
     const app = guardedApp((c) => loadVerify(c as never, owing), { ...member, stepUpAt: Date.now() - 5_000 }, "/page", [guard]);
     const answers = await Promise.all(
       [{ "HX-Request": "true" }, {}].map(async (headers) => {
@@ -1977,7 +1978,7 @@ describe("the authenticator-app replacement page", () => {
   it("links the settled app to its replacement on the account page, and not on the owed-enrolment page or without a replaceable factor", async () => {
     const linkOn = async (load: Loader, options: AuthWebOptions) => {
       const html = await (await page(load, options, NOW - 1)).text();
-      return html.includes('data-ref="totp-replace"') ? attrOf(html, 'data-ref="totp-replace"', "href") : null;
+      return attrOf(html, 'data-ref="totp-replace"', "href") || null;
     };
     expect([
       await linkOn(loadTotpEnrol, replaceOptions()),
@@ -2001,6 +2002,8 @@ describe("the authenticator-app replacement page", () => {
 
   it("says the app went first when a replacement lands back on the authenticator page flagged so", async () => {
     const html = await (await page(loadTotpEnrol, replaceOptions(), NOW - 1, "/page?removed=1")).text();
-    expect(textOf(html, "div", 'data-ref="totp-error"')).toContain("Your authenticator app was removed before the replacement finished.");
+    expect(textOf(elementOf(html, "div", 'data-ref="totp-error"'), "div", 'data-slot="alert-description"')).toBe(
+      "Your authenticator app was removed before the replacement finished. Add one again below.",
+    );
   });
 });

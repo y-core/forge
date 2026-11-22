@@ -63,6 +63,6 @@ config-level in Playwright, so this is how a config skips a dev server that run 
 
 ## Gotchas
 
-**It is imported as a prebuilt `config.mjs`.** Playwright transpiles TypeScript only outside `node_modules`, so the `import` condition names the
-bundle `bun run gen:bundles` writes, and the `types` condition names the source. `@playwright/test` stays external — the app's own install is
+**It is imported as a prebuilt `config.node.mjs`.** Playwright transpiles TypeScript only outside `node_modules`, so the `import` condition names
+the bundle `bun run gen:bundles` writes, and the `types` condition names the source. `@playwright/test` stays external — the app's own install is
 the one the projects are built from.

@@ -155,7 +155,7 @@ describe("VerifyView per factor", () => {
     expect(elementsOf(html, "form", 'action="/auth/verify/resend"')).toEqual([]);
   });
 
-  // `csrfProtection` binds a token to the path it was minted for, and this page posts to two. The
+  // The CSRF policy binds a token to the path it was minted for, and this page posts to two. The
   // resend form borrowing `csrfToken` made every "send another code" a 403 with nothing to see.
   it("gives the resend form its own token rather than the submit path's", async () => {
     const html = await verify();

@@ -1,3 +1,4 @@
+export { readPdfArtwork } from "./artwork";
 export { Box, Divider, KeepTogether, PageBreak, PageNumber, Row, Spacer, Stack, Text } from "./components";
 export { Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
 export { ROW_COLUMNS } from "./geometry";

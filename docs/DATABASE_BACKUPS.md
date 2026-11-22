@@ -89,7 +89,9 @@ target's place picks it, and nothing else does:
 | deployed | D1's REST export and import | D1's REST query | Cloudflare's REST object endpoint |
 | local | `PRAGMA miniflare_d1_export` through the binding, and the import as one `batch` into a standby binding | the binding | the local R2 binding |
 
-The local bindings are the ones `wrangler`'s `getPlatformProxy` opens over the app's local state, so no dev session has to be running. Every other
+The local bindings are the ones `wrangler`'s `getPlatformProxy` opens over the app's local state, so no dev session has to be running. On
+`--target standby` the bucket is still opened through the app's own config, because the standby's generated one binds no R2 bucket; the database
+is the standby's. Every other
 step (the census, the digests, the row count, the sidecar, the validation, the pruning) runs the same code in both places.
 
 **The pipeline lives in `tooling/db`, never in a namespace a Worker imports** ([`NAMESPACES.md`][namespaces-5g] §5g). A backup or restore needs a
@@ -139,7 +141,8 @@ prunes again rather than this one being repeated.
 **A restore imports into a database it creates, or into an empty standby.** D1's import needs an empty target, and D1 cannot copy one database into
 another. So `--into fresh` creates a database, and `--into standby:<id>` takes an existing one and refuses it if it already holds a table. A
 database of the same name that a lost reply already created is adopted, and it is held to the same emptiness check. Local D1 cannot create a
-database, so locally only a standby binding is accepted.
+database, so locally only a standby binding is accepted. `forge db standby reset --empty` leaves the standby database with no table, ready for
+`--target standby --into standby:<binding>`.
 
 **A fresh database is named `<database>-restore-<epoch ms>`, and a name D1 would refuse is refused before anything is sent.** D1 caps a database
 name at 64 characters, and promotion refuses a name past it. So restore builds the name first and refuses it while nothing has been created; the
@@ -166,10 +169,10 @@ never listed or pruned as a dump.
 ## 5. Reset and Rehearse Rely on a Local Dump
 
 **`forge db reset` refuses a database holding rows unless a dump still describes them, not merely because a dump exists.** It reads the newest
-complete dump in the local R2 bucket (`BACKUPS`, or `--bucket`). The dump must be under 24 hours old, and each table's live row count must equal
-the rows its sidecar recorded. Otherwise the reset is refused, naming each table that moved. A count cannot see an update that leaves it unchanged;
-that is the price of a dump forge does not read row by row. `--dump <key>` names the dump to rely on, a dump of another database is refused, and
-`--allow-unbacked` skips all of it.
+complete dump in the local R2 bucket (`BACKUPS`, or `--bucket`), which on `standby` is the app's own. The dump must be under 24 hours old, and each
+table's live row count must equal the rows its sidecar recorded. Otherwise the reset is refused, naming each table that moved. A count cannot see an
+update that leaves it unchanged; that is the price of a dump forge does not read row by row. `--dump <key>` names the dump to rely on, a dump of
+another database is refused, and `--allow-unbacked` skips all of it.
 
 **`forge db migrate --rehearse` loads a dump into a scratch database before it applies anything** ([`DATABASE_MANAGEMENT.md`][dm-6f] §6f). The load
 is held to the sidecar as a restore is (§4b), and the dump must have been taken at the migration the target is at.

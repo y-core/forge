@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -14,6 +15,8 @@ export async function loadConfigModule<T>(request: ConfigModuleRequest): Promise
     return undefined;
   }
 
+  // Bun caches an imported module for the life of the process, so without this a config edited after its first load is read stale.
+  delete createRequire(import.meta.url).cache[resolved];
   const module = (await import(pathToFileURL(resolved).href)) as { default?: T };
   if (module.default === undefined) {
     throw new Error(`\`${path}\` has no default export — a ${what} module must \`export default\` the value it holds.`);

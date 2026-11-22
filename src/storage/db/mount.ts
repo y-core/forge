@@ -12,6 +12,8 @@ export function defineD1Binding<Bindings = Record<string, unknown>>(definition: 
   };
   const recheck = { recheckMs: definition.recheckMs, now: definition.now };
   const memo = createSchemaHealthMemo(definition.recheckMs ?? SCHEMA_RECHECK_MS);
+  const logger = definition.client?.logger ?? definition.logger;
+  const clientOptions = { ...definition.client, ...(logger === undefined ? {} : { logger }) };
   return {
     spec: d1BindingSpec(name),
     globals: [schemaHealthMonitorFrom<Bindings>({ binding, logger: definition.logger, ...recheck }, memo)],
@@ -19,6 +21,6 @@ export function defineD1Binding<Bindings = Record<string, unknown>>(definition: 
       [name]: (c) => binding(c) !== undefined,
       [`${name}:schema`]: schemaHealthCheckFrom<Bindings>(binding, memo, definition.now ?? Date.now),
     },
-    client: (c) => resolveD1Client(c, { binding, ...(definition.client === undefined ? {} : { client: definition.client }) }) as D1Client,
+    client: (c) => resolveD1Client(c, { binding, client: clientOptions }) as D1Client,
   };
 }

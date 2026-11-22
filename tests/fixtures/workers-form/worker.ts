@@ -6,7 +6,8 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 import { Forge } from "../../../src/app/forge-app";
 import { createHandlerFactory } from "../../../src/app/handler-factory";
 import { importKeyRing } from "../../../src/crypto/keyring/ring";
-import { csrfProtection, mintCsrf } from "../../../src/form/csrf";
+import { csrfMintStage, mintCsrf } from "../../../src/form/csrf";
+import { TURNSTILE_TEST_KEYS } from "../../../src/form/turnstile-keys";
 import { v } from "../../../src/validation/validation";
 
 interface Env {
@@ -32,7 +33,7 @@ const routes = createRoutes({
 
 const app = new Forge<Env>();
 
-app.use("/api/*", csrfProtection({ ring: (context) => importKeyRing([(context.env as Env).CSRF_SECRET]), subject: false, maxBytes: MAX_BYTES }));
+app.use("/api/*", csrfMintStage({ ring: (bindings: Env) => importKeyRing([bindings.CSRF_SECRET]), subject: false, maxBytes: MAX_BYTES }));
 
 app.map(
   routes,
@@ -48,7 +49,7 @@ app.map(
       guarded: defineAction(routes.guarded, {
         schema: ContactSchema,
         maxBytes: MAX_BYTES,
-        turnstile: { secretKey: () => "1x0000000000000000000000000000000AA", verify: () => ({ expectedHostname: "example.com" }) },
+        turnstile: { secretKey: () => TURNSTILE_TEST_KEYS.secret.pass, verify: () => ({ expectedHostname: "example.com" }) },
         handle: (data) => new Response(`<p>Thanks, ${data.name}.</p>`, { headers: { "content-type": "text/html" } }),
       }),
     },

@@ -1,98 +1,24 @@
 import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
-import { base64DecodeOrNull, base64Encode, utf8Encode } from "../crypto/primitives/mod";
-import { Cookie as CookieHeader, SetCookie } from "../http/headers";
-import type { SetCookieInit } from "../http/headers";
-import type {
-  CookieAttributes,
-  SignedCookie,
-  SignedCookieAttributes,
-  SignedCookieOptions,
-  SignedCookieReading,
-  UnsignedCookie,
-  UnsignedCookieOptions,
-} from "./types";
-
-// Not `crypto/primitives`' shared TEXT_DECODER: that one is lenient, so malformed bytes would decode to
-// U+FFFD mojibake and flow into JSON.parse or the session store instead of answering `null`.
-const STRICT_DECODER = new TextDecoder("utf-8", { fatal: true });
+import { base64DecodeOrNull, base64Encode } from "../crypto/primitives/mod";
+import {
+  COOKIE_ATTRIBUTES_DEFAULT,
+  decodePayload,
+  encodePayload,
+  mergeAttributes,
+  readWire,
+  refuseHostPrefixScope,
+  refuseInsecurePrefix,
+  setCookie,
+} from "../http/cookie";
+import type { CookieAttributes, ResolvedAttributes } from "../http/types";
+import type { SignedCookie, SignedCookieAttributes, SignedCookieOptions, SignedCookieReading } from "./types";
 
 // Digits only and length-capped: `Number(segment)` alone reads `0x10`, `1e9`, `+1`, `" 1 "` and
 // `Infinity` as second spellings of one instant, and therefore as second wire forms for one cookie.
 const EXPIRY_SEGMENT = /^\d{1,10}$/;
 const EXPIRY_LIMIT = 9_999_999_999;
 
-// RFC 6265 §6.1's floor, measured across name, value and attributes together. Upstream names it in a
-// doc-comment and enforces nothing; a browser over it discards the whole header without a word.
-const COOKIE_MAX_BYTES = 4096;
-
-const HOST_PREFIX = /^__host-/i;
-const SECURE_REQUIRED_PREFIX = /^__(?:host|secure)-/i;
-
 const SIGNED_COOKIE_PURPOSE = "signed-cookie";
-
-/** Encodes a value to its wire payload: `base64(utf8(value))`, standard alphabet, padding retained. */
-function encodePayload(value: string): string {
-  // A lone surrogate is unrepresentable in UTF-8: TextEncoder would substitute U+FFFD and `parse`
-  // would not return what `serialize` was given, so refuse it rather than corrupt it silently.
-  if (!value.isWellFormed()) {
-    throw new Error("cookie value must not contain lone surrogates");
-  }
-  return base64Encode(utf8Encode(value));
-}
-
-/** Decodes a wire payload back to its value, answering `null` for anything that is not one. */
-function decodePayload(payload: string): string | null {
-  const bytes = base64DecodeOrNull(payload);
-  if (bytes === null) return null;
-  try {
-    return STRICT_DECODER.decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
-/** Reads this cookie's raw wire value out of a `Cookie` header. */
-function readWire(header: string | null, name: string): string | null {
-  if (!header) return null;
-  const cookies = new CookieHeader(header);
-  if (!cookies.has(name)) return null;
-  return cookies.get(name) ?? null;
-}
-
-/** Every cookie attribute resolved to the one value a call settled on, `undefined` where neither side named it. */
-type ResolvedAttributes = { [field in keyof Required<CookieAttributes>]: CookieAttributes[field] | undefined };
-
-/** Merges a per-call override over the construction defaults, one field at a time. */
-function mergeAttributes(defaults: CookieAttributes, override: CookieAttributes | undefined): ResolvedAttributes {
-  // `??` per field, never `||`: `maxAge: 0` is the flash-clear path and must survive the merge.
-  const partitioned = override?.partitioned ?? defaults.partitioned;
-  return {
-    domain: override?.domain ?? defaults.domain,
-    expires: override?.expires ?? defaults.expires,
-    httpOnly: override?.httpOnly ?? defaults.httpOnly,
-    maxAge: override?.maxAge ?? defaults.maxAge,
-    partitioned,
-    path: override?.path ?? defaults.path,
-    sameSite: override?.sameSite ?? defaults.sameSite,
-    // A partitioned cookie is only honoured alongside Secure.
-    secure: partitioned === true ? true : (override?.secure ?? defaults.secure),
-  };
-}
-
-/** Refuses a `__Host-` name scoped wider than a browser stores it under: with a domain, or on any path but `/`. */
-function refuseHostPrefixScope(caller: string, name: string, attributes: { domain?: string | undefined; path?: string | undefined }): void {
-  if (!HOST_PREFIX.test(name)) return;
-  if (attributes.domain !== undefined)
-    throw new Error(`${caller}: "${name}" is a __Host- cookie, so it must not carry a domain (got ${attributes.domain})`);
-  if (attributes.path !== "/") throw new Error(`${caller}: "${name}" is a __Host- cookie, so its path must be "/" (got ${attributes.path})`);
-}
-
-/** Refuses a `__Host-` or `__Secure-` name without `Secure`, which a browser drops on arrival. */
-function refuseInsecurePrefix(caller: string, name: string, attributes: { secure?: boolean | undefined }): void {
-  if (!SECURE_REQUIRED_PREFIX.test(name) || attributes.secure === true) return;
-  const prefix = HOST_PREFIX.test(name) ? "__Host-" : "__Secure-";
-  throw new Error(`${caller}: "${name}" is a ${prefix} cookie, so it must be Secure (got secure: ${attributes.secure})`);
-}
 
 /** The epoch second past which a value serialized under `attributes` stops verifying, or `null` where they bound nothing. */
 function expiryOf(attributes: ResolvedAttributes): number | null {
@@ -119,57 +45,19 @@ function expiryOf(attributes: ResolvedAttributes): number | null {
   return at;
 }
 
-/** Builds the `Set-Cookie` header value, dropping every attribute left undefined by the merge, and refusing one no browser would store. */
-function setCookie(name: string, wire: string, attributes: ResolvedAttributes): string {
-  const init: Record<string, unknown> = { name, value: wire };
-  for (const [field, value] of Object.entries(attributes)) {
-    if (value !== undefined) init[field] = value;
-  }
-  const header = new SetCookie(init as SetCookieInit).toString();
-  const bytes = utf8Encode(header).length;
-  // Throwing here puts the failure at the write. Silently emitting it surfaces as a 403 from
-  // `csrfProtection` on the next mutation, three layers from the session that was dropped.
-  if (bytes > COOKIE_MAX_BYTES) {
-    throw new Error(`serialize: the Set-Cookie for "${name}" must be at most ${COOKIE_MAX_BYTES} bytes, or a browser discards it (got ${bytes})`);
-  }
-  return header;
-}
-
-/** Creates an unsigned cookie: the value is base64-encoded on the wire but carries no authentication. @public */
-export function createUnsignedCookie(name: string, options?: UnsignedCookieOptions): UnsignedCookie {
-  if (name === "") throw new Error("createUnsignedCookie: name must not be empty");
-  const defaults: CookieAttributes = { path: "/", sameSite: "Lax", ...options };
-  if (SECURE_REQUIRED_PREFIX.test(name)) defaults.secure ??= true;
-  refuseHostPrefixScope("createUnsignedCookie", name, defaults);
-  refuseInsecurePrefix("createUnsignedCookie", name, defaults);
-
-  return {
-    name,
-    // `async` though nothing awaits: a rejected promise, never a synchronous throw, so a caller
-    // handles both cookie kinds the same way.
-    async parse(header: string | null): Promise<string | null> {
-      const wire = readWire(header, name);
-      if (wire === null) return null;
-      // `""` short-circuits both directions, so the destroy sentinel survives a round trip.
-      if (wire === "") return "";
-      return decodePayload(wire);
-    },
-    async serialize(value: string, attributes?: CookieAttributes): Promise<string> {
-      const merged = mergeAttributes(defaults, attributes);
-      refuseHostPrefixScope("serialize", name, merged);
-      refuseInsecurePrefix("serialize", name, merged);
-      return setCookie(name, value === "" ? "" : encodePayload(value), merged);
-    },
-  };
-}
-
 /** Creates a cookie that is always httpOnly and HMAC-signed under a key ring, naming the signing key id on the wire. @public */
 export function createSignedCookie(name: string, options: SignedCookieOptions): SignedCookie {
   if (name === "") throw new Error("createSignedCookie: name must not be empty");
   const { ring, sameSite, ...rest } = options;
   // `secure` is hardcoded, not an option: development is https at every hop, so it is correct there
   // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.
-  const defaults: CookieAttributes = { path: "/", ...rest, sameSite: sameSite ?? "Lax", httpOnly: true, secure: true };
+  const defaults: CookieAttributes = {
+    path: COOKIE_ATTRIBUTES_DEFAULT.path,
+    ...rest,
+    sameSite: sameSite ?? COOKIE_ATTRIBUTES_DEFAULT.sameSite,
+    httpOnly: COOKIE_ATTRIBUTES_DEFAULT.httpOnly,
+    secure: COOKIE_ATTRIBUTES_DEFAULT.secure,
+  };
   refuseHostPrefixScope("createSignedCookie", name, defaults);
   refuseInsecurePrefix("createSignedCookie", name, defaults);
   // Fixed at construction because `parse` has no per-call attributes to consult: a value omitting an
@@ -221,6 +109,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
   return {
     name,
     rotating: Object.keys(ring.keys).length > 1,
+    maxAge: rest.maxAge,
     read(header: string | null): Promise<SignedCookieReading | null> {
       return readAs("read", header);
     },

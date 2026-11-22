@@ -7,7 +7,7 @@ import { createUserStore } from "../../src/auth/stores/users";
 import type { AuthSecurityEvent } from "../../src/auth/types";
 import { createD1Client } from "../../src/storage/db/client";
 import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import { openTestD1, type TestD1 } from "../../src/testing/d1";
+import { openTestD1, type TestD1 } from "../../src/testing/d1/mod";
 
 /** A private real D1 holding `src/auth/schema.sql`, its temporary root removed on dispose. */
 export async function openAuthD1(): Promise<TestD1> {

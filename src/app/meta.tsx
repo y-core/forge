@@ -20,10 +20,11 @@ function extraTag(tag: MetaTag): JSXNode {
 /** Renders a page's `<head>` children — the one place a descriptor becomes markup. @public */
 export function metaTags(meta: PageMeta, options: MetaOptions = {}): JSXNode {
   const { og, twitter } = meta;
+  const indexable = ![meta.robots].flat().includes("noindex");
   return [
     <title>{meta.title}</title>,
     meta.description === undefined ? null : <meta name='description' content={meta.description} />,
-    meta.canonical === undefined ? null : <link rel='canonical' href={meta.canonical} />,
+    meta.canonical === undefined || !indexable ? null : <link rel='canonical' href={meta.canonical} />,
     meta.robots === undefined ? null : <meta name='robots' content={robotsContent(meta.robots)} />,
     og?.title === undefined ? null : <meta property='og:title' content={og.title} />,
     og?.description === undefined ? null : <meta property='og:description' content={og.description} />,

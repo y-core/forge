@@ -1,6 +1,7 @@
 import type { ValidationResult } from "../../result/types";
 import type { PlaywrightServerStatus } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
+import type { ConsumerCssSourcesCheckConfig } from "./checks/types";
 import type { AcceptedRow, ContrastCheckConfig, ContrastPairInput } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
@@ -130,6 +131,8 @@ export interface CloudflareWorkerStepOptions {
   testSets?: readonly { label: string; sources: readonly string[] }[];
   /** Asset config path; omit to skip the asset-types step entirely. */
   assetConfig?: string;
+  /** What the consumer-css-sources row scans; omit to scan `["src"]`. Read only when `assetConfig` is set. */
+  consumerCssSources?: Omit<ConsumerCssSourcesCheckConfig, "root" | "assetConfig" | "packageName">;
   /** Where the asset-types emitter writes. Defaults to `.forge/assets.ts`. */
   assetOut?: string;
   /** Whether to emit the `types:cf-runtime` step. Defaults to `true`. */

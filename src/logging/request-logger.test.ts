@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
+import { RequestContext } from "../context/types";
 import type { KVNamespace } from "../storage/kv/types";
 import { collectExecutionContext, mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { consoleChannel, withLevels } from "./channels";
 import { kvLogChannel } from "./kv-channel";
+import { createLogger } from "./logger";
 import { defineLogRedaction } from "./redact";
-import { requestLog, requestLogger } from "./request-logger";
+import { loggerFor, requestLog, requestLogger } from "./request-logger";
 import type { LogChannel, LogRecord, RequestLoggerOptions } from "./types";
 
 function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
@@ -228,7 +230,7 @@ describe("requestLogger — per-request summary record", () => {
 
     const detail = records[0]!;
     expect(detail.level).toBe("error");
-    expect(detail.message).toBe("unhandled error");
+    expect(detail.message).toBe("Unhandled error");
     const error = detail.data?.error as { type: string; detail: string; stack?: string };
     expect(error.type).toBe("Error");
     expect(error.detail).toBe("handler exploded");
@@ -264,7 +266,7 @@ describe("requestLogger — per-request summary record", () => {
 
     await app.request("/boom").catch(() => undefined);
 
-    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "unhandled error"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "Unhandled error"]);
     const rec = records[0]!;
     expect(rec.level).toBe("error");
     const error = rec.data?.error as { type: string; detail: string; stack?: string };
@@ -306,7 +308,7 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
     const res = await makeGuardThrowApp(channel).request("/boom");
 
     expect(res.status).toBe(500);
-    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "unhandled error"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "Unhandled error"]);
   });
 
   it("keeps the two records correlated by requestId across the separate flush windows", async () => {
@@ -328,7 +330,7 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    expect(records.map((r) => r.message)).toStrictEqual(["unhandled error", "request.completed"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["Unhandled error", "request.completed"]);
   });
 });
 
@@ -390,7 +392,7 @@ describe("requestLogger — a failing channel never changes the request outcome"
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    const detail = records.find((r) => r.message === "unhandled error");
+    const detail = records.find((r) => r.message === "Unhandled error");
     expect((detail?.data?.error as { detail: string } | undefined)?.detail).toBe("middleware exploded");
   });
 });
@@ -419,7 +421,7 @@ describe("requestLogger — persisted error detail", () => {
     expect(typeof live.stack).toBe("string");
 
     const stored = persisted.map((raw) => JSON.parse(raw) as { message: string; data?: { error?: Record<string, unknown> } });
-    const storedDetail = stored.find((r) => r.message === "unhandled error");
+    const storedDetail = stored.find((r) => r.message === "Unhandled error");
     expect(storedDetail).toBeDefined();
     expect(storedDetail?.data?.error).toStrictEqual({ type: "Error", detail: "handler exploded" });
   });
@@ -780,7 +782,7 @@ describe("requestLogger — routePattern", () => {
     });
   });
 
-  it("puts null on request.failed when a guard throws before dispatch", async () => {
+  it("puts the pattern on request.failed when a guard throws before dispatch", async () => {
     const { records, app } = patternApp();
     app.use("*", () => {
       throw new Error("guard exploded before dispatch");
@@ -793,7 +795,7 @@ describe("requestLogger — routePattern", () => {
       message: "request.failed",
       method: "GET",
       path: "/n/abc",
-      routePattern: null,
+      routePattern: "/n/:nb",
       status: undefined,
     });
   });
@@ -808,5 +810,25 @@ describe("requestLogger — routePattern", () => {
       { message: "request.completed", method: "GET", path: "[redacted]", routePattern: "/n/:nb", status: 200 },
     ]);
     expect(JSON.stringify(records)).not.toContain("3f2c9a1e");
+  });
+});
+
+describe("loggerFor", () => {
+  it("answers the fallback when the context carries no request logger", () => {
+    const fallback = createLogger("fallback", { channels: [] });
+
+    expect(loggerFor(new RequestContext(new Request("http://test/")), "action", fallback)).toBe(fallback);
+  });
+
+  it("binds the source onto the context's request logger", () => {
+    const { records, channel } = makeCapture();
+    const context = new RequestContext(new Request("http://test/"));
+    requestLog.set(context, createLogger("request", { channels: [channel] }));
+
+    loggerFor(context, "action", createLogger("fallback", { channels: [] })).error("Action threw");
+
+    expect(records.map(({ prefix, message, data }) => ({ prefix, message, data }))).toStrictEqual([
+      { prefix: "request", message: "Action threw", data: { source: "action" } },
+    ]);
   });
 });

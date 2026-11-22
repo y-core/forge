@@ -135,8 +135,9 @@ argument values.
 **A guard reason code, ever** (§1c). **A raw exception message from an external service**, which routinely embeds request URLs, keys, and account
 identifiers.
 
-A message derived from an exception is permitted **only under an explicit debug predicate**, and it is escaped on the way out like any other
-untrusted string — the message may embed input the client itself supplied.
+A message derived from an exception is permitted **only in a development build**, through a relaxation module the build selects
+([`APP_ARCHITECTURE.md`][aa-1c] §1c) rather than a runtime flag. It is escaped on the way out like any other untrusted string, because the message
+may embed input the client itself supplied.
 
 ### 3c. Status Codes Are Part of the Contract
 
@@ -219,6 +220,7 @@ for every request; an operation failure is per-request and often handleable.
 **Environment failures throw one normalized shape**, produced by the shared formatter rather than hand-rolled per call site — otherwise the error a
 developer sees most often during deployment is the one with the least consistent text ([`WORKERS_PLATFORM.md`][wp-4d] §4d).
 
+[aa-1c]: ./APP_ARCHITECTURE.md#1c-development-relaxations-are-modules-the-build-selects
 [aa-2]: ./APP_ARCHITECTURE.md#2-the-layer-stack
 [aa-2c]: ./APP_ARCHITECTURE.md#2c-no-layer-skipping
 [boundaries-2a]: ./BOUNDARIES.md#2a-the-global-chain-order

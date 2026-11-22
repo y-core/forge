@@ -28,99 +28,60 @@ seams you supply (§3).
 ## Getting started
 
 Everything the auth pages run against is built **per request** — a passkey ceremony is bound to this request's session, and every store needs a
-binding off `c.env`. That builder is the one function you write:
+binding off `c.env`. `authRequestServices` builds all of it from one D1 client and the seams only you can supply:
 
 ```ts
-import {
-  AuthStoreError,
-  createAdminUserStore,
-  createAuthSessionStore,
-  createCredentialStore,
-  createEmailChangeFlow,
-  createEmailOtpFactor,
-  createFactorRegistry,
-  createFactorStore,
-  createNonceStore,
-  createOtpStateStore,
-  createSecurityNotices,
-  createSigninFlow,
-  createSignupFlow,
-  createUserStore,
-  importAuthKeyRing,
-  resolveAuthServices,
-} from "@y-core/forge/auth";
-import type { AuthRequestServices } from "@y-core/forge/auth/web";
-import type { AppContext } from "@y-core/forge/context";
-import { err, ok } from "@y-core/forge/result";
+import { importAuthKeyRing } from "@y-core/forge/auth";
+import { authRequestServices } from "@y-core/forge/auth/web";
 import { createD1Client } from "@y-core/forge/storage/db";
 
-// Module scope: the ring is resolved once per isolate, not once per request.
-const authOptions = { ring: (c: AppContext<Env>) => importAuthKeyRing([c.env.AUTH_SECRET]) };
-
-// One builder for every session store, so the guards and the pages hold the same lifetime and idle bound.
-const sessionStore = (c: AppContext<Env>) => createAuthSessionStore(createD1Client(c.env.DB));
-
-async function resolveServices(c: AppContext<Env>): Promise<AuthRequestServices> {
-  const { keys } = await resolveAuthServices(c, authOptions);
-  const db = createD1Client(c.env.DB);
-  const users = createUserStore(db);
-  const enrolments = createFactorStore(db);
-  const state = createOtpStateStore(db);
-  const nonces = createNonceStore(db);
-  const defer = (work: Promise<unknown>) => c.executionCtx.waitUntil(work);
-
-  const emailOtp = createEmailOtpFactor({
-    keys,
-    state,
-    nonces,
-    notifier,
-    address: async (userId) => {
-      const found = await users.findById(userId);
-      if (!found.ok) return found;
-      return found.data ? ok(found.data.email) : err(new AuthStoreError("unavailable", "address"));
-    },
-  });
-  const factors = createFactorRegistry(enrolments, { primary: emailOtp });
-
-  return {
-    users,
-    sessions: sessionStore(c),
-    credentials: createCredentialStore(db),
-    enrolments,
-    factors,
-    signin: createSigninFlow({ keys, users, state, nonces, factors, defer }),
-    signup: createSignupFlow({ users, factors, defer }),
-    emailChange: createEmailChangeFlow({ keys, users, nonces, notifier, defer, confirmUrl: (token) => `${c.env.ORIGIN}/email/confirm?t=${token}` }),
-    notices: createSecurityNotices({ notifier, defer }),
-    admin: createAdminUserStore(db),
-  };
-}
+// Module scope: each call holds its own per-request memo, so build it once per option set.
+const resolveServices = authRequestServices<Env>({
+  auth: { ring: (env) => importAuthKeyRing([env.AUTH_SECRET]) },
+  db: (c) => createD1Client(c.env.DB),
+  notifier: () => notifier,
+  defer: (c) => (work) => c.executionCtx.waitUntil(work),
+  confirmUrl: (c, token) => `${c.env.ORIGIN}/email/confirm?t=${token}`,
+  secondFactors: {
+    "totp-app": { issuer: "Example", requirement: "mandatory" },
+    passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", requirement: "optional" },
+  },
+});
 ```
 
-Hand that to `AuthWebOptions.resolveServices` and mount the route builders as [`AUTH_MOUNTING.md`][am-1] §1 lays them out.
-`resolveServices` is called **once per request** however many guards, loaders and actions ask for it, so building every store inside it costs one
-build.
+Hand `resolveServices` to `AuthWebOptions.resolveServices` and mount the route builders as [`AUTH_MOUNTING.md`][am-1] §1 lays them out.
+However many guards, loaders and actions ask for it, it builds each request's services once.
 
-The seams above with no default and no way to guess them are `notifier` (next section), `defer` and `address`. `defer` must be
-`executionCtx.waitUntil` or an equivalent, never inline.
+The seams with no default are `notifier` (next section), `defer` and `confirmUrl`. `defer` must be `executionCtx.waitUntil` or an equivalent,
+never inline. `confirmUrl` names the confirm route you mount yourself ([`AUTH_MOUNTING.md`][am-3] §3).
 
-**Build one `FactorStore` and hand it to everything that asks for one**: `createFactorRegistry`, the `enrolments` you return, and the `factors`
-option of the passkey, authenticator-app and recovery-code factors. The account pages and redirects that weigh all of a user's factors at once
-read them from `enrolments` in one read, not from each service's `listEnrolments`, so a custom factor service whose rows live in a store of its
-own shows there as not enrolled.
+**`secondFactors` lists what a user may enrol after the emailed code**, in the order the pages list them and owed factors are enrolled in.
+Any entry brings recovery codes with it. Leave it out and every sign-in is the emailed code alone. Where the host or the env varies, `rpId`,
+`rpName`, `origin` and `issuer` also take a function of the request. An empty `rpName` or `issuer`, or an `issuer` holding `:`, throws:
+at the call when written as a literal, at `await resolve(c)` when a function returns it. The next section is what each `requirement` demands.
 
-**Hand the same `sessionStore` to the guards**, as `createAuthGuards`' `auth.sessions`. The store `resolveServices` returns sets a new session's
-expiry, and the one the guards resolve decides whether a request is still signed in, so building both from one function is what keeps a lifetime
-you configure in force everywhere. To shorten the bounds, pass them there once —
-`createAuthSessionStore(createD1Client(c.env.DB), { absoluteLifetimeMs, idleTimeoutMs })`; which values reach AAL2 is
-[`AUTH_MOUNTING.md`][am-5] §5.
+**`address` defaults to the account's email**: the address a code goes to, the label an authenticator app shows and the name a passkey is saved
+under. Pass `address` to read it from somewhere else.
+
+**Hand `resolveServices` to the guards** as `services`, in `resolveAuth`'s options and `createAuthGuards`' `auth`, and pass what
+`createAuthGuards` returns in `applyMiddlewareChain`'s `contributions`. The services set a new
+session's expiry and the guards decide whether a request is still signed in through the one store it builds per request, so one lifetime holds
+everywhere. To shorten
+it, pass `sessionOptions: { absoluteLifetimeMs, idleTimeoutMs }` once; which values reach AAL2 is [`AUTH_MOUNTING.md`][am-5] §5.
+
+Every store is built over the one client `db` returns, and one `FactorStore` is handed to the registry, the `enrolments` and every second factor.
+The account pages read all of a user's factors from `enrolments` in one read. If you compose `AuthRequestServices` yourself instead, keep that:
+a factor service whose rows live in a store of its own shows there as not enrolled.
 
 **Back the session with `storage: "cookie"`.** A signed-in identity lives in D1, in the row `sessions` writes at sign-in, so the session only
 carries that row's token beside the visitor's own state, and an anonymous visitor writes nothing anywhere. KV storage still works. Give the
-cookie a `maxAge` of at least the session's absolute lifetime, because an idle touch does not rewrite it ([`AUTH_MOUNTING.md`][am-1] §1).
+cookie a `maxAge` of at least the session's absolute lifetime, because an idle touch does not rewrite it ([`AUTH_MOUNTING.md`][am-1] §1). The
+guards' contribution carries that lifetime, so `applyMiddlewareChain` throws at registration where the cookie's `maxAge` is shorter or unset;
+`createAnonymousSession`'s 365-day default passes. The idle bound defaults to 24 hours. A bound over 20 hours is exempt from WCAG 2.2.1 Timing
+Adjustable; an app that shortens one below that owes the visitor a warning before it expires and a way to extend it.
 
-**`resolveAuthServices` throws rather than returning a `Result`**: resolving a binding throws, and operating on a resolved store answers a
-`Result` ([`FORGE_ERRORS.md`][eh-5e] §5e).
+**An unusable key ring rejects the services rather than answering a `Result`**: resolving a binding throws, and operating on a resolved store
+answers a `Result` ([`FORGE_ERRORS.md`][eh-5e] §5e).
 
 ---
 
@@ -131,6 +92,8 @@ mandatory or optional, and the recovery codes beside them. A deployment that sig
 app, and lets them add passkeys as well looks like this:
 
 ```ts
+import { createFactorRegistry } from "@y-core/forge/auth";
+
 const factors = createFactorRegistry(enrolments, {
   primary: emailOtp,
   second: {
@@ -216,7 +179,7 @@ import type { AuthNotifiedEventType } from "@y-core/forge/auth";
 
 const NOTICE_SUBJECTS: Record<AuthNotifiedEventType, string> = {
   "factor-replaced": "Your authenticator app was replaced",
-  // …one entry for every other member of the union
+  ...OTHER_SUBJECTS, // …one entry for every other member of the union
 };
 ```
 
@@ -230,8 +193,8 @@ Forge aborts `signal` once its delivery deadline passes, and a `send` that rejec
 still rolled back. **Watch `auth.email-otp.deliver.failed`:** the factor logs it at `error`, with what `send` answered, whenever a code could
 not be delivered, and nobody else sees that failure — sign-in and sign-up send their codes after the response. Every store failure the factor
 meets is logged the same way, as `auth.email-otp.<step>.failed`, and a flow's own deferred failure as
-`auth.signin.issue.failed` or `auth.signup.issue.failed`. Pass `logger` to `createEmailOtpFactor` and to each flow's options to choose where
-those records go, or leave it out for the console.
+`auth.signin.issue.failed` or `auth.signup.issue.failed`. `authRequestServices` sends all of them, and the notices' failures, to the request
+logger, or to the console without one; its `logger` option chooses another. A factor or flow built by hand takes `logger` in its own options.
 
 ---
 
@@ -241,20 +204,24 @@ The flows are callable on their own, and `auth/web`'s actions are thin wrappers 
 defers the issue, and a completion.
 
 ```ts
+import { redactSigninReason } from "@y-core/forge/auth";
+
 const caller = { binding: browserBinding(session), keep: null }; // the same browser must present the same binding
 const challenge = services.signin.request(email, Date.now(), caller); // returns immediately; the code is deferred
 // …later, with what the visitor typed:
-const outcome = await services.signin.complete(email, code, Date.now(), caller);
-if (!outcome.ok) return page(redactSigninReason(outcome.error));
-switch (outcome.data.resolution.status) {
-  case "enrolment-required": {
-    const { kinds, stepUpKinds } = outcome.data.resolution;
-    return redirect(stepUpKinds.length > 0 ? verifyPath : enrolmentPageFor(kinds));
+async function complete(code: string) {
+  const outcome = await services.signin.complete(email, code, Date.now(), caller);
+  if (!outcome.ok) return page(redactSigninReason(outcome.error));
+  switch (outcome.data.resolution.status) {
+    case "enrolment-required": {
+      const { kinds, stepUpKinds } = outcome.data.resolution;
+      return redirect(stepUpKinds.length > 0 ? verifyPath : enrolmentPageFor(kinds));
+    }
+    case "step-up-required":
+      return redirect(verifyPath);
+    default:
+      return establish(outcome.data.user);
   }
-  case "step-up-required":
-    return redirect(verifyPath);
-  default:
-    return establish(outcome.data.user);
 }
 ```
 
@@ -349,6 +316,7 @@ An approval holds a route until the visitor's session has presented a code you c
 secret. Define one per deployment at module scope, then hand that same value to every place that uses it:
 
 ```ts
+import { applyMiddlewareChain } from "@y-core/forge/app";
 import { createAuthGuards, defineApproval, registerApproval, requireApproval } from "@y-core/forge/auth/web";
 import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 
@@ -356,17 +324,20 @@ const approval = defineApproval<Env>({
   path: "/approve",
   code: (c) => c.env.ADMIN_APPROVAL_CODE,
   origin: { allowedOrigins: ["https://app.example"] },
-  rateLimit: { limiter: (c) => c.env.APPROVAL_LIMITER, trustCfHeaders: true },
-  ring: (c) => importKeyRing(parseKeyRingSecrets(c.env.CSRF_SECRET)),
+  rateLimit: { binding: "APPROVAL_LIMITER" },
+  ring: (env) => importKeyRing(parseKeyRingSecrets(env.CSRF_SECRET)),
 });
 
+const authGuards = createAuthGuards<Env>({ ...guardOptions, approval });
+applyMiddlewareChain<Env>(app, { ...chainOptions, trustCfHeaders: true, contributions: [authGuards, approval.contribution] });
 registerApproval(app, approval);
 app.use("/reports/*", requireApproval(approval));
-const groups = createAuthGuards<Env>({ ...guardOptions, approval });
 ```
 
-**`registerApproval` mounts the prompt page.** Without it, `requireApproval` sends visitors to a path that answers nothing. Mount it after the
-session middleware, as you would any route that writes the session. A correct code sends the visitor back to the page they were stopped on.
+**`approval.contribution` guards the prompt, and `registerApproval` maps it.** Without `registerApproval`, `requireApproval` sends visitors to
+a path that answers nothing. Without the contribution in the chain, the prompt answers 500 rather than serving without its origin check and
+rate limit. The contribution's limit keys under the chain's `trustCfHeaders`: without it, and without a `key` on the approval's `rateLimit`,
+`applyMiddlewareChain` throws at registration. A correct code sends the visitor back to the page they were stopped on.
 
 **Read `code` off `c.env` on every request.** If it returns `undefined` or `""`, every approved route and the prompt itself answer 404. A
 deployment that has no code configured therefore has no approved routes, rather than open ones. Changing the code ends every approval granted
@@ -396,13 +367,15 @@ than the sign-in, so on a group without `require-auth` it holds until `ttlMs` ru
 ## Guarding a route you wrote yourself
 
 `createAuthGuards` builds the stack for every group in one call and is what a mount uses (`AUTH_ROUTE_GROUPS` is the table it cuts them from, and
-[`AUTH_MOUNTING.md`][am-2] §2 says why each group is guarded as it is). The guard primitives are exported for a page you route yourself:
+[`AUTH_MOUNTING.md`][am-2] §2 says why each group is guarded as it is). Its `rateLimit` keys a group by dotted path, and a group with no key
+inherits its nearest keyed ancestor's limit with a budget per route; `false` opts a group out ([`AUTH_MOUNTING.md`][am-1] §1). The guard
+primitives are exported for a page you route yourself:
 
 | Guard | Admits |
 | --- | --- |
 | `resolveAuth` | Everyone. It establishes the identity where the session carries one and refuses nothing — including a session that still owes a step-up |
 | `requireAuth` | A signed-in, non-deactivated visitor who owes no step-up, including one owed before an enrolment. It is what puts the identity on `authCtx` |
-| `requireAdmin` | An administrator. Anyone else gets a plain 403 unless you pass `onForbidden`, and it throws if `requireAuth` did not run first |
+| `requireAdmin` | An administrator. Anyone else is refused `403` through the refusal hook, and it throws if `requireAuth` did not run first |
 | `requireEnrolment` | A visitor who owes no factor. An owed enrolment or step-up is a redirect; an unreadable factor store is a 503 |
 | `requirePendingEnrolment` | **Only** a visitor who owes an enrolment, so an owed step-up cannot be enrolled around — nor a held recovery code skipped |
 | `requireFreshStepUp` | Every safe method, and a state-changing one only behind a recent step-up, whether or not the user holds a second factor |
@@ -410,14 +383,31 @@ than the sign-in, so on a group without `require-auth` it holds until `ttlMs` ru
 Order is the contract: every guard below `requireAuth` in that table reads the identity it establishes, so a wrong order fails on the first
 request rather than at construction.
 
-**Answer a non-administrator with a page by passing `onForbidden`.** On your own route, hand it to the guard:
+**Answer a non-administrator with a page by passing `onRefuse`.** It receives the request and a `Refusal` whose `guard` is `"admin"`. On your own
+route, hand it to the guard:
 
 ```ts
-requireAdmin({ onForbidden: (c) => htmlResponse(renderAdminOnlyPage(c), 403) });
+import { requireAdmin } from "@y-core/forge/auth/web";
+import { htmlResponse } from "@y-core/forge/http";
+
+requireAdmin({ onRefuse: (c, refusal) => htmlResponse(renderAdminOnlyPage(c), refusal.status) });
 ```
 
-On a mount, pass it as `onForbidden` to `createAuthGuards`. The admin pages and their actions re-check the role themselves and answer with the same
-function, or with the plain 403 where none was passed.
+On a mount, pass it as `onRefuse` to `createAuthGuards`. Every HTML group's origin, rate-limit and CSRF refusals reach it too, so answer the
+`admin` refusal and return `undefined` for the rest, which passes each on to the chain's `onRefuse`, else forge's plain-text default:
+
+```ts
+import { createAuthGuards } from "@y-core/forge/auth/web";
+import { htmlResponse } from "@y-core/forge/http";
+
+createAuthGuards({
+  ...guardOptions,
+  onRefuse: (c, refusal) => (refusal.guard === "admin" ? htmlResponse(renderAdminOnlyPage(c), refusal.status) : undefined),
+});
+```
+
+Which hook answers, and the log line, are the guard policy table's ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). The admin pages and their
+actions re-check the role themselves and answer through the same hook.
 
 Read the identity through `authCtx` — `authCtx.get(c)` where a guard has run, `authCtx.getOptional(c)` otherwise. The store is read once per
 request however many guards run, so mounting `resolveAuth` globally costs the guarded routes nothing extra.
@@ -448,12 +438,15 @@ the name you pass as `returnParam`:
   back on the page holding the form. A header on another origin, or no header, records nothing.
 - A request without htmx records its own URL when it is a GET or HEAD, and nothing otherwise, because a POST's URL has no page to return to.
 
-**`resolveAuth` and `requireAuth` take `sessions`, a per-request resolver for the session store.** An anonymous request never calls it, so a
-page view with no one signed in reads nothing from D1.
+**`resolveAuth` and `requireAuth` take `services`, the `authRequestServices` resolver.** An anonymous request never asks it for the session
+store, so a page view with no one signed in reads nothing from D1. A guard built without one throws rather than admit every visitor as anonymous.
 
 Between requests, a sign-in is written in one place per fact: `establishAuthSession`, `markAuthStepUp`, `revokeOtherAuthSessions`,
 `clearAuthSession`, and `markAuthSigninPending` / `resolveAuthSigninPending`. Each of the first four writes to D1 and answers an
 `AuthStoreResult`; on a failure the session is left as it was, so answer 503 and let the visitor retry.
+
+**Sign-out destroys the session**, so the next request starts a fresh one with no visitor data. `AuthWebOptions.signOut: { keepVisitorData:
+true }` keeps it, dropping only the auth keys and rotating the id; `clearAuthSession` takes the same value as its third argument.
 
 ---
 
@@ -464,6 +457,8 @@ adapter:
 
 ```ts
 import { createAccessTokenService, createAccessTokenStore } from "@y-core/forge/auth";
+import type { AppContext } from "@y-core/forge/context";
+import { createD1Client } from "@y-core/forge/storage/db";
 
 const tokensFor = (c: AppContext<Env>) =>
   createAccessTokenService({
@@ -511,15 +506,25 @@ every listed scope must be held. The refusals follow RFC 6750:
 | A valid token missing a scope | 403 | `Bearer error="insufficient_scope", scope="…"` |
 | The store cannot be read | 503 | none |
 
-**Rate-limit by token, after the guard.** Mount `rateLimit` from `@y-core/forge/security` behind `requireBearer` with `app.use`, keyed on the
-token it admitted:
+**Rate-limit by token, after the guard.** A limit keyed on the token belongs at the route ([`SECURITY_HARDENING.md`][sh-4e] §4e). A
+`defineAction` or `definePage` submission declares it as `rateLimit`, whose stage runs after `requireBearer` has admitted the token:
 
 ```ts
-app.use("/api/*", requireBearer({ tokens: tokensFor, scopes: ["notes:read"] }));
-app.use("/api/*", rateLimit<Env>({ limiter: (c) => c.env.API_LIMITER, key: (c) => accessTokenCtx.get(c).id }));
+import { accessTokenCtx, requireBearer } from "@y-core/forge/auth/web";
+
+import { defineAction } from "../handlers";
+
+app.use("/api/*", requireBearer({ tokens: tokensFor, scopes: ["notes:write"] }));
+
+export const createNote = defineAction(routes.createNote, {
+  schema: NoteSchema,
+  rateLimit: { binding: "API_LIMITER", key: (c) => accessTokenCtx.get(c).id },
+  handle: async (data, c) => saveNote(accessTokenCtx.get(c).userId, data),
+});
 ```
 
-A guard group's own `rateLimit` cannot do this: it runs before the group's guards, when no token has been admitted yet.
+A `GET` route or one without a `schema` mounts `rateLimit` from `@y-core/forge/security` in its controller `middleware` with the same options. A
+guard group's own `rateLimit` cannot do this: it runs before the group's guards, when no token has been admitted yet.
 
 **Restrict a token to some of your own records in your own table**, keyed by the token's `id` — a notebook allowlist, say. Forge's table holds
 only what verifying the token needs.
@@ -537,11 +542,11 @@ nothing about any token they do not already hold.
 
 ## Showing a navbar that knows who is signed in
 
-`authNav` answers what a per-request navbar needs — the filter tokens this viewer holds, and a sign-out control carrying a token bound
-to their session — shaped to spread straight onto `Navbar`:
+`authNav` answers what a per-request navbar needs — the filter tokens this viewer holds, and a sign-out control carrying a token minted
+through the app's CSRF policy (`mintCsrf`) — as a `NavState` (`@y-core/forge/ui/chrome`), shaped to spread straight onto `Navbar`:
 
 ```tsx
-const nav = authNav({ signoutPath: paths.auth.signout(), ring: (c) => importKeyRing(parseKeyRingSecrets(config(c).csrf.secret)) });
+const nav = authNav({ signoutPath: paths.auth.signout() });
 // …per request, in the layout:
 <Navbar config={primaryNav} resolveHref={resolveNavHref} icon={AppIcon} {...(await nav(context))} />;
 ```
@@ -553,13 +558,40 @@ item marked for members does not vanish for them. Which items carry which tokens
 **Marking an item does not gate the route.** `filters` only decides what the bar paints — the item's `href` is in the delivered HTML whatever the
 viewer holds. The destination still needs its own guard (`requireAuth`, `requireAdmin`).
 
-`authNav` returns a **factory**, so call it at module scope and reuse the resolver it hands back per request: the signing key is then imported per
-isolate rather than on every render. It reads the identity off `authCtx`, so `resolveAuth` or a `requireAuth` must run before the layout renders.
-An anonymous request gets `activeFilters` and an empty slot map.
+`authNav` returns a **factory**, so call it at module scope and reuse the resolver it hands back per request. On a request the app's CSRF policy
+does not cover — one under its `exclude`, or outside narrowed `paths` — a signed-in viewer's slot is a link to the sign-out confirm page, which
+mints the token, in place of the form. **Keep the policy's default `paths: ["*"]`** so sign-out takes one step: it already covers every page the
+bar renders on, the 404 page included, where a list of the bound auth targets leaves pages uncovered. Under it a mutation to a URL no route matches
+answers `403` before the `404`, which is deliberate ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e). It reads the identity off `authCtx`, so
+`resolveAuth` or a `requireAuth` must run before the layout renders. An anonymous request gets `activeFilters` and an empty slot map. On a bar
+composed with `createPrimaryNav`, export the resolver as the `state` of a contribution in the list the app root passes it, and spread
+`resolveNavState(nav, c)` instead, which merges it with every other contribution's state.
 
 The sign-out slot is a function of where the bar places it: inside a menu the button is `role="menuitem"`, and at bar level or in the collapsed
 copy it is a plain button. `signout.menuitem` overrides that in every place. To put the control somewhere other than a `Navbar`, call the slot
-yourself, as `slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false })`.
+yourself. A `NavState` slot may also be a plain node, so narrow it first:
+
+```tsx
+const slot = (await nav(context)).slots[AUTH_NAV_SIGNOUT_SLOT];
+const signout = typeof slot === "function" ? slot({ inMenu: false }) : slot;
+```
+
+---
+
+## Showing an account's recent security activity
+
+No shipped page lists an account's security events, so render `SecurityEventListView` from a page of your own, with the rows
+`createSecurityEventStore` reads:
+
+```tsx
+const events = await createSecurityEventStore(db).listByUser(identity.userId, { limit: 20 });
+if (!events.ok) throw events.error;
+<SecurityEventListView rows={events.data} level={2} />;
+```
+
+Each row names the event, the factor it concerned, the date, and says "by an administrator" where one made it. It never shows a session id or
+an administrator's id. The labels are forge's, so a new `AuthSecurityEventType` arrives labelled. The view does not page: pass the page you read.
+Its root carries `AUTH_SECURITY_EVENT_LIST_ID`.
 
 ---
 
@@ -672,10 +704,11 @@ refusal interrupts, a success does not. Without one the ceremony still works and
 When you render a ceremony root yourself, take every attribute name and default from the `PASSKEY_*` constants in `@y-core/forge/auth`, never a
 literal.
 
-**A token per endpoint, never one shared** — `csrfProtection` binds a token to a path, and a ceremony spans two ([`AUTH_FLOWS.md`][af-3] §3).
+**A token per endpoint, never one shared** — the app's CSRF policy binds a token to a path, and a ceremony spans two ([`AUTH_FLOWS.md`][af-3] §3).
 
 To react to a ceremony from your own code, listen for `PASSKEY_OUTCOME_EVENT` on the scope root: its `detail` is a `PasskeyOutcomeDetail`, whose
-`reason` is absent exactly when the ceremony succeeded. The scope root is hand-rendered rather than wrapped in `Resumable`
+`reason` is absent exactly when the ceremony succeeded. When a guard refused a step with `application/problem+json`, `status` carries that
+status — `429` for a spent rate limit, say — and the body is never shown. The scope root is hand-rendered rather than wrapped in `Resumable`
 ([`UI_CLIENT_RUNTIME.md`][ucr-2a] §2a).
 
 ---
@@ -685,8 +718,10 @@ To react to a ceremony from your own code, listen for `PASSKEY_OUTCOME_EVENT` on
 Give `createPasskeyFactor` a `prf` option, and the ceremony asks the authenticator for a 32-byte secret that only the page ever sees:
 
 ```ts
+import { createPasskeyFactor } from "@y-core/forge/auth";
+
 createPasskeyFactor({
-  // …
+  ...passkeyOptions, // …the factor's other options
   prf: {
     registration: (userId) => saltFor(userId),
     stepUp: async (userId, credentialIds) => new Map(await saltsFor(userId, credentialIds)),
@@ -788,6 +823,9 @@ A rotation is prepending a secret. `importAuthKeyRing` takes hex root secrets **
 than taking one you type. Hold them in one variable, comma-joined, and split it with `parseKeyRingSecrets` from `@y-core/forge/crypto/keyring`:
 
 ```ts
+import { importAuthKeyRing } from "@y-core/forge/auth";
+import { parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+
 const keys = await importAuthKeyRing(parseKeyRingSecrets(c.env.AUTH_KEY_RING));
 ```
 
@@ -869,6 +907,9 @@ purge deletes the accounts that never verified their address and the security ev
 handler:
 
 ```ts
+import { purgeAuthEphemera } from "@y-core/forge/auth";
+import { createD1Client } from "@y-core/forge/storage/db";
+
 export default {
   async scheduled(event, env) {
     const purged = await purgeAuthEphemera(createD1Client(env.DB), Date.now());
@@ -907,11 +948,18 @@ floor throws before any query is sent.
 account's events are deleted with the account and survive an administrator's factor reset:
 
 ```ts
-await purgeAuthEphemera(createD1Client(env.DB), Date.now(), { securityEventTtlMs: 2 * 31_536_000_000 });
+import { purgeAuthEphemera } from "@y-core/forge/auth";
+import { createD1Client } from "@y-core/forge/storage/db";
+
+async function purgeKeepingTwoYears(env: Env) {
+  await purgeAuthEphemera(createD1Client(env.DB), Date.now(), { securityEventTtlMs: 2 * 31_536_000_000 });
+}
 ```
 
 `createChallengeStore(db, { prefix })` and `createNonceStore(db, { prefix })` namespace their key text inside those shared tables. Omit `prefix`
-for the default; an empty string is **refused**.
+for the default; an empty string, or one holding `||` or ending in `|`, is **refused**. `authRequestServices` takes the same two as
+`prefixes: { challenge, nonce }`. **Restate the prefixes a hand-built store used when you move to it**: a nonce spent under another prefix is
+unspent under forge's, so a token spent just before the deploy can be spent once more.
 
 ### Bounding how long a key rotation waits
 
@@ -920,16 +968,19 @@ in. `purgeStaleTotpSecrets` closes the window on the ones who do not:
 
 ```ts
 import { purgeStaleTotpSecrets, type TotpSecretPurgeOptions } from "@y-core/forge/auth";
+import { createD1Client } from "@y-core/forge/storage/db";
 
 const SECOND_FACTORS: TotpSecretPurgeOptions["factors"] = { offered: ["totp-app", "passkey"], mandatory: ["totp-app"] };
 
-const swept = await purgeStaleTotpSecrets(createD1Client(env.DB), Date.now(), {
-  keys: ring,
-  idleForMs: 90 * 86_400_000,
-  factors: SECOND_FACTORS,
-});
-if (!swept.ok) throw swept.error;
-console.log(JSON.stringify({ event: "auth.totp-purge", ...swept.data }));
+async function sweepStaleTotpSecrets(env: Env) {
+  const swept = await purgeStaleTotpSecrets(createD1Client(env.DB), Date.now(), {
+    keys: ring,
+    idleForMs: 90 * 86_400_000,
+    factors: SECOND_FACTORS,
+  });
+  if (!swept.ok) throw swept.error;
+  console.log(JSON.stringify({ event: "auth.totp-purge", ...swept.data }));
+}
 ```
 
 **`factors` is plain values, not the registry**, because a scheduled handler has no request to build factor services from. Keep it in a
@@ -1028,6 +1079,8 @@ insert names an owner that is not there — and `unavailable` is everything else
 statements, binding each id as its 16 `BLOB` bytes, and holds the session rows a sign-in writes:
 
 ```ts
+import { fakeAuthD1 } from "@y-core/forge/testing";
+
 const env = { DB: fakeAuthD1([{ id: ADA, email: "ada@example.com", isAdmin: true, factors: [{ kind: "passkey" }] }]) };
 ```
 
@@ -1039,15 +1092,15 @@ round trip hands the ceremony a `ChallengeStore` of its own.
 need it only when asserting against a bound parameter.
 
 **A signed-in session is built, not faked.** Mount the same `createAnonymousSession` the app mounts, then sign the user in from a middleware
-ahead of the guards: call `establishAuthSession` on the session `sessionCtx` holds, with `createAuthSessionStore(createD1Client(env.DB))` over
-that `fakeAuthD1`, and `markAuthStepUp` after it for a session that has already stepped up. For an anonymous
+ahead of the guards: call `establishAuthSession` on the session `sessionCtx` holds, with `await resolveServices.sessions(c)` — the store the
+guards read, over that `fakeAuthD1` — and `markAuthStepUp` after it for a session that has already stepped up. For an anonymous
 mutation, seed nothing: carry the cookie from the page `GET` to the `POST` as a browser does, and the id the CSRF token was minted under is the
 id the `POST` is verified against.
 
-**The CSRF guard answers before the auth guards do.** With `csrfProtection` mounted ahead of the guard chain — the order
-[`AUTH_MOUNTING.md`][am-1] §1 gives — an anonymous, tokenless `POST` to a ceremony endpoint answers **`403` as plain text**, not the `401` JSON
-that group's medium implies. Assert the 403 for a tokenless request and the 401 only for one carrying a valid token, or the test asserts the
-wrong layer.
+**The CSRF check answers before the auth guards do**, in the order the guard policy table gives
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e), so an anonymous, tokenless `POST` to a ceremony endpoint answers **`403` as plain text**, not
+the `401` JSON that group's medium implies. Assert the 403 for a tokenless request and the 401 only for one carrying a valid token,
+or the test asserts the wrong layer.
 
 ---
 
@@ -1057,17 +1110,20 @@ An app that keeps a signed-in user's data in the browser — a service-worker ca
 clear it, so the next person at the machine finds nothing:
 
 ```ts
+import type { AuthWebOptions } from "@y-core/forge/auth/web";
+
 const options: AuthWebOptions<Env> = { ...rest, signoutClearsSiteData: true };
 ```
 
 The sign-out response then carries `Clear-Site-Data: "cache"`, on the `303` and on the htmx `204` alike, and the sign-in page it lands on posts to
-`auth.signoutSiteData()` for `Clear-Site-Data: "storage"`. It clears only once per sign-out: the mark it consumes is set by the sign-out on the new
-session, so a link to the endpoint wipes nothing. `"storage"` also unregisters the origin's service workers, so the next page load registers yours
-afresh.
+`auth.signoutSiteData()` for `Clear-Site-Data: "storage"`. It clears only once per sign-out: the mark it consumes is set by the sign-out, so a
+link to the endpoint wipes nothing. The sign-out destroys the session, so the mark is a `__Host-` cookie that lasts five minutes, cleared by the
+endpoint or by the next sign-in; under `signOut: { keepVisitorData: true }` it is a key on the kept session. `"storage"` also unregisters the
+origin's service workers, so the next page load registers yours afresh.
 
-**The `"storage"` half needs the auth pages to import `@y-core/forge/auth/client` before `resume()` and to run JavaScript**, the same import the
-passkey ceremony takes, even in an app with no passkeys. Without it nothing fails: sign-out still sends `"cache"`, but IndexedDB,
-`localStorage`, Cache Storage and the service workers survive it for the next person at the machine.
+**The `"storage"` half needs the auth pages to import `@y-core/forge/auth/client` before `resume()` and to run JavaScript**, the same import
+the passkey ceremony takes, even in an app with no passkeys. Without it nothing fails: sign-out still sends
+`"cache"`, but IndexedDB, `localStorage`, Cache Storage and the service workers survive it for the next person at the machine.
 
 **It is off by default** because it wipes the whole origin, including anything the app has not yet synced: warn about unsynced work before the form
 posts. The header is honoured only over HTTPS and on `localhost`, and the endpoint is under the auth prefix, so it carries the same CSRF and origin
@@ -1075,25 +1131,33 @@ protection as every other auth `POST`.
 
 ---
 
-## Signing out from a page left open past an hour
+## Signing out from a page left open past the token's life
 
-A sign-out form carries a CSRF token minted when the page rendered, and `csrfProtection` refuses a token older than an hour. Without recovery, a
-sign-out pressed on a page left open that long answers `403` and the session stays signed in. Hand the guard `authCsrfRefusal`:
-
-```ts
-import { authCsrfRefusal } from "@y-core/forge/auth/web";
-
-csrfProtection({ ring, subject, onForbidden: authCsrfRefusal(paths.auth) });
-```
-
-A refused sign-out now answers a `303` to `auth.signoutConfirm()`, or a `204` with `HX-Redirect` under htmx. That page carries a fresh token, and
-its button signs out.
+A sign-out form carries a CSRF token minted when the page rendered, and the app's CSRF policy refuses a token older than its `maxAgeMs`, 24
+hours by default. Without
+recovery, a sign-out pressed on a page left open that long answers `403` and the session stays signed in. `createAuthGuards` recovers it
+itself, whatever `onRefuse` it is passed: a sign-out `POST` refused for its token answers a `303` to `auth.signoutConfirm()`, or a `204` with
+`HX-Redirect` under htmx. That page carries a fresh token, and its button signs out.
 
 **A refused token never ends the session.** Only the confirm page's own `POST` does, so a cross-site sign-out attempt lands the visitor on a page
 that changes nothing.
 
-**Every other refusal still answers `403`**, including `"unbound-subject"`, which means the session middleware is missing. To answer the rest
-your own way, see [Answering a refusal yourself][form-readme-refusal]; the hook takes one function, so choose one or the other.
+**Every other refusal on those groups goes to `createAuthGuards`' `onRefuse`**, and one it declines, or every one when none is passed, to the
+chain's `onRefuse`, then forge's plain-text default. A CSRF `"unbound-subject"` is among them, since it means the session middleware is missing.
+To answer refusals your own way, see [Answering a refusal yourself][form-readme-refusal]. **The JSON groups, `ceremony` and `passkeyCeremony`,
+ignore the hook** and answer every origin, rate-limit and CSRF refusal with `refuseAsProblem()`, the RFC 9457 `application/problem+json` a
+ceremony client can parse.
+
+**Where a sign-out route sits outside `createAuthGuards`, put the same recovery in a hook with `authCsrfRefusal`.** It answers a CSRF-refused
+sign-out `POST` and declines everything else, so chain your own answer after it:
+
+```ts
+import { authCsrfRefusal } from "@y-core/forge/auth/web";
+import type { RefuseHook } from "@y-core/forge/context";
+
+const signoutRecovery = authCsrfRefusal(paths.auth);
+const onRefuse: RefuseHook = async (c, refusal) => (await signoutRecovery(c, refusal)) ?? refusedPage(c, refusal);
+```
 
 The confirm page is replaceable like any other, through `views.signoutConfirm`.
 
@@ -1118,14 +1182,18 @@ CSP in [`AUTH_MOUNTING.md`][am-3] §3, or every guarded form is refused.
 **Guard fewer forms by naming the ones you want.** Leave `flows` out and every form it can cover is guarded:
 
 ```ts
-turnstile: { flows: ["signup", "resend"] },
+import type { AuthWebOptions } from "@y-core/forge/auth/web";
+
+const options: AuthWebOptions<Env> = { ...rest, turnstile: { flows: ["signup", "resend"] } };
 ```
 
 **Override a default only where a deployment differs.** `keys` replaces the bindings read, and `verify` is merged over the defaults — a site served
 on more than one hostname pins the one its widget is registered for:
 
 ```ts
-turnstile: { verify: () => ({ expectedHostname: "example.com" }) },
+import type { AuthWebOptions } from "@y-core/forge/auth/web";
+
+const options: AuthWebOptions<Env> = { ...rest, turnstile: { verify: () => ({ expectedHostname: "example.com" }) } };
 ```
 
 **Run the app with [`forge cf dev`][cf-dev] to submit against Cloudflare's testing keys.** Those keys answer a fixed hostname and no action, so
@@ -1136,6 +1204,8 @@ under any other build every local submission is refused. Put a testing pair in `
 TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
+
+A test reads the same keys from `TURNSTILE_TEST_KEYS`, exported by `@y-core/forge/testing/form`, rather than copying them.
 
 Under `forge cf dev` the hostname, action and cdata checks are skipped for a testing secret and for nothing else, so a real secret in `.dev.vars`
 is still checked in full ([`INPUT_VALIDATION.md`][iv-4a] §4a).
@@ -1158,8 +1228,14 @@ them, is [`AUTH_FLOWS.md`][af-3c] §3c and §7. Deleting the row is how a change
 session storage you chose. The row is keyed by the SHA-256 of the token the cookie carries, never the token, so a read of the table or a
 backup of it opens no session. Under D1 read replication a revocation can lag on another device ([`AUTH_FLOWS.md`][af-8] §8).
 
-**The emailed code is rate-limited by a cooldown, not by a count.** **Bounding a caller's rate is a different control, and forge ships no numbers
-for it** ([`AUTH_FLOWS.md`][af-8] §8).
+**An attempt budget is `auth`'s D1 counter on codes and passwords** — for the emailed code, guesses counted within `guessWindowMs`, which a
+new code does not reset. **A rate limit, the Workers binding `rateLimit` spends, is a different control, and forge ships no numbers for
+it** ([`AUTH_FLOWS.md`][af-8] §8).
+
+**A spent attempt budget the visitor is told about answers `429`.** A step-up refused for too many attempts re-renders the verify page and its
+failure panel at `429`, with `Retry-After` set from the factor's `attemptWindowMs` where it reports one. The primary sign-in folds the throttle into
+"that did not match" and keeps that notice's `422`, so the status says nothing about whether the address has an account
+([`AUTH_FLOWS.md`][af-2b] §2b).
 
 **A credential this runtime cannot verify is never advertised.** `AUTH_SUPPORTED_ALGORITHMS` is the default set, and COSE `-8` is opt-in behind a
 probe that throws at resolution rather than at the first sign-in ([`NAMESPACES.md`][namespaces-5h] §5h).
@@ -1167,8 +1243,8 @@ probe that throws at resolution rather than at the first sign-in ([`NAMESPACES.m
 **Forge's own auth pages default to `Cache-Control: no-store`** and carry `robots: "noindex"`. The header is merged rather than imposed, so a page
 naming its own still wins; a page you route yourself has to set both.
 
-**Mount `csrfProtection` after the session middleware, never before.** Its subject resolver runs ahead of `next()`, so one mounted first binds the
-token to nobody and refuses every mutation with a `[csrf]` warning. The chain order that gets this right is [`AUTH_MOUNTING.md`][am-1] §1's.
+**Pass CSRF as the chain's `csrf` policy.** The chain mints after the session, which the subject resolver reads. The chain order that gets this
+right is [`AUTH_MOUNTING.md`][am-1] §1's.
 
 ---
 
@@ -1195,7 +1271,7 @@ is the one shape with no in-band answer of that kind, so a malformed owner id co
 - [`docs/NAMESPACES.md`][namespaces-5h] §5h — the rule binding every `auth` subpath, and why identity is not `security`'s
 - [`warden/canon/libs/BOUNDARIES.md`][boundaries-2c] §2c — why identity is application-layer, and what that buys in testability
 - [`src/session/README.md`][session-readme] — the session the identity rides on, and the cookie under it
-- [`src/form/README.md`][form-readme] — `csrfProtection`, the token every auth mutation carries
+- [`src/form/README.md`][form-readme] — the CSRF policy, and the token every auth mutation carries
 - [`src/storage/README.md`][storage-readme] — the `D1Client` every adapter is built over, and the UUIDv7 set
 - [`src/crypto/README.md`][crypto-readme] — the `crypto` container, and the key ring this namespace signs and seals under
 
@@ -1235,8 +1311,11 @@ is the one shape with no in-band answer of that kind, so a malformed owner id co
 [iv-4a]: ../../docs/INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [keyring-readme]: ../crypto/keyring/README.md
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
+[ram-1e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
+[ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [session-readme]: ../session/README.md
+[sh-4e]: ../../docs/SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
 [sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [storage-readme]: ../storage/README.md
 [ucr-2a]: ../../docs/UI_CLIENT_RUNTIME.md#2a-state-only-islands-versus-contract-bearing-scopes

@@ -24,7 +24,9 @@ import { createController, get, post, route, routePaths } from "@y-core/forge/ro
 Describe the routes, bind each name to a handler, then register the pair on the app.
 
 ```ts
+import { consoleChannel, requestLogger } from "@y-core/forge/logging";
 import { createController, get, post, route } from "@y-core/forge/router";
+import { requireFormContentType } from "@y-core/forge/security";
 
 const routes = route({
   home: get("/"),
@@ -33,10 +35,10 @@ const routes = route({
 });
 
 const controller = createController(routes, {
-  middleware: [requestLogger], // every action in this controller
+  middleware: [requestLogger({ channels: () => [consoleChannel()] })], // every action in this controller
   actions: {
     home: homeHandler, // a bare handler
-    save: { middleware: [csrfGuard, originGuard], handler: saveHandler }, // guards for this route only
+    save: { middleware: [requireFormContentType()], handler: saveHandler }, // guards for this route only
     logs: { middleware: [adminAuth], handler: logsHandler },
   },
 });
@@ -52,6 +54,8 @@ Register global middleware before `app.map`, or it will not wrap these routes �
 A route definition can be written any of these ways, all producing the same `Route`:
 
 ```ts
+import { get, Route, route } from "@y-core/forge/router";
+
 const routes = route({
   home: get("/"), // verb helper: get, post, put, patch, del, options
   save: { method: "POST", pattern: "/api/save" }, // object literal
@@ -70,6 +74,8 @@ the handler untouched. For whole RESTful maps, upstream's `resource`, `resources
 `route()` nests, and an optional first argument is a base pattern joined onto every pattern inside.
 
 ```ts
+import { get, route } from "@y-core/forge/router";
+
 const routes = route({
   home: get("/"),
   admin: route("/admin", {
@@ -91,6 +97,8 @@ repeating the prefix in each child: renaming the mount point then touches one li
 Never concatenate a path. The pattern's params are part of its type, so a forgotten required param is a compile error and a wrong one throws.
 
 ```ts
+import { get, route } from "@y-core/forge/router";
+
 const routes = route({ user: get("/users/:id"), search: get("/search") });
 
 routes.user.href({ id: "42" }); // "/users/42"
@@ -106,6 +114,8 @@ For a pattern that is not part of a route map, `createHref(pattern, params, opti
 performs exactly the join `route(base, defs)` applies — useful when you are computing a mount point rather than declaring one.
 
 ```ts
+import { createHref } from "@y-core/forge/router";
+
 createHref("/search", undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c"
 ```
 
@@ -149,7 +159,7 @@ routePaths(routes); // every declared path, in order
 routePaths(routes, { method: "POST" }); // paths that serve POST
 
 for (const path of routePaths(routes, { method: "POST" })) {
-  app.use(path, forMethod("POST", csrfGuard));
+  app.use(path, forMethod("POST", auditMutation));
 }
 ```
 
@@ -158,8 +168,8 @@ up under any concrete filter; `{ method: "ANY" }` is the one exception and selec
 
 **`app.use` matches on path alone** — dispatch never consults the method — so a filtered list selects paths, not method-and-path pairs. `forMethod`
 is what closes the gap: it wraps a middleware so it runs for the given method (or array of them) and calls `next()` otherwise. Without it, the loop
-above would guard every method those paths serve, `/health` on GET included. `forMethod` reads `context.method`, the same value dispatch matched on,
-so a method override is honoured, and `forMethod("GET", …)` also covers `HEAD`.
+above would run on every method those paths serve, `/health` on GET included. `forMethod` reads `context.method`, the same value dispatch matched
+on, so a method override is honoured, and `forMethod("GET", …)` also covers `HEAD`.
 
 ---
 

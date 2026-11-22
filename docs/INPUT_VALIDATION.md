@@ -23,8 +23,9 @@ audience: consumer
 - §1d defineAction — The Schema Contract: the only way to reach a handler, what its guards consume, and the failure modes
 - §2 Form Namespace — Body Parsing: FormData in, with a byte cap
 - §2c parseFormData — Body Read with Size Limit: the two-way byte cap and 413
-- §3 CSRF Protection: middleware, keys, token minting
-- §3a csrfProtection Middleware: guarding mutating routes and the required `subject`
+- §3 CSRF Protection: the app's policy, keys, token minting
+- §3a The CSRF Policy — Guard Mutating Routes: the chain's one policy, what it refuses and with which status, the token's lifetime, and the
+  required `subject`
 - §3b The CSRF Key Ring: import, rotation and the `csrf` subkey
 - §3c mintCsrf — Token Minting for Form Injection: path scoping
 - §3d createCsrfToken and verifyCsrfToken: the lower-level API
@@ -100,7 +101,7 @@ required-ness a presence check; a **repeated key arrives as an array**, so a sca
 
 **A guard that consumes a field is what removes it.** A form carries entries the request itself does not assert — a CSRF token, a CAPTCHA token —
 and a strict schema has no reason to declare either of them, so each is dropped before validation. **Nothing is dropped on a guess.** The Turnstile
-field is dropped because this pipeline checked it (§4a); the CSRF field is dropped because `csrfProtection` recorded which field it took the token
+field is dropped because this pipeline checked it (§4a); the CSRF field is dropped because the CSRF policy recorded which field it took the token
 from (§3a). A route that renames one of those fields therefore declares the name once, to the guard that reads it, and never a second time to the
 schema. What happens on a request where no guard ran is the derive-only rule, owned by [`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b.
 
@@ -136,6 +137,11 @@ answers **`422`** — a well-formed request the server understood and declined �
 unless `onError` is supplied. Valibot does not catch what a pipe action throws, so a `v.transform` or `v.check` that throws on malformed input
 reaches that same path instead of escaping the handler.
 
+**A page's query string meets the same contract under its own status.** `definePage`'s `query` schema reads `c.url.searchParams` through
+`formToObject`, so the entry rules above hold for it unchanged, and parses with `abortEarly` before the action and the loader on every method. The
+loader receives the output; a refused query answers **`400`** with the same one-`<li>` refusal, or what `onQueryError` renders from the issues
+([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d). Declare it with `v.strictObject` for the same reason as a body.
+
 **A tripped bot guard answers with the refusal the schema itself would have produced** — the same status, one `<li>` naming a field the schema
 declares, never the token field the guard consumed (§4b). `onBotDetected` replaces that default for an app that would rather ban, log, or stall.
 
@@ -145,11 +151,13 @@ a decision only the consuming app can make. The default chooses the field name a
 
 **Transport guards attach to the controller action object `{ middleware, handler }`; body-content guards live inside `defineAction`.** The line it
 draws is what the guard needs in order to decide. A **transport** guard decides from the request's envelope — an origin, a header, a signed token it
-minted itself — and needs to know nothing about what this route's form contains; that is why CSRF, origin, and rate-limit guards sit in the
-`middleware` array and refuse before any route builder runs. (`csrfProtection` falls back to reading a field out of the body, which is a lookup of
-the one field the guard itself owns and named, not a reading of the route's own fields.) A **body-content** guard decides from a field that is part
-of the form's design — a CAPTCHA token the widget wrote — so it belongs where the body is read, and where the field it consumes is dropped in the
-same step. Neither kind crosses: no middleware runs inside `defineAction`, and no body-content guard is expressible as middleware.
+minted itself — and needs to know nothing about what this route's form contains; that is why origin and rate-limit guards sit in the `middleware`
+array, CSRF sits in the chain's policy (§3a), and each refuses before any route builder runs (one exception follows). (The CSRF policy falls back to
+reading a field out of the body, which is a lookup of the one field the policy itself owns and named, not a reading of the route's own fields.) A
+**body-content** guard decides from a field that is part of the form's design — a CAPTCHA token the widget wrote — so it belongs where the body is
+read, and where the field it consumes is dropped in the same step. Neither kind crosses: no middleware runs inside `defineAction`, and no
+body-content guard is expressible as middleware. A rate limit keyed by identity or a route param is the one transport guard inside: `defineAction`'s
+`rateLimit` stage, run ahead of the body-content guards ([`SECURITY_HARDENING.md`][sh-4e] §4e).
 
 ---
 
@@ -172,51 +180,71 @@ The streaming counter is what closes the header-only bypass — a request with a
 
 **The first call for a request meters the stream; every later call re-checks the bytes actually read against its own `maxBytes`.** A body is
 readable once, so a stricter caller gets its own `413` off the shared parse rather than a re-read. The consequence is an ordering rule: a route that
-raises `defineAction`'s `maxBytes` must raise `csrfProtection`'s to match, because the guard parses first and would otherwise reject before the
-handler runs.
+raises `defineAction`'s `maxBytes` must raise the CSRF policy's to match, because the policy parses first and would otherwise reject before the
+handler runs. The policy is the app's one, so its cap is app-wide (§3a).
 
 Forgetting that rule reports itself. When the cached parse **rejected** at a smaller cap and a later caller asks for a larger one, the stream is
 already gone and no cap can serve it — so `parseFormData` throws a distinct wiring error naming both caps and the remedy, rather than replaying the
-`413` as though the uploader had sent too much. `isFormCapConflict(error)` identifies it, and `csrfProtection`, the submission pipeline and
+`413` as though the uploader had sent too much. `isFormCapConflict(error)` identifies it, and the CSRF policy, the submission pipeline and
 `readAuthSubmission` each rethrow it instead of collapsing it into a `403`, a `400` fragment or a field refusal; it reaches the error boundary as a
 `500`. A cached parse that **succeeded** is unaffected: a body inside the smaller cap is still served to every later caller, at any cap.
 
 ---
 
-## 3. CSRF Protection — Middleware, Keys, Token Minting
+## 3. CSRF Protection — the Policy, Keys, Token Minting
 
-### 3a. `csrfProtection` Middleware — Guard Mutating Routes
+### 3a. The CSRF Policy — Guard Mutating Routes
 
-`csrfProtection(options)` is a `Middleware` that publishes a minter (`csrfMinterCtx`, reached through `mintCsrf`) on every request, mints a
-path-bound token only when asked, and verifies the submitted token on mutations against the HMAC key or key ring resolved from the configured
-secret.
+**An app's CSRF protection is its one policy, the chain's `csrf`**, and [`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f owns why there is one and no
+inline verifier. The policy takes `CsrfPolicyOptions`, plus `paths`, `exclude` and `unboundPaths`. Its mint stage publishes a minter
+(`csrfMinterCtx`, reached through `mintCsrf`) on every request the policy covers, mints a path-bound token only when asked, and on a mutation
+arms a check of the submitted token against the key ring resolved from the configured secret. Where that check runs, on which requests,
+and through which hook it refuses are the guard policy table's ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e), in the order
+[`BOUNDARIES.md`][boundaries-apps-2c] §2c sets.
 
 The token is read from the `X-CSRF-Token` header, falling back to the `_csrf` form field (`CSRF_FIELD_DEFAULT`; override with `tokenField` /
-`headerName`). **It returns `403` when the token is absent, malformed, expired, path-mismatched, subject-mismatched, or badly signed.**
+`headerName`). **The policy answers `403` when the token is absent, malformed, expired, path-mismatched, subject-mismatched, or badly signed.**
 
-**An oversized body returns `413`, not `403`** — the guard's form parse is capped by its own `maxBytes` (§2c), and a size failure reported as a
+**An oversized body returns `413`, not `403`** — the policy's form parse is capped by its own `maxBytes` (§2c), and a size failure reported as a
 token failure sends the client after a problem that does not exist.
 
-**`subject` is required — a per-request resolver, or the literal `false`. Omitting it is a compile error.** This forces a deliberate decision about
-token binding at every call site instead of silently defaulting to a path-only token.
+**A body the policy cannot parse returns `400` with reason `unreadable-body`, not a `403` for a missing token**, for the same reason: the token
+may well be there, and RFC 9110 section 15.5.1 makes `400` the honest status for a request the server cannot read. The cap conflict of §2c is still
+rethrown rather than answered.
+
+**A token lives as long as the policy's `maxAgeMs`, which defaults to 24 hours.** A visitor who spends longer on a form than the token lives gets a
+`403` with no warning, and WCAG 2.2.1 Timing Adjustable exempts only limits over 20 hours. The default also equals the auth session's idle bound, so
+a form left open in a session that is still alive is not refused for its age alone. The token stays bound to its path and, through `subject`, to the
+session, which is where its protection comes from, so the longer life adds little risk. An app that lowers `maxAgeMs` below 20 hours owes the
+visitor a warning before expiry and a way to extend it.
+
+**`subject` is required — the literal `"session"`, the literal `false`, or a per-request resolver. Omitting it is a compile error.** This forces
+a deliberate decision about token binding instead of silently defaulting to a path-only token. **`"session"` binds every token to the chain
+session's id** and is the idiom for an app with a session; a chain given it with no session slot throws at registration
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3h] §3h). A resolver remains for a subject that is not the session id.
 
 **Why `subject` binding matters — the fixation risk it closes.** A token bound to the path alone is valid for that path regardless of who submits
 it. An attacker can obtain a valid path-scoped token — it is minted on the public `GET` — and plant it in a victim's request, a CSRF-token fixation
 / cross-user replay against the same path. Binding to the session subject scopes the token to one identity: a token minted under session A fails
 under session B with reason `subject-mismatch` → `403`.
 
-**Register `sessionMiddleware` before the guard**, always. The resolver runs before `next()`, so a guard registered ahead of the session middleware
-resolves against a context that has no session on it yet — the ordering is load-bearing, not a preference. Neither `form` nor `session` imports the
-other, so this composition lives in the consuming app — forge does not auto-wire it.
+**The session goes on the context before the mint stage.** The chain registers `session` ahead of the policy, so under `applyMiddlewareChain`
+this holds by construction. An app that wires `app.use` by hand mounts `csrfMintStage` after its session middleware. Neither `form` nor `session`
+imports the other: the chain, in `app`, resolves `"session"` to the session id and hands `form` the resolved subject, so the composition lives in
+`app` and in an app wired by hand, never in `form`.
 
-**A resolver returning `undefined` is a refusal.** The mutation answers `403` and the middleware logs one `[csrf]` warning naming the likely cause
-(session middleware absent, or registered after the guard). It does not degrade to a path-only token: silently dropping the binding is exactly the
-fixation risk above, and a wiring error must not buy an attacker the opt-out.
+**A resolver returning `undefined` is a refusal.** The mutation answers `403` and the policy logs one `[csrf]` warning naming the likely cause
+(session middleware absent, or registered after the mint stage). It does not degrade to a path-only token: silently dropping the binding is
+exactly the fixation risk above, and a wiring error must not buy an attacker the opt-out.
 
-**`subject: false` is the only path-only opt-out**, for a route with no session identity to bind to. Being a literal makes every deliberately
-unbound guard greppable and so auditable.
+**`subject: false` is the only policy-wide path-only opt-out**, for an app with no session identity to bind to. Being a literal makes every
+deliberately unbound policy greppable and so auditable.
 
-**Attach the guard through the controller action's `middleware` array**, not inline in the handler.
+**`unboundPaths` leaves the tokens of the paths it names path-only, beside a bound subject.** It is decided by the token's target path: the
+path a token is minted for, and the path a mutation is verified on. So a sign-out token minted on an unbound page is still bound, and an unbound
+contact form posts with no session to read. A path there is verified without a subject, so the `unbound-subject` refusal never applies to it.
+The patterns take `app.use`'s syntax and compile when the chain is built, so a malformed one throws at registration. A path that must take a
+mutation with no token at all stays on `exclude` ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 
 ### 3b. The CSRF Key Ring — Import and Rotation
 
@@ -232,11 +260,11 @@ shares no key with them.
 
 ### 3c. `mintCsrf` — Token Minting for Form Injection
 
-`mintCsrf(c, path)` creates a signed token using the minter installed by `csrfProtection`.
+`mintCsrf(c, path)` creates a signed token using the minter the app's CSRF policy installed (§3a).
 
 **`path` is required and scopes the token to one action URL** — verification fails with `path-mismatch` if it does not match the request pathname,
-preventing reuse across endpoints. It **throws** when `path` is missing or empty, or when no minter is on the context (i.e. `csrfProtection` is not
-mounted on the route).
+preventing reuse across endpoints. It **throws** when `path` is missing or empty, or when no minter is on the context (the policy's `paths` do not
+cover the route, or its `exclude` does).
 
 When the form POSTs back to the path it was rendered on, mint with `mintCsrf(c, c.url.pathname)`. **Mint one token per form render; never
 cache across requests.**
@@ -245,12 +273,12 @@ cache across requests.**
 
 Both are path-scoped: `createCsrfToken(ring, path, options?)` embeds the path, and `verifyCsrfToken(ring, token, path, options?)` checks it
 along with the signature and a freshness window. The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`; **there is no bare
-`number` overload.**
+`number` overload.** Its `maxAgeMs` defaults to the policy's default (§3a), so a token is equally fresh under either API.
 
 `verifyCsrfToken` takes the `KeyRing` the token was minted under, or one that still holds its key, and returns a `CsrfResult` — a `GuardResult`
 alias with the reason code in `error`. **Inspect `result.ok`; never echo `result.error` to a client.**
 
-**Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with non-standard token transport.
+**Use this API only when the chain's policy cannot cover the route** — a custom JSON API with non-standard token transport.
 
 ---
 
@@ -344,12 +372,18 @@ surface each step calls.
 [am-8]: ./AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms
 [boundaries-3]: ../warden/canon/libs/BOUNDARIES.md#3-validate-at-the-boundary
 [boundaries-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
+[boundaries-apps-2c]: ../warden/canon/apps/BOUNDARIES.md#2c-guard-order-within-a-route
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
+[ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
 [ram-2e]: ./ROUTING_AND_MIDDLEWARE.md#2e-a-page-or-action-names-its-route
+[ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[ram-3f]: ./ROUTING_AND_MIDDLEWARE.md#3f-one-csrf-policy-per-app-verified-once
+[ram-3h]: ./ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
 [sh]: ./SECURITY_HARDENING.md
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
+[sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucr-2f]: ./UI_CLIENT_RUNTIME.md#2f-turnstile--the-token-its-messages-and-the-theme

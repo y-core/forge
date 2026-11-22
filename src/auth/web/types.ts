@@ -4,25 +4,33 @@ import type { RequestMethod } from "@remix-run/fetch-router/routes";
 import type { Route } from "@remix-run/fetch-router/routes";
 import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 
-import type { MiddlewareGuardGroup } from "../../app/types";
+import type { MiddlewareContribution, MiddlewareGuardGroup } from "../../app/types";
 import type { PageMeta } from "../../app/types";
-import type { AppContext } from "../../context/types";
+import type { AppContext, RefuseHook } from "../../context/types";
 import type { KeyRing, KeyRingResolver } from "../../crypto/keyring/types";
 import type { TurnstileConfigSchema } from "../../form/config";
 import type { TurnstileVerifyOptions } from "../../form/types";
+import type { Logger } from "../../logging/types";
 import type { FC } from "../../render/jsx/types";
 import type { JSXNode } from "../../render/jsx/types";
+import type { D1Client } from "../../storage/db/types";
 import type { ForgeIcon } from "../../ui/core/types";
 import type { v } from "../../validation/validation";
 import type { AdminUserService } from "../admin/types";
 import type { AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
 import type { AuthSecondFactorKind } from "../factors/types";
+import type { AuthSecondFactorRequirement } from "../factors/types";
+import type { AuthDeferral } from "../flows/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSecurityNotices } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
+import type { AuthOptions } from "../keys/types";
+import type { AuthSessionStoreOptions } from "../stores/types";
 import type { AccessTokenService } from "../tokens/types";
 import type { AdminUserStore } from "../types";
+import type { AuthNotifier } from "../types";
+import type { AuthStoreResult } from "../types";
 import type { AuthFactorKind } from "../types";
 import type { AuthSessionStore } from "../types";
 import type { UserStore } from "../types";
@@ -57,8 +65,8 @@ export type AuthGuardResolver<Bindings, T> = (c: AppContext<Bindings>) => T | Pr
 
 /** What `requireAuth` needs to turn a session into an identity, and to refuse one owing a required second factor. @public */
 export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
-  /** Built per request, and so re-read every request: a demotion or deactivation lands on the next one rather than the next sign-in. */
-  readonly sessions: AuthGuardResolver<Bindings, Pick<AuthSessionStore, "resolve">>;
+  /** This request's services, whose one session store the guard resolves the session through, so a demotion or deactivation lands on the next request rather than the next sign-in. */
+  readonly services: AuthRequestServicesResolver<Bindings>;
   /** Where an anonymous request is sent — read off `authPaths`, never written as a literal. */
   readonly signinPath: string;
   // Required, not optional: a session that owes a second factor is a session that has not finished
@@ -121,8 +129,8 @@ export interface AuthRouteMaps {
 
 /** What `requireAdmin` answers a signed-in non-administrator with. @public */
 export interface AuthAdminGuardOptions<Bindings = Record<string, unknown>> {
-  /** The refusal in place of a plain-text 403. */
-  readonly onForbidden?: ((c: AppContext<Bindings>) => Response | Promise<Response>) | undefined;
+  /** Answers the refusal in place of the chain's hook, or declines with `undefined` to it; with neither answering, a plain-text 403. */
+  readonly onRefuse?: RefuseHook<Bindings> | undefined;
 }
 
 /** What `createAuthGuards` needs to wire `AUTH_ROUTE_GROUPS` onto a middleware chain. @public */
@@ -132,21 +140,19 @@ export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly enrolment: AuthEnrolmentGuardOptions<Bindings>;
   /** Group table to wire. Defaults to `AUTH_ROUTE_GROUPS`. */
   readonly groups?: readonly AuthRouteGroup[];
-  // Reached through `MiddlewareGuardGroup` rather than imported from `security/types`: `auth/web`
-  // declares no edge to `security`, and the direct import fails `validate-namespace-graph`.
   /** Origin/Referer allowlist for every group carrying a mutating leaf; forge cannot pick your origins, so omitting it throws rather than mounting one unchecked. */
   readonly origin: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
-  /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. Forge picks no numbers. */
-  readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
+  /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. A keyless group inherits its nearest keyed ancestor's limit, keyed per route, and `false` mounts a group and its keyless subgroups with no limit; once passed, a group holding a route with no keyed ancestor, a missing group, a key naming no group, or a key no group holds or inherits throws. Omit it to mount no limit at all. Forge picks no numbers. */
+  readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]> | false>>;
   /** What a group listing `require-approval` holds its requests to; without it every such group answers 404. */
   readonly approval?: Approval<Bindings> | undefined;
-  /** The refusal `require-admin` gives a signed-in non-administrator, in place of a plain-text 403. */
-  readonly onForbidden?: AuthAdminGuardOptions<Bindings>["onForbidden"];
+  /** The refusal hook every HTML group answers its origin, rate-limit, CSRF and `require-admin` refusals through after the sign-out recovery, declining with `undefined` to the chain's; the JSON groups always answer problem+json. */
+  readonly onRefuse?: AuthAdminGuardOptions<Bindings>["onRefuse"];
 }
 
 /** What `defineApproval` needs to set up the one administrator approval a deployment's guarded routes share. @public */
 export interface ApprovalOptions<Bindings = Record<string, unknown>> {
-  /** Where `registerApproval` mounts the prompt page and where `requireApproval` sends a request to it. */
+  /** Where `registerApproval` maps the prompt page and where `requireApproval` sends a request to it. */
   readonly path: string;
   /** Read per request, because a Worker holds no secret until a request carries its bindings; `undefined` or `""` answers 404 on every approved route. */
   readonly code: (c: AppContext<Bindings>) => string | undefined;
@@ -157,7 +163,7 @@ export interface ApprovalOptions<Bindings = Record<string, unknown>> {
   /** A limit on both methods of the prompt page, which answers guesses at a shared code. Forge picks no numbers. */
   readonly rateLimit: NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>;
   /** The ring a session's approval is signed with, so it holds a digest of the code rather than the code and ends when the code changes. */
-  readonly ring: KeyRingResolver;
+  readonly ring: KeyRingResolver<Bindings>;
   /** A challenge on the prompt, read as the auth forms read theirs; omit it and the prompt renders and verifies none. */
   readonly turnstile?: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify"> | undefined;
   /** Markup for the prompt in place of `ApprovalView`, receiving exactly the props it does. */
@@ -169,6 +175,8 @@ export interface Approval<Bindings = Record<string, unknown>> extends Omit<Appro
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
   readonly ring: (c: RequestContext<any, any>) => Promise<KeyRing>;
   readonly ttlMs: number;
+  /** The prompt's origin check and rate limit, passed to `applyMiddlewareChain`'s `contributions`; the prompt answers 500 on a request they did not run on. */
+  readonly contribution: MiddlewareContribution<Bindings>;
 }
 
 /** One administrator approval as a session holds it. @internal */
@@ -218,6 +226,62 @@ export interface AuthRequestSurface extends Omit<AuthRequestServices, "admin"> {
   readonly admin: AdminUserService;
 }
 
+/** A value read once for the deployment, or off this request where it varies by host or by env. @public */
+export type AuthPerRequest<Bindings, T> = T | ((c: AppContext<Bindings>) => T);
+
+/** The passkey offered as a second factor, and what this deployment demands of it. @public */
+export interface AuthPasskeyOffer<Bindings = Record<string, unknown>> {
+  readonly rpId: AuthPerRequest<Bindings, string>;
+  /** The name a browser shows for this site while it registers a passkey; an empty or whitespace-only one is refused. */
+  readonly rpName: AuthPerRequest<Bindings, string>;
+  /** The origin a credential's client data must carry. */
+  readonly origin: AuthPerRequest<Bindings, string>;
+  readonly requirement: AuthSecondFactorRequirement;
+}
+
+/** The authenticator app offered as a second factor, and what this deployment demands of it. @public */
+export interface AuthTotpAppOffer<Bindings = Record<string, unknown>> {
+  /** The name an authenticator app files the account under; one that is empty, whitespace only or holds `:` is refused. */
+  readonly issuer: AuthPerRequest<Bindings, string>;
+  readonly requirement: AuthSecondFactorRequirement;
+}
+
+/** The second factors `authRequestServices` builds, listed and owed in the order written; any one brings recovery codes with it. @public */
+export interface AuthSecondFactorOffers<Bindings = Record<string, unknown>> {
+  readonly passkey?: AuthPasskeyOffer<Bindings> | undefined;
+  readonly "totp-app"?: AuthTotpAppOffer<Bindings> | undefined;
+}
+
+/** What `authRequestServices` needs beyond the stores it builds itself. @public */
+export interface AuthRequestServicesOptions<Bindings = Record<string, unknown>> {
+  readonly auth: AuthOptions<Bindings>;
+  /** The one client every store this request is built over. */
+  readonly db: (c: AppContext<Bindings>) => D1Client;
+  readonly notifier: (c: AppContext<Bindings>) => AuthNotifier;
+  /** `executionCtx.waitUntil` or an equivalent, never inline. */
+  readonly defer: (c: AppContext<Bindings>) => AuthDeferral;
+  /** The link an email-change confirmation carries, given the token that authorises it. */
+  readonly confirmUrl: (c: AppContext<Bindings>, token: string) => string;
+  /** Absent, and nothing here can re-authenticate. */
+  readonly secondFactors?: AuthSecondFactorOffers<Bindings> | undefined;
+  /** The one lifetime the guards and the pages hold a session to. */
+  readonly sessionOptions?: AuthSessionStoreOptions | undefined;
+  /** Where a code, an authenticator label and a passkey name are addressed. Defaults to the user store's email. */
+  readonly address?: ((userId: string, users: UserStore) => AuthStoreResult<string> | Promise<AuthStoreResult<string>>) | undefined;
+  /** Where the email-code factor, the flows and the notices log. Defaults to the request logger, or the console without one. */
+  readonly logger?: ((c: AppContext<Bindings>) => Logger) | undefined;
+  /** The key prefixes of the challenge and nonce stores. Each defaults to `auth:challenge` or `auth:nonce`; an empty string, or one holding `||` or ending in `|`, is refused. Restate the ones a hand-built store used, or a nonce it spent is unspent here. */
+  readonly prefixes?: { readonly challenge?: string | undefined; readonly nonce?: string | undefined } | undefined;
+}
+
+/** This request's services, built once however often it is asked, with the session store the guards resolve through. @public */
+export interface AuthRequestServicesResolver<Bindings = Record<string, unknown>> {
+  (c: AppContext<Bindings>): Promise<AuthRequestServices>;
+  readonly sessions: (c: AppContext<Bindings>) => Promise<AuthSessionStore>;
+  /** How long a session lasts from sign-in, in milliseconds: `sessionOptions.absoluteLifetimeMs`, or `AUTH_SESSION_MAX_MS`. */
+  readonly absoluteLifetimeMs: number;
+}
+
 /** The href maps every loader and action reads its targets off, so no path literal is written twice. @public */
 export interface AuthWebPaths {
   readonly auth: AuthEntryPaths;
@@ -241,6 +305,8 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   readonly now?: (() => number) | undefined;
   /** Wipes the origin's HTTP cache on the sign-out response and its storage from the next auth page. Defaults to off. */
   readonly signoutClearsSiteData?: boolean | undefined;
+  /** Sign-out destroys the session; `keepVisitorData` drops only the auth keys and rotates the id instead. */
+  readonly signOut?: { readonly keepVisitorData?: true | undefined } | undefined;
   /** A challenge on the anonymous forms; omit it and no form renders or verifies one. */
   readonly turnstile?: AuthTurnstileOptions<Bindings> | undefined;
 }
@@ -449,19 +515,10 @@ export type AuthNavContext = RequestContext<any, any>;
 
 /** Options for `authNav`. @public */
 export interface AuthNavOptions {
-  /** Where the sign-out form posts, from `authPaths(...).auth.signout()`. */
+  /** Where the sign-out form posts, from `authPaths(...).auth.signout()`; on a request no CSRF policy covers, the link to the confirm page at the same path. */
   readonly signoutPath: string;
-  /** The ring the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
-  readonly ring: KeyRingResolver;
   /** Names the slot, for a `NavDefinition` that spells the sign-out slot differently. */
   readonly slot?: string | undefined;
   /** Composed onto the sign-out control, over the navbar-shaped defaults. */
   readonly signout?: Omit<AuthSignoutProps, "action" | "csrfToken"> | undefined;
-}
-
-/** What a `Navbar` is given to show this request's viewer their own destinations. @public */
-export interface AuthNav {
-  readonly activeFilters: string[];
-  /** Each slot learns whether it sits in a menu, so the sign-out button is a `menuitem` only there. */
-  readonly slots: Record<string, (place: { inMenu: boolean }) => JSXNode>;
 }

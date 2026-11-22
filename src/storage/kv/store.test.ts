@@ -216,12 +216,27 @@ describe("createKVStore — || key rejection", () => {
 });
 
 describe("createKVStore() logging", () => {
-  it("writes nothing to the console when no logger is passed", async () => {
+  it("keeps the debug miss off the console when no logger is passed", async () => {
     const written = spyOn(console, "log").mockImplementation(() => {});
     try {
       const store = createKVStore(makeKVStub());
       await store.getOrSet("absent", () => "value");
       expect(written).not.toHaveBeenCalled();
+    } finally {
+      written.mockRestore();
+    }
+  });
+
+  it("writes a decode failure to the console at warn when no logger is passed", async () => {
+    const written = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const kv = makeKVStub();
+      await kv.put("broken", "{not json");
+      await createKVStore(kv).get("broken");
+      const lines = written.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+      expect(lines.map(({ level, prefix, message }) => ({ level, prefix, message }))).toEqual([
+        { level: "warn", prefix: "storage/kv", message: "kv.decode-error" },
+      ]);
     } finally {
       written.mockRestore();
     }

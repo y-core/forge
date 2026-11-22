@@ -4,7 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, readDiagnostics, unresolvedName } from "./fence-compile";
+import {
+  bareRelativeImports,
+  compileFences,
+  type FenceDiagnostic,
+  type FenceSource,
+  isParseDiagnostic,
+  missingRuntimeGlobal,
+  readDiagnostics,
+  unresolvedModule,
+  unresolvedName,
+} from "./fence-compile";
 
 const fakeFences: FenceSource[] = [
   { file: "design/forms.md", line: 10, body: "import { Badge } from '@y-core/forge/ui/core';\n\n<Badge tone='default'>New</Badge>;" },
@@ -118,6 +128,42 @@ describe("unresolvedName()", () => {
       expect(unresolvedName(diagnostic(code, message))).toBe(expected);
     });
   }
+});
+
+describe("missingRuntimeGlobal() and unresolvedModule()", () => {
+  const diagnostic = (code: number, message: string): FenceDiagnostic => ({ fence: 0, file: "README.md", line: 1, code, message });
+
+  it("reads the global a missing-type-definitions diagnostic names", () => {
+    expect(missingRuntimeGlobal(diagnostic(2868, "Cannot find name 'Bun'. Do you need to install type definitions for Bun?"))).toBe("Bun");
+    expect(missingRuntimeGlobal(diagnostic(2304, "Cannot find name 'errors'."))).toBeUndefined();
+  });
+
+  it("reads the specifier a cannot-find-module diagnostic names", () => {
+    expect(unresolvedModule(diagnostic(2307, "Cannot find module 'bun:test' or its corresponding type declarations."))).toBe("bun:test");
+    expect(unresolvedModule(diagnostic(2305, "Module '\"x\"' has no exported member 'y'."))).toBeUndefined();
+  });
+});
+
+describe("bareRelativeImports()", () => {
+  it("prefixes every relative specifier an import, re-export or dynamic import names, on the same line", () => {
+    const body = [
+      'import { a } from "./a";',
+      "import './side';",
+      'export { b } from "../b";',
+      'const c = await import("./c");',
+      'import { d } from "#app/d";',
+    ].join("\n");
+
+    expect(bareRelativeImports(body)).toBe(
+      [
+        'import { a } from "app:./a";',
+        "import 'app:./side';",
+        'export { b } from "app:../b";',
+        'const c = await import("app:./c");',
+        'import { d } from "#app/d";',
+      ].join("\n"),
+    );
+  });
 });
 
 describe("compileFences()", () => {

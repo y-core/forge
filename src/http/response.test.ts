@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { ContentDisposition } from "./headers";
-import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, pdfResponse } from "./response";
+import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, pdfResponse, problemResponse } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -169,6 +169,26 @@ describe("jsonResponse — content-type is fixed", () => {
     expect(() => jsonResponse({}, 200, { "Content-Type": "text/html" })).toThrow(
       "jsonResponse: content-type is fixed for JSON responses — remove it from headers",
     );
+  });
+});
+
+describe("problemResponse", () => {
+  it("answers RFC 9457 problem+json of type about:blank carrying exactly the title and status", async () => {
+    const res = problemResponse(429, "Too Many Requests");
+
+    expect({ status: res.status, headers: Object.fromEntries(res.headers), body: await res.json() }).toEqual({
+      status: 429,
+      headers: { "content-type": "application/problem+json; charset=utf-8" },
+      body: { type: "about:blank", title: "Too Many Requests", status: 429 },
+    });
+  });
+
+  it("serialises a title holding JSON metacharacters so it parses back unchanged", async () => {
+    expect(await problemResponse(400, 'Bad "Request" \\ here').json()).toEqual({
+      type: "about:blank",
+      title: 'Bad "Request" \\ here',
+      status: 400,
+    });
   });
 });
 

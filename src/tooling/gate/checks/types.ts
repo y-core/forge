@@ -11,6 +11,16 @@ export interface AssetManifestCheckConfig {
   assetsPath?: string;
 }
 
+/** What the service-worker check needs to find the assets config and the record its build wrote beside the emitted module. @public */
+export interface ServiceWorkerCheckConfig {
+  /** Application root. Both paths resolve against it. */
+  root: string;
+  /** Assets config path, relative to `root`. */
+  assetConfig: string;
+  /** The emitted module, relative to `root`, whose directory holds the record. Defaults to `.forge/assets.ts`. */
+  assetsPath?: string;
+}
+
 /** What the asset-root check needs to find both halves of the coupling. @public */
 export interface AssetRootCheckConfig {
   /** Application root. Both config paths resolve against it. */
@@ -19,6 +29,36 @@ export interface AssetRootCheckConfig {
   assetConfig: string;
   /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
   workerConfig?: string;
+}
+
+/** What the consumer `sources.css` check needs to find the app's imports, its stylesheet entries and the installed library. @public */
+export interface ConsumerCssSourcesCheckConfig {
+  /** Application root. Every path resolves against it. */
+  root: string;
+  /** Assets config path, relative to `root`; each `css[].input` it names is judged. */
+  assetConfig: string;
+  /** The installed package whose `./<ns>/sources.css` exports are required, as the app imports it. */
+  packageName: string;
+  /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
+  sources?: readonly string[];
+}
+
+/** An installed package: the directory holding its manifest, and the manifest's `exports`. @internal */
+export interface InstalledPackage {
+  dir: string;
+  exports: ExportsMap;
+}
+
+/** One module of an installed package as the markup walk reads it: the package-relative files it value-imports, and the namespace its classes credit. @internal */
+export interface ScannedModule {
+  imports: readonly string[];
+  markupNamespace: string | null;
+}
+
+/** What one run's markup walks share, so each module is read and each specifier resolved once. @internal */
+export interface MarkupScan {
+  modules: Map<string, ScannedModule>;
+  resolved: Map<string, string | null>;
 }
 
 /** What the deployment-exposure check needs to find the Worker config it reads intent from. @public */
@@ -435,7 +475,7 @@ export interface DesignSystem {
 }
 
 /** A package's `exports` map as it appears in `package.json`. */
-export type ExportsMap = Record<string, { import?: string; types?: string } | string>;
+export type ExportsMap = Record<string, { import?: string; types?: string; workerd?: string; bun?: string; node?: string } | string>;
 
 /** A package's `imports` map as it appears in `package.json`, each value a target or a nested conditions object. @public */
 export interface PackageImports {
@@ -844,10 +884,18 @@ export interface NodeBundle {
   label: string;
   /** The export's `types` source, relative to the root. */
   entry: string;
-  /** The export's `import` target, relative to the root. */
+  /** The export's `node` target, or its `import` where it has none, relative to the root. */
   bundle: string;
   /** Every file whose edit can change the bundle: the entry's relative-import closure and the bundle itself. */
   watches: readonly string[];
+}
+
+/** Where the bundle-shadow check looks for relative imports. @public */
+export interface BundleShadowCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Directories or files scanned for `.ts` and `.tsx` sources, relative to `root`; a `!` prefix excludes one. */
+  sources: readonly string[];
 }
 
 /** What the node-exports check needs to know about the package. @public */

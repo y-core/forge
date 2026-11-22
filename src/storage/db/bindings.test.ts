@@ -1,10 +1,12 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import type { AppContext } from "../../context/types";
 import { createLogger } from "../../logging/logger";
-import type { LogRecord } from "../../logging/types";
+import { requestLogger } from "../../logging/request-logger";
+import type { LogLevel, LogRecord } from "../../logging/types";
 import { fakeD1 } from "../../testing/fakes";
+import { captureLogs } from "../../testing/logs";
 import { mapHandler } from "../../testing/route";
 import { d1BindingSpec, resolveD1Client, validateD1Binding } from "./bindings";
 import { createD1Client } from "./client";
@@ -97,6 +99,84 @@ interface CfD1Database {
   withSession(constraintOrBookmark?: string): CfD1DatabaseSession;
   dump(): Promise<ArrayBuffer>;
 }
+
+function timedD1(durationMs: number): D1Database {
+  const meta = { duration: durationMs, rows_read: 0, rows_written: 0 };
+  const statement: D1PreparedStatement = {
+    bind() {
+      return statement;
+    },
+    all: <T>() => Promise.resolve({ results: [] as T[], success: true as const, meta }),
+    first: () => Promise.resolve(null),
+    run: () => Promise.resolve({ results: [], success: true as const, meta }),
+  };
+  return { prepare: () => statement, batch: () => Promise.resolve([]), exec: () => Promise.resolve({ count: 0, duration: durationMs }) };
+}
+
+describe("resolveD1Client — with no client logger, under a request logger", () => {
+  async function recorded(minLevel: LogLevel, perRequest: (c: AppContext<{ DB: D1Database }>) => Promise<void>): Promise<string[]> {
+    const capture = captureLogs();
+    const app = new Forge<{ DB: D1Database }>();
+    app.use("*", requestLogger({ channels: () => [capture.channel], minLevel }));
+    mapHandler(app, "GET", "/", async (c) => {
+      await perRequest(c as AppContext<{ DB: D1Database }>);
+      return new Response("ok");
+    });
+    await app.request("/", {}, { DB: timedD1(50) });
+    return capture.records
+      .filter((record) => record.message !== "request.completed")
+      .map(({ level, message, data }) => `${level} ${message} ${String(data?.source)}`);
+  }
+  const binding = (c: AppContext<{ DB: D1Database }>) => c.env.DB;
+
+  const cases: { name: string; minLevel: LogLevel; run: (c: AppContext<{ DB: D1Database }>) => Promise<void>; expected: string[] }[] = [
+    {
+      name: "drops the per-call debug d1.query",
+      minLevel: "debug",
+      run: async (c) => void (await resolveD1Client(c, { binding })?.query(sql`SELECT 1`)),
+      expected: [],
+    },
+    {
+      name: "passes a d1.query raised to warn by slowQueryMs",
+      minLevel: "debug",
+      run: async (c) => void (await resolveD1Client(c, { binding, client: { slowQueryMs: 10 } })?.query(sql`SELECT 1`)),
+      expected: ["warn d1.query storage/db"],
+    },
+    {
+      name: "passes the d1.request.budget warn",
+      minLevel: "debug",
+      run: async (c) => {
+        const client = resolveD1Client(c, { binding });
+        for (let id = 0; id < 11; id += 1) await client?.query(sql`SELECT * FROM users WHERE id = ${id}`);
+      },
+      expected: ["warn d1.request.budget storage/db"],
+    },
+    {
+      name: "still yields to a request logger whose own minLevel is error",
+      minLevel: "error",
+      run: async (c) => {
+        const client = resolveD1Client(c, { binding, client: { slowQueryMs: 10 } });
+        for (let id = 0; id < 11; id += 1) await client?.query(sql`SELECT * FROM users WHERE id = ${id}`);
+      },
+      expected: [],
+    },
+  ];
+
+  for (const { name, minLevel, run, expected } of cases) {
+    it(name, async () => {
+      expect(await recorded(minLevel, run)).toEqual(expected);
+    });
+  }
+
+  it("keeps every debug d1.query for a client logger that is passed, with no floor of its own", async () => {
+    const own = captureLogs();
+    const records = await recorded("debug", async (c) => {
+      const client = resolveD1Client(c, { binding, client: { logger: own.logger } });
+      for (const n of [1, 2]) await client?.query(sql`SELECT ${n}`);
+    });
+    expect([records, own.records.map(({ level, message }) => `${level} ${message}`)]).toEqual([[], ["debug d1.query", "debug d1.query"]]);
+  });
+});
 
 describe("D1DatabaseLike structural contract", () => {
   it("accepts a Cloudflare-shaped D1 database without a cast", () => {
@@ -209,5 +289,60 @@ describe("resolveD1Client — the request's query budget", () => {
     const client = createD1Client(fakeD1(), { logger, queryBudget: { repeats: 1, queries: 1 } });
     for (let i = 0; i < 3; i += 1) await client.query(sql`SELECT 1`);
     expect(records.filter((record) => record.message === "d1.request.budget")).toEqual([]);
+  });
+
+  describe("with no client logger", () => {
+    let log: ReturnType<typeof spyOn<Console, "log">> | undefined;
+    afterEach(() => {
+      log?.mockRestore();
+    });
+    const written = () => (log?.mock.calls ?? []).map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+
+    it("writes the eleventh run of one statement to the console at warn", async () => {
+      log = spyOn(console, "log").mockImplementation(() => {});
+      const { app } = budgetApp(async (c) => {
+        const client = resolveD1Client(c, { binding });
+        for (let id = 0; id < 11; id += 1) await client?.queryOne(sql`SELECT * FROM users WHERE id = ${id}`);
+      });
+      await app.request("/", {}, { DB: fakeD1(() => [{ id: 1 }]) });
+      expect(written().map(({ level, prefix, message, reason, runs }) => ({ level, prefix, message, reason, runs }))).toEqual([
+        { level: "warn", prefix: "storage/db", message: "d1.request.budget", reason: "repeats", runs: 11 },
+      ]);
+    });
+
+    it("writes nothing for a single query", async () => {
+      log = spyOn(console, "log").mockImplementation(() => {});
+      const { app } = budgetApp(async (c) => {
+        await resolveD1Client(c, { binding })?.query(sql`SELECT 1`);
+      });
+      await app.request("/", {}, { DB: fakeD1() });
+      expect(written()).toEqual([]);
+    });
+
+    it("writes the request's 900th call to the console at warn", async () => {
+      log = spyOn(console, "log").mockImplementation(() => {});
+      const { app } = budgetApp(async (c) => {
+        const client = resolveD1Client(c, { binding });
+        for (let n = 0; n < 900; n += 1) await client?.query(sql`SELECT ${n}`);
+      });
+      await app.request("/", {}, { DB: fakeD1() });
+      expect(written().map(({ level, message, reason, queries }) => ({ level, message, reason, queries }))).toEqual([
+        { level: "warn", message: "d1.request.budget", reason: "repeats", queries: 11 },
+        { level: "warn", message: "d1.request.budget", reason: "queries", queries: 900 },
+      ]);
+    });
+
+    it("sends the warning to a client logger that is passed, and nothing to the console", async () => {
+      log = spyOn(console, "log").mockImplementation(() => {});
+      const { app, budget } = budgetApp(async (c, logger) => {
+        const client = resolveD1Client(c, { binding, client: { logger } });
+        for (let id = 0; id < 11; id += 1) await client?.query(sql`SELECT * FROM users WHERE id = ${id}`);
+      });
+      await app.request("/", {}, { DB: fakeD1() });
+      expect([budget(), written()]).toEqual([
+        [["warn", { reason: "repeats", sql: "SELECT * FROM users WHERE id = ?", runs: 11, queries: 11 }]],
+        [],
+      ]);
+    });
   });
 });

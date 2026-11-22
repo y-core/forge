@@ -100,7 +100,7 @@ async function page(app: Forge, path = "/page"): Promise<string> {
 }
 
 describe("an auth page under a session that owes a storage clear", () => {
-  /** The sign-in loader on an app whose session carries the mark a sign-out leaves, and the header the app's `csrfProtection` names. */
+  /** The sign-in loader on an app whose session carries the mark a sign-out leaves, and the header the app's CSRF policy names. */
   function owing(options: AuthWebOptions, owed: boolean, header?: string): Forge {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
@@ -116,7 +116,7 @@ describe("an auth page under a session that owes a storage clear", () => {
 
   const SCOPE = `data-scope="${SITE_DATA_SCOPE}"`;
 
-  it("stamps the site-data scope with its own path, the token minted for it and csrfProtection's default header", async () => {
+  it("stamps the site-data scope with its own path, the token minted for it and the CSRF policy's default header", async () => {
     const html = await page(owing(fakeAuthWebOptions(), true));
 
     expect(attrsOf(html, SCOPE)).toEqual({
@@ -146,6 +146,22 @@ describe("an auth page under a session that owes a storage clear", () => {
 
     expect(elementsOf(html, "div", SCOPE)).toEqual([]);
   });
+
+  for (const { cookie, path } of [
+    { cookie: "__Host-auth-site-data-owed=MQ==", path: "/auth/signout/site-data" },
+    // base64 of "0"
+    { cookie: "__Host-auth-site-data-owed=MA==", path: undefined },
+    // not base64 at all
+    { cookie: "__Host-auth-site-data-owed=%%%", path: undefined },
+    { cookie: "auth-site-data-owed=MQ==", path: undefined },
+  ]) {
+    it(`stamps ${path === undefined ? "nothing" : "the scope"} on a fresh session whose request carries Cookie: ${cookie}`, async () => {
+      const res = await owing(fakeAuthWebOptions(), false).request("/page", { headers: { cookie } });
+      const html = await res.text();
+
+      expect(attrsOf(html, SCOPE)[SITE_DATA_PATH_ATTR]).toBe(path);
+    });
+  }
 });
 
 describe("loadSignin", () => {

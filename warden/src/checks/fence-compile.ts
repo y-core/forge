@@ -7,11 +7,16 @@ import { err, ok } from "../../../src/result/result";
 import type { Result } from "../../../src/result/types";
 import { stripJsonc } from "../../../src/tooling/cli/jsonc";
 
-/** A `tsx` fence keyed back to where it was written. @internal */
+/** A fence language the compiler checks. @internal */
+export type FenceLang = "ts" | "tsx";
+
+/** A `ts` or `tsx` fence keyed back to where it was written. @internal */
 export interface FenceSource {
   file: string;
   line: number;
   body: string;
+  /** The module extension the fence compiles under, where a `ts` fence cannot hold JSX. Defaults to `tsx`. */
+  lang?: FenceLang;
 }
 
 /** A compiler diagnostic mapped back to its markdown line. @internal */
@@ -29,11 +34,15 @@ export interface FenceProject {
   paths: Record<string, string[]>;
 }
 
-const DIAGNOSTIC_HEAD = /^(f(\d+)\.tsx)\((\d+),\d+\): error TS(\d+): (.*)$/;
+const DIAGNOSTIC_HEAD = /^(f(\d+)\.tsx?)\((\d+),\d+\): error TS(\d+): (.*)$/;
 const LOCATED_DIAGNOSTIC = /^.+\(\d+,\d+\): error TS\d+: /;
 const CONTINUATION = /^\s+(\S.*)$/;
 const UNRESOLVED_CODES = new Set([2304, 2552, 18004]);
+const RUNTIME_GLOBAL_CODES = new Set([2580, 2582, 2591, 2593, 2867, 2868]);
+const MISSING_MODULE = 2307;
 const QUOTED_NAME = /'([^']+)'/;
+const RELATIVE_SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])(\.\.?\/[^"']*)\2/g;
+const APP_MODULE_PREFIX = "app:";
 
 /** The step tsconfig's own `include` entries that are ambient declarations, resolved against its directory. */
 function ambientIncludes(tsconfig: string): Result<string[], string> {
@@ -51,11 +60,12 @@ function ambientIncludes(tsconfig: string): Result<string[], string> {
   }
 }
 
-/** Compiles each fence as its own module, declaring each fence's `ambient` names as `any`. @internal */
+/** Compiles each fence as its own module, declaring each fence's `ambient` names and every one of `modules` as `any`. @internal */
 export function compileFences(
   fences: readonly FenceSource[],
   project: FenceProject,
   ambient: ReadonlyMap<number, readonly string[]> = new Map(),
+  modules: readonly string[] = [],
 ): Result<FenceDiagnostic[], string> {
   const ambientFiles = ambientIncludes(project.tsconfig);
   if (!ambientFiles.ok) return ambientFiles;
@@ -63,12 +73,13 @@ export function compileFences(
   try {
     fences.forEach((fence, index) => {
       const declarations = (ambient.get(index) ?? []).map((name) => `declare const ${name}: any; type ${name} = any;\n`);
-      writeFileSync(join(dir, `f${index}.tsx`), `${fence.body}\nexport {};\n${declarations.join("")}`);
+      writeFileSync(join(dir, `f${index}.${fence.lang ?? "tsx"}`), `${fence.body}\nexport {};\n${declarations.join("")}`);
     });
+    if (modules.length > 0) writeFileSync(join(dir, "modules.d.ts"), modules.map((name) => `declare module ${JSON.stringify(name)};\n`).join(""));
     const tsconfig = {
       extends: project.tsconfig,
       compilerOptions: { noEmit: true, noImplicitAny: false, noUnusedLocals: false, noUnusedParameters: false, paths: project.paths },
-      include: ["*.tsx", ...ambientFiles.data],
+      include: ["*.ts", "*.tsx", ...ambientFiles.data],
     };
     writeFileSync(join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
     const run = spawnSync(process.execPath, ["check", "--no-script", "--no-pretty", "-p", "tsconfig.json"], { cwd: dir, encoding: "utf-8" });
@@ -128,4 +139,24 @@ export function isParseDiagnostic(code: number): boolean {
 export function unresolvedName(diagnostic: FenceDiagnostic): string | undefined {
   if (!UNRESOLVED_CODES.has(diagnostic.code)) return undefined;
   return QUOTED_NAME.exec(diagnostic.message)?.[1];
+}
+
+/** The runtime global, such as `Bun` or `process`, a diagnostic says has no type declarations in scope. @internal */
+export function missingRuntimeGlobal(diagnostic: FenceDiagnostic): string | undefined {
+  if (!RUNTIME_GLOBAL_CODES.has(diagnostic.code)) return undefined;
+  return QUOTED_NAME.exec(diagnostic.message)?.[1];
+}
+
+/** The module specifier a "cannot find module" diagnostic is about. @internal */
+export function unresolvedModule(diagnostic: FenceDiagnostic): string | undefined {
+  if (diagnostic.code !== MISSING_MODULE) return undefined;
+  return QUOTED_NAME.exec(diagnostic.message)?.[1];
+}
+
+/** The fence's body with each relative import specifier made bare, since only a bare module name can be declared ambient. @internal */
+export function bareRelativeImports(body: string): string {
+  return body.replace(
+    RELATIVE_SPECIFIER,
+    (_, keyword: string, quote: string, specifier: string) => `${keyword}${quote}${APP_MODULE_PREFIX}${specifier}${quote}`,
+  );
 }

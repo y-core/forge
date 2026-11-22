@@ -20,3 +20,9 @@ export interface GenOptions {
   refinements: Record<string, { minLength?: number }>;
   bindingCheck: string;
 }
+
+/** One rate-limit binding's window, as wrangler's `simple` declares it. @internal */
+export interface RateLimitWindow {
+  limit: number;
+  period: 10 | 60;
+}

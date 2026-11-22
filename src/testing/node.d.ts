@@ -1,6 +1,21 @@
 // The node surface `testing/snapshot`, `testing/d1` and `testing/harness` reach, and the one a forge app's tests call. Not `@types/node`, which
 // declares node's globals into scope so a Worker program typechecks code that cannot run. Every entry is a `declare module`, so none adds a global.
 
+declare module "node:buffer" {
+  type BufferEncoding = "utf8" | "utf-8" | "hex" | "base64" | "base64url" | "latin1" | "binary" | "ascii";
+  export interface Buffer extends Uint8Array {
+    equals(other: Uint8Array): boolean;
+    toString(encoding?: BufferEncoding): string;
+  }
+  export const Buffer: {
+    from(data: string, encoding?: BufferEncoding): Buffer;
+    from(data: Uint8Array | ArrayBuffer | readonly number[]): Buffer;
+    alloc(size: number, fill?: number): Buffer;
+    concat(list: readonly Uint8Array[], totalLength?: number): Buffer;
+    byteLength(value: string, encoding?: BufferEncoding): number;
+  };
+}
+
 declare module "node:child_process" {
   export interface SpawnSyncTextResult {
     readonly status: number | null;
@@ -89,7 +104,7 @@ declare module "node:http" {
 }
 
 declare module "node:module" {
-  export function createRequire(path: string): { resolve(id: string): string };
+  export function createRequire(path: string): { resolve(id: string): string; cache: Record<string, unknown> };
 }
 
 declare module "node:net" {

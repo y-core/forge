@@ -8,7 +8,7 @@ import { PassThrough } from "node:stream";
 import { execute } from "../cli/execute";
 import type { CommandBase } from "../cli/types";
 import { createDbCommands } from "./commands";
-import { bufferedIO, cfEnvelope, cfRefusal, fakeDbIo, minimalWranglerConfig, REMOTE_ARGS } from "./db.fixture";
+import { bufferedIO, cfEnvelope, cfRefusal, fakeDbIo, minimalWranglerConfig, onStdin, REMOTE_ARGS } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 
 const roots: string[] = [];
@@ -97,6 +97,48 @@ describe("forge db standby reset", () => {
     const cli = await runDb(io, ["standby", "reset", "--root", root, "--no-seed", "--yes", "--json"]);
 
     expect(cli.out).toEqual([`{"target":"standby","database":"app-db-standby","applied":[],"seeded":[],"excluded":[]}`]);
+  });
+});
+
+describe("forge db standby reset --empty", () => {
+  const stateOf = (root: string) =>
+    join(root, ".forge", "standby", "app-db-standby", ".wrangler", "state", "v3", "d1", "miniflare-D1DatabaseObject", "db.sqlite");
+
+  for (const argv of [["--empty"], ["--empty", "--no-seed"]]) {
+    it(`removes the standby state and stops there, running nothing against it, under ${argv.join(" ")}`, async () => {
+      const root = appRoot();
+      const io = fakeDbIo();
+      io.writeText(stateOf(root), "");
+
+      const cli = await runDb(io, ["standby", "reset", "--root", root, ...argv, "--yes", "--json"]);
+
+      expect([cli.err, cli.code, cli.out, io.exists(stateOf(root)), io.d1Calls]).toEqual([
+        [],
+        null,
+        [`{"target":"standby","database":"app-db-standby","applied":[],"seeded":[],"excluded":[]}`],
+        false,
+        [],
+      ]);
+    });
+  }
+
+  it("names what is lost in its confirmation, which differs from a rebuild's, and removes nothing when refused", async () => {
+    const root = appRoot();
+    const io = fakeDbIo();
+    io.writeText(stateOf(root), "");
+    const refused = async (argv: string[]) => (await onStdin(false, "", () => runDb(io, ["standby", "reset", "--root", root, ...argv]))).value;
+
+    const empty = await refused(["--empty"]);
+    const rebuild = await refused(["--no-seed"]);
+
+    const refusal = (consequence: string) => [
+      `Error: Refusing to rebuild app-db-standby (standby) without a terminal to confirm at.\n${consequence} Pass --yes to say so deliberately.`,
+    ];
+    expect([empty.err, rebuild.err]).toEqual([
+      refusal("Every row and table in it is discarded, and it is left holding nothing."),
+      refusal("Every row in it is discarded; what it holds afterwards comes from the migrations and the seeds alone."),
+    ]);
+    expect([empty.code, rebuild.code, io.exists(stateOf(root)), io.d1Calls]).toEqual([1, 1, true, []]);
   });
 });
 

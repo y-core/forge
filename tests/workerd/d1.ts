@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { D1Database, D1PreparedStatement } from "../../src/storage/db/types";
-import { openPlatformD1 } from "../../src/testing/d1";
+import { openPlatformD1 } from "../../src/testing/d1/mod";
 import { cutSqlStatements } from "../../src/tooling/db/backup/split";
 
 /** A workerd statement, which also answers `raw()` — the read `PRAGMA miniflare_d1_export` returns its dump through. */

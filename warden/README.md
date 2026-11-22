@@ -165,6 +165,19 @@ and more than any consumer should take. A gate that pulls the root barrel for `d
 **`wardenStep`'s `catalogue` option belongs to the canon's home repository alone.** Configure it and the step asserts the committed catalogue; leave
 it out and it does not, which is what every consumer wants.
 
+**`docFencesStep` compiles the `ts` fences of the markdown its `fencedDocs` lists**, each as a module of its own, under its `tsconfig` and with
+the package's `exports` mapped to their sources, as the `validate-doc-fences` row. A README example written against a removed or reshaped API
+fails the gate at its markdown line. Forge lists every `src/**/README.md` and the root `README.md`, except `src/ui/README.md`, which
+`validate-design` compiles, and the READMEs whose examples reach a forge source the Workers consumer's options cannot compile.
+
+- **A forge export is imported in the fence that uses it**, and a missing import is a finding naming the subpath that exports it.
+- **Any other undefined name is app context.** The check declares it `any`, so `app` and `c` need no declaration in the fence. So is a module
+  outside the package, such as `./routes` or `bun:test`, and a runtime global such as `Bun`. A subpath the package does not export still fails.
+- **A subpath listed in `untypedSubpaths` imports as `any`**, for one no Worker reaches. Forge lists its `forge.node` subpaths except
+  `storage/db`, which a Worker imports too.
+- **A fence whose info string is `ts nocheck` is skipped**, for a deliberately wrong example. A fragment is made to compile instead, and an
+  example of a stale API is corrected, never marked.
+
 ## Selecting the Tree
 
 **`libs` is declared; everything else is `apps`.** `"warden": { "kind": "libs" }` in `package.json` selects the library trees. An absent key, an

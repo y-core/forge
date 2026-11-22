@@ -1,5 +1,6 @@
+import { cachePendingUntilRejected } from "../../context/env-memo";
 import { KEY_RING_KEY_ID_LENGTH, KEY_RING_KID_BYTES } from "../../crypto/keyring/ring";
-import { cachePendingUntilRejected, resolveKeyRingKey } from "../../crypto/keyring/subkey";
+import { resolveKeyRingKey } from "../../crypto/keyring/subkey";
 import type { KeyRing } from "../../crypto/keyring/types";
 import {
   AEAD_NONCE_BYTES,

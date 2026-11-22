@@ -7,6 +7,7 @@ import type { AdminUserOutcome } from "../../types";
 import type { AuthUser } from "../../types";
 import type { AuthCredential } from "../../types";
 import type { AuthSessionRecord } from "../../types";
+import type { AuthSecurityEvent } from "../../types";
 import type { PasskeyMode } from "../../types";
 import type { AuthFactorKind } from "../../types";
 import type { AuthAdminPaths } from "../types";
@@ -25,7 +26,7 @@ export type AdminElevateViewProps = AuthViewChrome & {
   readonly adminCount: number;
   readonly paths: AuthAdminPaths;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
@@ -35,7 +36,7 @@ export type ApprovalViewProps = AuthViewChrome & {
   /** The prompt's own path, carrying the return-to the request arrived with. */
   readonly submitPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** A refused code, in the web layer's words — a wrong code and a failed challenge read alike. */
   readonly fieldError?: string | undefined;
@@ -54,7 +55,7 @@ export type AdminUserEditViewProps = AuthViewChrome & {
   readonly outcome: AdminUserOutcome | null;
   readonly paths: AuthAdminPaths;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
@@ -94,7 +95,7 @@ export type AuthFactorsTriggerProps = {
 export type AuthFactorsResetForm = {
   readonly path: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
 };
 
@@ -120,7 +121,7 @@ export type EmailChangeViewProps = AuthViewChrome & {
   readonly submitPath: string;
   readonly accountPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The new address the visitor already typed, kept across a refusal. */
   readonly email?: string | undefined;
@@ -141,7 +142,7 @@ export type EmailChangeConfirmViewProps = AuthViewChrome & {
   readonly token: string;
   readonly submitPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
 };
 
@@ -151,7 +152,7 @@ export type PasskeyEditViewProps = AuthViewChrome & {
   readonly renamePath: string;
   readonly cancelPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly fieldError?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
@@ -162,11 +163,11 @@ export type AuthPasskeyContract = {
   readonly mode: PasskeyMode;
   readonly optionsPath: string;
   readonly verifyPath: string;
-  /** Minted for `optionsPath` alone — `csrfProtection` binds a token to one path. */
+  /** Minted for `optionsPath` alone — the CSRF policy binds a token to one path. */
   readonly optionsToken: string;
   /** Minted for `verifyPath` alone, and never the same value as `optionsToken`. */
   readonly verifyToken: string;
-  /** The app's own CSRF header name, when it is not `csrfProtection`'s default. */
+  /** The app's own CSRF header name, when it is not the CSRF policy's default. */
   readonly csrfHeader?: string | undefined;
   readonly redirect?: string | undefined;
 };
@@ -176,7 +177,7 @@ export type PasskeyEnrolViewProps = AuthViewChrome & {
   readonly contract: AuthPasskeyContract;
   /** The way off the page: a sign-out form for an owed enrolment, whose POST needs its own token, or a link back for an optional one. */
   readonly exit: { readonly kind: "signout"; readonly path: string; readonly csrfToken: string } | { readonly kind: "back"; readonly path: string };
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The address the enrolment is being made for, shown so the visitor can tell whose account it is. */
   readonly email: string;
@@ -200,7 +201,7 @@ export type PasskeyListViewProps = AuthViewChrome & {
   readonly backupPrompt: boolean;
   /** A refused removal, in the web layer's words. */
   readonly error?: string | undefined;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
@@ -215,8 +216,14 @@ export type SessionListViewProps = AuthViewChrome & {
   readonly revokeToken: string;
   readonly revokeOthersPath: string;
   readonly revokeOthersToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
+};
+
+/** What the security event list renders: an account's events, in the order given. @public */
+export type SecurityEventListViewProps = AuthViewChrome & {
+  /** As `AuthSecurityEventStore.listByUser` answers them, newest first. */
+  readonly rows: readonly AuthSecurityEvent[];
 };
 
 /** What the recovery-code page renders: the codes left, and a new set shown once until one of it is typed back. @public */
@@ -229,7 +236,7 @@ export type RecoveryCodesViewProps = AuthViewChrome & {
   readonly issued?: readonly string[] | undefined;
   readonly confirmPath: string;
   readonly confirmToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** A refused confirmation, in the web layer's words. */
   readonly fieldError?: string | undefined;
@@ -247,7 +254,7 @@ export type SigninViewProps = AuthViewChrome & {
   readonly submitPath: string;
   readonly signupPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The address the visitor already typed, so a refusal does not empty the field. */
   readonly email?: string | undefined;
@@ -265,7 +272,7 @@ export type SignupViewProps = AuthViewChrome & {
   readonly submitPath: string;
   readonly signinPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly email?: string | undefined;
   readonly fieldError?: string | undefined;
@@ -283,7 +290,7 @@ export type AuthSiteDataProps = {
   /** The POST-only route from `authPaths(...).auth.signoutSiteData()`. */
   readonly path: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, stated even when it is the default. */
+  /** The header the app's CSRF policy checks the token on, stated even when it is the default. */
   readonly csrfHeader: string;
 };
 
@@ -291,9 +298,9 @@ export type AuthSiteDataProps = {
 export type AuthSignoutProps = {
   /** Where the form posts, from `authPaths(...).auth.signout()`. */
   readonly action: string;
-  /** The token authorising that POST; without one `csrfProtection` refuses it. */
+  /** The token authorising that POST; without one the CSRF policy refuses it. */
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** Overrides the button's own wording, for a host that names the action differently. */
   readonly label?: string | undefined;
@@ -311,7 +318,7 @@ export type SignoutConfirmViewProps = AuthViewChrome & {
   /** Where the form posts, from `authPaths(...).auth.signout()`. */
   readonly submitPath: string;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
 };
 
@@ -333,7 +340,7 @@ export type TotpEnrolViewProps = AuthViewChrome & {
   /** The page that replaces the settled enrolment's app, absent where replacing is not offered. */
   readonly replacePath?: string | undefined;
   readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** Set when the authenticator app is mandatory, which disables removing the settled enrolment. */
   readonly mandatory: boolean;
@@ -374,7 +381,7 @@ export type VerifyViewProps = AuthViewChrome & {
   readonly codeSent?: boolean | undefined;
   /** How long until another code can be asked for, absent once the factor's reissue window has passed. */
   readonly resendWaitMs?: number | undefined;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The address the code went to, so the visitor can see they are watching the right inbox. */
   readonly email?: string | undefined;

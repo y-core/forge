@@ -2,7 +2,7 @@ import type { RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../../context/accessor";
 import { pendingCookieValue, replacePendingCookie } from "../../context/pending-headers";
-import { getAppContext } from "../../context/types";
+import { assertUnwrappedKeyRing, createKeyRingResolver } from "../../crypto/keyring/resolver";
 import type { KeyRing } from "../../crypto/keyring/types";
 import { createSignedCookie } from "../../session/cookie";
 import type { SignedCookie } from "../../session/types";
@@ -23,19 +23,18 @@ function inTurn<T>(c: RequestContext<any, any>, step: () => Promise<T>): Promise
 
 /** Creates a `Flasher` on a signed cookie cleared on read, for apps with no session store mounted; with one, use `session.flash`. @public */
 export function createFlash<Bindings = Record<string, unknown>>(options: FlashCookieOptions<Bindings>): Flasher {
-  const name = options.name ?? "flash";
-  const path = options.path ?? "/";
-  const maxAge = options.maxAge ?? 60;
-  const sameSite = options.sameSite ?? "Lax";
+  const { ring: ringResolver, name = "flash", maxAge = 60, ...attributes } = options;
 
+  assertUnwrappedKeyRing("createFlash", ringResolver);
+  const resolveRing = createKeyRingResolver(ringResolver);
   const cookies = new WeakMap<KeyRing, SignedCookie>();
 
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function cookieFor(c: RequestContext<any, any>): Promise<SignedCookie> {
-    const ring = await options.ring(getAppContext<Bindings>(c));
+    const ring = await resolveRing(c);
     const known = cookies.get(ring);
     if (known !== undefined) return known;
-    const cookie = createSignedCookie(name, { ring, path, maxAge, sameSite });
+    const cookie = createSignedCookie(name, { ...attributes, ring, maxAge });
     cookies.set(ring, cookie);
     return cookie;
   }
@@ -76,7 +75,7 @@ export function createFlash<Bindings = Record<string, unknown>>(options: FlashCo
     // The clear is keyed on the cookie being present, not on its value verifying: one past its expiry
     // reads as `null`, and leaving it uncleared means the browser re-sends and re-fails it forever.
     if (reading === null) return [];
-    const clearCookie = await cookie.serialize("", { maxAge: 0, path });
+    const clearCookie = await cookie.serialize("", { maxAge: 0 });
     if (pendingCookieValue(c, name) === null) replacePendingCookie(c, clearCookie);
     return parseMessages(reading.value);
   }

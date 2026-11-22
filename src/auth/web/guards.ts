@@ -2,8 +2,10 @@ import type { Middleware } from "@remix-run/fetch-router";
 import { Route } from "@remix-run/fetch-router/routes";
 import type { RouteMap } from "@remix-run/fetch-router/routes";
 
+import { refuseAsProblem } from "../../app/refusal";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import { contextVar } from "../../context/accessor";
+import type { RefuseHook } from "../../context/types";
 import { getAppContext } from "../../context/types";
 import { signWithKeyRing, verifyWithKeyRing } from "../../crypto/keyring/sign";
 import type { KeyRing } from "../../crypto/keyring/types";
@@ -13,12 +15,15 @@ import { safeRedirectPath } from "../../http/redirect-path";
 import { jsonResponse } from "../../http/response";
 import { hxCurrentUrl } from "../../render/htmx/htmx-headers";
 import { isHxRequest } from "../../render/htmx/hx-request";
+import { routeKeySuffix } from "../../security/rate-limit";
+import { composeRefuseHooks, createRefusalAnswer } from "../../security/refusal";
+import type { RateLimitOptions } from "../../security/types";
 import { sessionCtx } from "../../session/session";
 import { AUTH_FRESH_STEP_UP_MS, AUTH_SESSION_MAX_MS, AUTH_STEP_UP_MAX_MS } from "../config";
 import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
 import type { AuthAccessToken, AuthFactorKind } from "../types";
-import { authCtx, hasAuthSessionToken, resolveApprovalMark, resolveAuthIdentity } from "./identity";
+import { authCtx, hasAuthSessionToken, NO_SESSION, resolveApprovalMark, resolveAuthIdentity } from "./identity";
 import { APPROVAL_RETURN_PARAM, authEnrolTarget } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
@@ -32,9 +37,6 @@ import type {
   AuthGuardOptions,
   AuthRouteMaps,
 } from "./types";
-
-const NO_SESSION =
-  "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.";
 
 const NOT_SIGNED_IN = "Not signed in.";
 const ENROLMENT_OWED = "This account still owes a factor enrolment.";
@@ -58,7 +60,7 @@ function refuse(medium: AuthMedium | undefined, message: string, status: number,
 
 async function establishIdentity<Bindings>(
   context: Parameters<Middleware>[0],
-  options: Pick<AuthGuardOptions<Bindings>, "sessions" | "now">,
+  options: Pick<AuthGuardOptions<Bindings>, "services" | "now">,
 ): Promise<AuthIdentity | null | undefined> {
   const established = authCtx.getOptional(context);
   if (established !== undefined) return established;
@@ -67,7 +69,7 @@ async function establishIdentity<Bindings>(
   if (session === undefined) throw new Error(NO_SESSION);
 
   if (!hasAuthSessionToken(session)) return null;
-  const resolved = await resolveAuthIdentity(session, await options.sessions(getAppContext<Bindings>(context)), guardNow(options));
+  const resolved = await resolveAuthIdentity(session, await options.services.sessions(getAppContext<Bindings>(context)), guardNow(options));
   return resolved.ok ? resolved.data : undefined;
 }
 
@@ -106,6 +108,7 @@ function unavailable(medium: AuthMedium | undefined): Response {
 
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
+  assertServices("requireAuth", options.services);
   assertStepUpMaxAge("requireAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   const returnParam = options.returnParam ?? "next";
   return async (context, next) => {
@@ -133,8 +136,9 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
 
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
 export function resolveAuth<Bindings = Record<string, unknown>>(
-  options: Pick<AuthGuardOptions<Bindings>, "sessions" | "stepUpMaxAgeMs" | "now">,
+  options: Pick<AuthGuardOptions<Bindings>, "services" | "stepUpMaxAgeMs" | "now">,
 ): Middleware {
+  assertServices("resolveAuth", options.services);
   assertStepUpMaxAge("resolveAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
@@ -159,23 +163,44 @@ function establishedIdentity(context: Parameters<Middleware>[0], guard: string):
   return identity;
 }
 
-function refuseNonAdmin(): Response {
-  return new Response("Forbidden", { status: 403 });
-}
-
 /** The refusal the `requireAdmin` this request passed through gives a non-administrator, published whether or not it admitted the request. @internal */
 export const adminRefusalCtx = contextVar<() => Response | Promise<Response>>("auth.adminRefusal");
 
 /** Refuses a request whose established identity is not an administrator. @public */
 export function requireAdmin<Bindings = Record<string, unknown>>(options: AuthAdminGuardOptions<Bindings> = {}): Middleware {
-  const { onForbidden } = options;
+  const answer = createRefusalAnswer<Bindings>(options.onRefuse);
   return (context, next) => {
-    const refusal = onForbidden === undefined ? refuseNonAdmin : () => onForbidden(getAppContext<Bindings>(context));
+    const refusal = () => answer(context, { guard: "admin", status: 403 });
     adminRefusalCtx.set(context, refusal);
     const identity = establishedIdentity(context, "requireAdmin");
     if (identity.isAdmin) return next();
     return refusal();
   };
+}
+
+/** The refusal hook that sends a CSRF-refused sign-out `POST` to its confirm page and declines every other refusal. @internal */
+export function signoutCsrfRecovery<Bindings = Record<string, unknown>>(signoutPath: string, confirmPath: string): RefuseHook<Bindings> {
+  return (c, refusal) =>
+    refusal.guard === "csrf" &&
+    refusal.status === 403 &&
+    refusal.reason !== "unbound-subject" &&
+    c.method.toUpperCase() === "POST" &&
+    c.url.pathname === signoutPath
+      ? createAuthRedirect(c, confirmPath)
+      : undefined;
+}
+
+/** `onRefuse` behind the sign-out recovery, for the group whose own routes hold `auth`'s sign-out and its confirm page. */
+function withSignoutRecovery<Bindings>(
+  auth: RouteMap | undefined,
+  routes: readonly Route[],
+  onRefuse: RefuseHook<Bindings> | undefined,
+): RefuseHook<Bindings> | undefined {
+  const signout = auth?.["signout"];
+  const confirm = auth?.["signoutConfirm"];
+  if (!(signout instanceof Route) || !(confirm instanceof Route) || !routes.includes(signout)) return onRefuse;
+  const recover = signoutCsrfRecovery<Bindings>(signout.href(), confirm.href());
+  return composeRefuseHooks(recover, onRefuse);
 }
 
 /** The administrator code `approval` reads for this request, or `undefined` when none is configured. @internal */
@@ -277,6 +302,13 @@ function assertStepUpMaxAge(operation: string, option: string, requested: number
     floor: "a window no mark can be inside makes every step-up owe another one",
     ceiling: "no session outlives the longest absolute lifetime, so pass `null` for a step-up that lasts the session",
   });
+}
+
+function assertServices<Bindings>(operation: string, services: AuthGuardOptions<Bindings>["services"] | undefined): void {
+  if (typeof services === "function") return;
+  throw new Error(
+    `${operation}: no \`services\` resolver, so no session could be resolved and every visitor would pass as anonymous — pass the \`authRequestServices\` resolver the pages use.`,
+  );
 }
 
 function guardNow(options: { readonly now?: () => number }): number {
@@ -449,6 +481,36 @@ function ownRoutes(routeMap: RouteMap): Route[] {
   return Object.values(routeMap).filter((value): value is Route => value instanceof Route);
 }
 
+/** Index of the `)` closing the `(` at `open`. */
+function closingParen(source: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "(") depth += 1;
+    if (source[index] === ")" && --depth === 0) return index;
+  }
+  throw new Error(`createAuthGuards: the route pattern \`${source}\` opens an optional segment it never closes.`);
+}
+
+/** Every form `source` serves, each optional segment both kept and dropped, nested ones in every combination. */
+function optionalForms(source: string): string[] {
+  const open = source.indexOf("(");
+  if (open === -1) return [source];
+  const close = closingParen(source, open);
+  const head = source.slice(0, open);
+  const tails = optionalForms(source.slice(close + 1));
+  return [...optionalForms(source.slice(open + 1, close)), ""].flatMap((inner) => tails.map((tail) => `${head}${inner}${tail}`));
+}
+
+/** `form` with each `:param` and `*wildcard` filled with its own name, and a nameless `*` with `_`. */
+function filled(form: string): string {
+  return form.replaceAll(/[:*](\w+)/g, "$1").replaceAll("*", "_");
+}
+
+/** Sample URLs for every leaf of `routeMap`, nested maps included: one per form an optional segment gives, each capture filled with a sample. */
+function sampleUrls(routeMap: RouteMap): string[] {
+  return Object.values(routeMap).flatMap((value) => (value instanceof Route ? optionalForms(value.pattern.source).map(filled) : sampleUrls(value)));
+}
+
 function mutates(routes: readonly Route[]): boolean {
   return routes.some((leaf) => !isSafeHttpMethod(leaf.method));
 }
@@ -463,15 +525,60 @@ function assertGuardOrder(group: AuthRouteGroup): void {
   }
 }
 
+function assertRateLimitKeys(table: readonly AuthRouteGroup[], rateLimit: Readonly<Record<string, unknown>> | undefined): void {
+  const known = table.map((group) => group.path.join("."));
+  for (const key of Object.keys(rateLimit ?? {})) {
+    if (known.includes(key)) continue;
+    throw new Error(
+      `createAuthGuards: \`rateLimit\` names \`${key}\`, which is no group in the table — key a limit by a group's dotted path: ${known.map((name) => `\`${name}\``).join(", ")}.`,
+    );
+  }
+}
+
+function coversNothing(table: readonly AuthRouteGroup[], group: AuthRouteGroup): string {
+  const groupName = group.path.join(".");
+  const subgroups = table
+    .filter((other) => other.path.length === group.path.length + 1 && group.path.every((segment, index) => other.path[index] === segment))
+    .map((other) => `\`${other.path.join(".")}\``);
+  const remedy =
+    subgroups.length === 0
+      ? "remove it"
+      : `every subgroup under it keys a limit of its own (${subgroups.join(", ")}), so remove it or drop a subgroup's key to inherit it`;
+  return `createAuthGuards: \`rateLimit\` names \`${groupName}\`, whose \`routes\` map holds no route of its own and which no group inherits, so the limit would cover nothing — ${remedy}.`;
+}
+
+type AuthGroupLimit<Bindings> = NonNullable<AuthGuardChainOptions<Bindings>["rateLimit"]>[string];
+
+function nearestKeyed<Bindings>(rateLimit: NonNullable<AuthGuardChainOptions<Bindings>["rateLimit"]>, path: readonly string[]): string | undefined {
+  for (let depth = path.length; depth > 0; depth--) {
+    const name = path.slice(0, depth).join(".");
+    if (rateLimit[name] !== undefined) return name;
+  }
+  return undefined;
+}
+
+function keyedPerRoute<Bindings>(limit: RateLimitOptions<Bindings>): RateLimitOptions<Bindings> {
+  if (limit.keySuffix === routeKeySuffix) return limit;
+  const { key, keySuffix, ...counted } = limit;
+  if (key) return { ...counted, key: (c) => `${key(c)}:${routeKeySuffix(c)}` };
+  if (keySuffix) return { ...counted, keySuffix: (c) => `${keySuffix(c)}:${routeKeySuffix(c)}` };
+  return { ...counted, keySuffix: routeKeySuffix };
+}
+
+function inheritedLimit<Bindings>(limit: AuthGroupLimit<Bindings>): AuthGroupLimit<Bindings> {
+  if (limit === false) return false;
+  return Array.isArray(limit) ? limit.map((each) => keyedPerRoute(each)) : keyedPerRoute(limit as RateLimitOptions<Bindings>);
+}
+
 function guardMiddleware<Bindings>(
   name: AuthGuardName,
-  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment" | "approval" | "onForbidden">,
+  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment" | "approval" | "onRefuse">,
   group: AuthRouteGroup,
 ): Middleware {
   const medium = group.medium;
   if (name === "resolve-auth")
     return resolveAuth({
-      sessions: options.auth.sessions,
+      services: options.auth.services,
       ...(options.auth.now === undefined ? {} : { now: options.auth.now }),
       ...(options.enrolment.stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs: options.enrolment.stepUpMaxAgeMs }),
     });
@@ -484,7 +591,7 @@ function guardMiddleware<Bindings>(
       ...(group.clearsStepUp === true ? { clearsStepUp: true } : {}),
       medium,
     });
-  if (name === "require-admin") return requireAdmin<Bindings>({ onForbidden: options.onForbidden });
+  if (name === "require-admin") return requireAdmin<Bindings>({ onRefuse: options.onRefuse });
   if (name === "require-pending-enrolment") return requirePendingEnrolment({ ...options.enrolment, medium });
   if (name === "require-fresh-step-up") return requireFreshStepUp({ ...options.enrolment, medium });
   if (name === "require-approval") {
@@ -494,15 +601,31 @@ function guardMiddleware<Bindings>(
   return requireEnrolment({ ...options.enrolment, medium });
 }
 
-/** The guard stack the group table declares for every group, plus the configured origin protection on every group that mutates and any rate limit named for it. @public */
-export function createAuthGuards<Bindings = Record<string, unknown>>(options: AuthGuardChainOptions<Bindings>): MiddlewareGuardGroup<Bindings>[] {
+/** The contribution wiring the guard stack the group table declares for every group, plus the configured origin protection on every group that mutates and the rate limit `rateLimit` keys it or its nearest keyed ancestor, keyed per route when inherited, which must cover every group holding a route of its own once passed; it needs the session cookie to outlive `auth.services`' absolute lifetime, and every group carries as `csrfCovers` every route `routes` maps. @public */
+export function createAuthGuards<Bindings = Record<string, unknown>>(
+  options: AuthGuardChainOptions<Bindings>,
+): { readonly guards: readonly MiddlewareGuardGroup<Bindings>[]; readonly sessionMaxAgeAtLeastMs: number } {
+  const table = options.groups ?? AUTH_ROUTE_GROUPS;
+  assertRateLimitKeys(table, options.rateLimit);
   const groups: MiddlewareGuardGroup<Bindings>[] = [];
-  for (const group of options.groups ?? AUTH_ROUTE_GROUPS) {
+  const unkeyed: string[] = [];
+  const routelessKeyed: AuthRouteGroup[] = [];
+  const inherited = new Set<string>();
+  const answerAsProblem = refuseAsProblem<Bindings>();
+  for (const group of table) {
     assertGuardOrder(group);
 
     const groupName = group.path.join(".");
+    // Every method, not only the mutating ones: an unauthenticated `GET` of the sign-in page is as
+    // cheap to flood as its `POST`, and the group's own limits are the consumer's to pick.
+    const ownLimit = options.rateLimit?.[groupName];
     const routeMap = mapAt(options.routes, group.path);
     if (routeMap === undefined) {
+      if (ownLimit !== undefined) {
+        throw new Error(
+          `createAuthGuards: \`rateLimit\` names \`${groupName}\` but \`routes\` holds no \`${groupName}\` map — pass the map that mounts those routes, or remove the limit.`,
+        );
+      }
       if (group.guards.length === 0) continue;
       throw new Error(
         `createAuthGuards: group \`${groupName}\` declares ${group.guards.length} guards but \`routes\` holds no \`${groupName}\` map — pass the map that mounts those routes, or the group ships with no guard at all.`,
@@ -511,11 +634,18 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
 
     const routes = ownRoutes(routeMap);
     if (routes.length === 0) {
+      if (ownLimit !== undefined) routelessKeyed.push(group);
       if (group.guards.length === 0) continue;
       throw new Error(
         `createAuthGuards: group \`${groupName}\` declares ${group.guards.length} guards but its \`routes\` map holds no route of its own — the guards would cover nothing, so every route meant for them is unguarded.`,
       );
     }
+
+    const keyedBy = options.rateLimit === undefined ? undefined : nearestKeyed(options.rateLimit, group.path);
+    if (options.rateLimit !== undefined && keyedBy === undefined) unkeyed.push(groupName);
+    if (keyedBy !== undefined && keyedBy !== groupName) inherited.add(keyedBy);
+    const declared = keyedBy === undefined ? undefined : options.rateLimit?.[keyedBy];
+    const rateLimit = declared === undefined || keyedBy === groupName ? declared : inheritedLimit(declared);
 
     // An absent allowlist is not an opt-out: a mutating group with no `Origin`/`Referer` check
     // accepts a cross-site POST, and a consumer who omitted `origin` would never be told.
@@ -526,16 +656,30 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
     }
 
     const origin = options.origin !== undefined && mutates(routes) ? options.origin : undefined;
-    // Every method, not only the mutating ones: an unauthenticated `GET` of the sign-in page is as
-    // cheap to flood as its `POST`, and the group's own limits are the consumer's to pick.
-    const rateLimit = options.rateLimit?.[group.path.join(".")];
     // A group with no guards still earns a stack when it mutates and an allowlist was configured:
     // the sign-in and passkey POSTs carry no identity, so this is their only cross-origin defence.
-    if (group.guards.length === 0 && origin === undefined && rateLimit === undefined) continue;
+    if (group.guards.length === 0 && origin === undefined && !rateLimit) continue;
 
     const paths = [...new Set(routes.map((leaf) => leaf.pattern.source))];
     const guards = group.guards.map((name) => guardMiddleware(name, options, group));
-    groups.push({ paths, ...(origin && { origin }), ...(rateLimit && { rateLimit }), ...(guards.length > 0 && { guards }) });
+    const onRefuse = group.medium === "json" ? answerAsProblem : withSignoutRecovery(options.routes.auth, routes, options.onRefuse);
+    groups.push({
+      paths,
+      ...(origin && { origin }),
+      ...(rateLimit && { rateLimit }),
+      ...(guards.length > 0 && { guards }),
+      ...(onRefuse && { onRefuse }),
+    });
   }
-  return groups;
+  const uninherited = routelessKeyed.find((group) => !inherited.has(group.path.join(".")));
+  if (uninherited !== undefined) throw new Error(coversNothing(table, uninherited));
+  if (unkeyed.length > 0) {
+    throw new Error(
+      `createAuthGuards: \`rateLimit\` leaves ${unkeyed.map((name) => `\`${name}\``).join(", ")} unlimited — key each group a limit, or set it to \`false\` to mount it without one.`,
+    );
+  }
+  const csrfCovers = [
+    ...new Set(Object.values(options.routes).flatMap((routeMap: RouteMap | undefined) => (routeMap === undefined ? [] : sampleUrls(routeMap)))),
+  ];
+  return { guards: groups.map((group) => ({ ...group, csrfCovers })), sessionMaxAgeAtLeastMs: options.auth.services.absoluteLifetimeMs };
 }

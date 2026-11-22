@@ -111,8 +111,10 @@ export interface PdfRenderError {
     | "tagged"
     | "encoding"
     | "font"
+    | "font-pack"
     | "pdfa"
-    | "attachment";
+    | "attachment"
+    | "artwork";
   message: string;
 }
 
@@ -399,7 +401,7 @@ export interface PdfTagging {
 
 /** A run of type that takes a reader somewhere when they activate it. @public */
 export interface LinkProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   to: PdfDestination;
 }
 
@@ -493,20 +495,20 @@ export interface TextProps {
 
 /** A stack of elements, one under the next. @public */
 export interface StackProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   gap?: number | undefined;
 }
 
 /** A row of elements set side by side across its tracks. @public */
 export interface RowProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   tracks?: readonly PdfTrack[] | undefined;
   gap?: number | undefined;
 }
 
 /** An element inset from the box it was given. @public */
 export interface BoxProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   gap?: number | undefined;
   padding?: number | undefined;
 }
@@ -560,7 +562,7 @@ export interface ImageProps {
 
 /** A rounded panel drawn behind its children, each corner free to take its own radius. @public */
 export interface PanelProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   radius?: number | PdfCorners | undefined;
   padding?: number | undefined;
   gap?: number | undefined;
@@ -572,7 +574,7 @@ export interface PanelProps {
 
 /** A group that moves to the next page whole rather than breaking inside itself. @public */
 export interface KeepTogetherProps {
-  children: readonly PdfElement[];
+  children: PdfContent;
   gap?: number | undefined;
 }
 

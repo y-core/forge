@@ -49,7 +49,7 @@ With no `dialect`, the viewport decorates CommonMark and GFM alone. To draw your
   `chip` is replaced by an atomic chip showing its label; one without is marked unresolved. An `embed` becomes a chip showing its alt text,
   and a `tag`, `highlight` or `due` is marked. Nothing the viewport would otherwise decorate inside a span is decorated.
 - `calloutKinds` names the kinds a `> [!kind]` blockquote may open with; each line of one gets `cm-md-callout cm-md-callout-<kind>`.
-- `theme` is a CodeMirror extension added after the viewport's own, for styling those classes per kind.
+- `theme` is a CodeMirror extension for styling those classes per kind. Where it and the viewport's own theme style the same thing, yours wins.
 - `html(markdown)` answers the whole document as HTML, for the `html` rendering. See [Showing the HTML](#showing-the-html).
 
 Build `spans` on the same constructs you parse with, so the editor and your rendered page agree:

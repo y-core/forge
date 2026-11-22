@@ -218,6 +218,24 @@ export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<stri
 export type ServiceWorkerBuild = v.InferOutput<typeof ServiceWorkerSchema>;
 /** A `ServiceWorkerBuild` whose defines have been resolved to JavaScript source literals. @public */
 export type ResolvedServiceWorkerBuild = Omit<ServiceWorkerBuild, "define"> & { define?: Record<string, string> };
+/** What a build read for its service worker and wrote, every path relative to the root and every digest SHA-256 hex. @internal */
+export const ServiceWorkerRecordSchema = v.object({
+  entry: v.string(),
+  worker: v.string(),
+  sha256: v.string(),
+  minify: v.boolean(),
+  options: v.string(),
+  inputs: v.pipe(
+    v.record(v.string(), v.string()),
+    v.check((inputs) => !Array.isArray(inputs) && Object.keys(inputs).length > 0, "a record names at least the entry as an input"),
+  ),
+  resolution: v.pipe(
+    v.record(v.string(), v.string()),
+    v.check((files) => !Array.isArray(files), "resolution maps each path to its digest"),
+  ),
+});
+/** The record `buildAll` writes beside the generated assets module, which the gate holds the built worker to. @internal */
+export type ServiceWorkerRecord = v.InferOutput<typeof ServiceWorkerRecordSchema>;
 /** What one `buildJS` run wrote: the logical-to-emitted entry mapping, and the files a service worker precaches as the shell. @public */
 export interface JsBuildResult {
   mapping: Record<string, string>;

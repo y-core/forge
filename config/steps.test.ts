@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, matchesGlob } from "node:path";
 
+import { spawnSync } from "bun";
+
 import { worktreeFiles } from "../src/tooling/cli/worktree";
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
 import { isBudgetedSource } from "../src/tooling/gate/checks/comment-budget";
@@ -101,7 +103,7 @@ describe("the gate's step table", () => {
   });
 
   it("holds every tracked TypeScript and CSS file to the comment budget, root config files included", () => {
-    const tracked = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx", "*.css"], { cwd: ROOT })
+    const tracked = spawnSync(["git", "ls-files", "*.ts", "*.tsx", "*.css"], { cwd: ROOT })
       .stdout.toString()
       .split("\n")
       .filter((file) => file !== "" && existsSync(join(ROOT, file)));
@@ -114,7 +116,7 @@ describe("the gate's step table", () => {
 });
 
 describe("the gate's watches", () => {
-  const tracked = Bun.spawnSync(["git", "ls-files"], { cwd: ROOT })
+  const tracked = spawnSync(["git", "ls-files"], { cwd: ROOT })
     .stdout.toString()
     .split("\n")
     .filter((file) => file !== "");
@@ -137,6 +139,7 @@ describe("the gate's watches", () => {
       "validate-namespace-graph",
       "validate-packaging",
       "validate-docs",
+      "validate-doc-fences",
       "validate-design",
       "test",
       "test:browser",

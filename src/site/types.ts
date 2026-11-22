@@ -114,7 +114,7 @@ export interface ResolveSitemapOptions {
 export interface ZoneSurface {
   /** The host the rule is scoped to, and the only host whose surface is enumerated here. */
   apex: string;
-  /** Route sources — `routePaths(routes)` across every method; a dynamic one is matched as a `strict wildcard`. */
+  /** Route sources — `routePaths(routes)`; a `:param` matches within one segment, empty only inside one (`/files/:name.pdf` admits `/files/.pdf`); each dynamic route costs about 110 to 160 expression characters, so one rule holds about 25 to 35. */
   paths: readonly string[];
   /** Path prefixes served wholesale, matched as `starts_with` — `/assets/`, `/cdn-cgi/`. */
   prefixes: readonly string[];

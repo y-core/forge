@@ -4,7 +4,9 @@ import { HMAC_DOMAIN, importKeyRing, importKeyRingUnder } from "../crypto/keyrin
 import { resolveKeyRingKey } from "../crypto/keyring/subkey";
 import type { KeyRing } from "../crypto/keyring/types";
 import { base64Encode, hmacSign } from "../crypto/primitives/mod";
-import { createSignedCookie, createUnsignedCookie } from "./cookie";
+import { createUnsignedCookie } from "../http/cookie";
+import { createSignedCookie } from "./cookie";
+import * as sessionBarrel from "./mod";
 import type { SignedCookie } from "./types";
 
 const SECRET = "b256a7d7b96e6d3a4b0af43f66e603b82cbc9099daf2fa5ea155af03f0f26fd6";
@@ -156,25 +158,9 @@ describe("parse — never throws on malformed input", () => {
     expect(await cookie.parse(wire.replace("c=", "c=X"))).toBeNull();
   });
 
-  it("answers null for junk base64 on the unsigned path", async () => {
-    expect(await unsigned.parse("c=!!!!")).toBeNull();
-    expect(await unsigned.parse("c=====")).toBeNull();
-  });
-
-  it("answers null for malformed UTF-8 rather than mojibake", async () => {
-    // `0xC3 0x28` is a truncated two-byte sequence: a lenient decoder answers "Ã(" and the
-    // mojibake then flows into JSON.parse or the session store.
-    expect(await unsigned.parse("c=wyg=")).toBeNull();
-    expect(await unsigned.parse("c=abc")).toBeNull();
-  });
-
   it("answers the empty string for an empty value without verifying", async () => {
     expect(await cookie.parse("c=")).toBe("");
     expect(await unsigned.parse("c=")).toBe("");
-  });
-
-  it("reads the first value on a duplicate cookie name", async () => {
-    expect(await unsigned.parse("c=aGVsbG8=; c=Y2Fmw6k=")).toBe("hello");
   });
 });
 
@@ -212,16 +198,6 @@ describe("serialize — attribute override", () => {
     await cookie.serialize("v", { httpOnly: false });
     // @ts-expect-error -- `secure` is not part of SignedCookieAttributes
     expect(await cookie.serialize("v", { secure: false })).toContain("SameSite=Lax");
-  });
-
-  it("overrides every attribute it names", async () => {
-    const cookie = createUnsignedCookie("c", { path: "/", sameSite: "Lax" });
-    const header = await cookie.serialize("v", { domain: "example.com", path: "/x", sameSite: "None", secure: true, httpOnly: true });
-    expect(header).toContain("Domain=example.com");
-    expect(header).toContain("Path=/x");
-    expect(header).toContain("SameSite=None");
-    expect(header).toContain("Secure");
-    expect(header).toContain("HttpOnly");
   });
 });
 
@@ -453,6 +429,47 @@ describe("createSignedCookie — returned cookie", () => {
   });
 });
 
+describe("createSignedCookie — the shared attributes", () => {
+  it("serializes with exactly HttpOnly, Path=/, SameSite=Lax and Secure under its defaults", async () => {
+    expect((await createSignedCookie("session", { ring }).serialize("value")).split("; ").slice(1)).toEqual([
+      "HttpOnly",
+      "Path=/",
+      "SameSite=Lax",
+      "Secure",
+    ]);
+  });
+});
+
+describe("session barrel", () => {
+  it("exports createSignedCookie and no longer exports createUnsignedCookie, which moved to http", () => {
+    expect({ signed: "createSignedCookie" in sessionBarrel, unsigned: "createUnsignedCookie" in sessionBarrel }).toEqual({
+      signed: true,
+      unsigned: false,
+    });
+  });
+});
+
+describe("createSignedCookie — the construction-time maxAge", () => {
+  it("carries the maxAge it was built with, which serialize announces as Max-Age", async () => {
+    const cookie = createSignedCookie("session", { ring, maxAge: 3600 });
+    const header = await cookie.serialize("value");
+    expect({ maxAge: cookie.maxAge, announced: header.split("; ").find((part) => part.startsWith("Max-Age=")) }).toEqual({
+      maxAge: 3600,
+      announced: "Max-Age=3600",
+    });
+  });
+
+  it("carries undefined when built with no maxAge", () => {
+    expect(createSignedCookie("session", { ring }).maxAge).toBeUndefined();
+  });
+
+  it("keeps its construction-time maxAge after a serialize-time override", async () => {
+    const cookie = createSignedCookie("session", { ring, maxAge: 3600 });
+    await cookie.serialize("", { maxAge: 0 });
+    expect(cookie.maxAge).toBe(3600);
+  });
+});
+
 describe("serialize — the browser's size cap", () => {
   /** The longest value `cookie` still serializes, found by bisection because each attempt costs an HMAC. */
   async function largestFitting(cookie: SignedCookie): Promise<string> {
@@ -556,91 +573,6 @@ describe("createSignedCookie — the __Secure- prefix", () => {
   it("accepts a domain and a path other than /, which only __Host- forbids", async () => {
     const header = await createSignedCookie("__Secure-s", { ring, domain: "example.com", path: "/app" }).serialize("v");
     expect(header.split("; ").slice(1)).toEqual(["Domain=example.com", "HttpOnly", "Path=/app", "SameSite=Lax", "Secure"]);
-  });
-});
-
-describe("createUnsignedCookie — the __Host- and __Secure- prefixes", () => {
-  it("refuses a __Host- domain or a path other than / at construction", () => {
-    expect(() => createUnsignedCookie("__Host-u", { domain: "example.com" })).toThrow(
-      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so it must not carry a domain (got example.com)',
-    );
-    expect(() => createUnsignedCookie("__Host-u", { path: "/app" })).toThrow(
-      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so its path must be "/" (got /app)',
-    );
-  });
-
-  it("refuses a __Host- domain or a path other than / on a per-call override", async () => {
-    const cookie = createUnsignedCookie("__Host-u");
-    await expect(cookie.serialize("v", { domain: "example.com" })).rejects.toThrow(
-      'serialize: "__Host-u" is a __Host- cookie, so it must not carry a domain',
-    );
-    await expect(cookie.serialize("v", { path: "/app" })).rejects.toThrow('serialize: "__Host-u" is a __Host- cookie, so its path must be "/"');
-  });
-
-  for (const name of ["__Host-u", "__Secure-u", "__secure-u", "__HOST-u"]) {
-    it(`gives ${name} Secure where no secure option is given`, async () => {
-      expect(await createUnsignedCookie(name).serialize("v")).toBe(`${name}=dg==; Path=/; SameSite=Lax; Secure`);
-    });
-  }
-
-  for (const name of ["__Secure_u", "x__Secure-u", "__Host", "_Host-u"]) {
-    it(`does not treat ${name} as prefixed, so leaves it without Secure`, async () => {
-      expect(await createUnsignedCookie(name, { domain: "example.com", path: "/app" }).serialize("v")).toBe(
-        `${name}=dg==; Domain=example.com; Path=/app; SameSite=Lax`,
-      );
-    });
-  }
-
-  it("accepts a __Host- cookie on path / with Secure stated, at construction and per call", async () => {
-    const cookie = createUnsignedCookie("__Host-u", { path: "/", secure: true });
-    expect(await cookie.serialize("v", { path: "/", secure: true })).toBe("__Host-u=dg==; Path=/; SameSite=Lax; Secure");
-  });
-
-  it("accepts a __Secure- cookie with a domain and a path other than /, which only __Host- forbids", async () => {
-    expect(await createUnsignedCookie("__Secure-u", { domain: "example.com", path: "/app" }).serialize("v")).toBe(
-      "__Secure-u=dg==; Domain=example.com; Path=/app; SameSite=Lax; Secure",
-    );
-  });
-
-  it("applies the __Host- scope rule whatever the prefix's case", () => {
-    expect(() => createUnsignedCookie("__HOST-u", { domain: "example.com" })).toThrow(
-      'createUnsignedCookie: "__HOST-u" is a __Host- cookie, so it must not carry a domain (got example.com)',
-    );
-    expect(() => createUnsignedCookie("__host-u", { path: "/app" })).toThrow(
-      'createUnsignedCookie: "__host-u" is a __Host- cookie, so its path must be "/" (got /app)',
-    );
-  });
-
-  it("refuses a __Host- name with secure: false on a per-call override", async () => {
-    await expect(createUnsignedCookie("__Host-u").serialize("v", { secure: false })).rejects.toThrow(
-      'serialize: "__Host-u" is a __Host- cookie, so it must be Secure (got secure: false)',
-    );
-  });
-
-  it("keeps Secure on a partitioned prefixed cookie whose override asks to drop it", async () => {
-    expect(await createUnsignedCookie("__Secure-u").serialize("v", { partitioned: true, secure: false })).toBe(
-      "__Secure-u=dg==; Partitioned; Path=/; SameSite=Lax; Secure",
-    );
-  });
-
-  it("refuses a prefixed name with secure: false at construction", () => {
-    expect(() => createUnsignedCookie("__Secure-u", { secure: false })).toThrow(
-      'createUnsignedCookie: "__Secure-u" is a __Secure- cookie, so it must be Secure (got secure: false)',
-    );
-    expect(() => createUnsignedCookie("__Host-u", { secure: false })).toThrow(
-      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so it must be Secure (got secure: false)',
-    );
-  });
-
-  it("refuses a prefixed name with secure: false on a per-call override", async () => {
-    await expect(createUnsignedCookie("__Secure-u").serialize("v", { secure: false })).rejects.toThrow(
-      'serialize: "__Secure-u" is a __Secure- cookie, so it must be Secure (got secure: false)',
-    );
-  });
-
-  it("leaves an unprefixed name's secure flag as given", async () => {
-    expect(await createUnsignedCookie("theme").serialize("v")).not.toContain("Secure");
-    expect(await createUnsignedCookie("theme", { secure: false }).serialize("v")).not.toContain("Secure");
   });
 });
 

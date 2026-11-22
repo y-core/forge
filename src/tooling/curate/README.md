@@ -213,8 +213,8 @@ prints one row per feature, each after the ones it requires, with its direct req
 
 ## Regenerating after the copy
 
-A feature whose files are derived from the rest of the tree — a migration history composed from the schemas the copy keeps — can rebuild them
-inside the copy:
+A feature whose files are derived from the rest of the tree — a migration history composed from the schemas the copy keeps, and the row types in
+`config/db/tables.ts` that compose rewrites beside it — can rebuild them inside the copy:
 
 ```ts
 export default defineFeatures({

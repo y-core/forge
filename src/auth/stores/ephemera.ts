@@ -34,9 +34,31 @@ interface PurgedRows {
 /** The separator between an ephemeral store's prefix and the caller's key. @internal */
 export const EPHEMERAL_SEPARATOR = "||";
 
-/** Joins a store's prefix to a caller's key, so two stores over one table cannot collide. @internal */
+/** Joins a store's prefix to a caller's key; `assertEphemeralPrefix` keeps the separator out of the prefix, so the first one in a key ends it and two stores over one table cannot collide. @internal */
 export function ephemeralKey(prefix: string, key: string): string {
   return `${prefix}${EPHEMERAL_SEPARATOR}${key}`;
+}
+
+/** Why `prefix` cannot head an ephemeral key, or `undefined` when it can. @internal */
+export function ephemeralPrefixFault(prefix: string): "empty" | "separator" | undefined {
+  if (prefix === "") return "empty";
+  // A trailing `|` joins the separator's first, so `a|` then `||x` reads as `a` then `|x`.
+  return prefix.includes(EPHEMERAL_SEPARATOR) || prefix.endsWith("|") ? "separator" : undefined;
+}
+
+/** Throws, naming `operation`, unless `prefix` can head an ephemeral key. @internal */
+export function assertEphemeralPrefix(operation: string, prefix: string): void {
+  const fault = ephemeralPrefixFault(prefix);
+  if (fault === "empty") {
+    throw new Error(
+      `${operation}: \`prefix\` must not be an empty string — an empty prefix drops the separator too, so the store shares a keyspace with every other store on the binding.`,
+    );
+  }
+  if (fault === "separator") {
+    throw new Error(
+      `${operation}: \`prefix\` must not hold \`${EPHEMERAL_SEPARATOR}\` or end in \`|\` — a key would then split in two places, so another prefix's key can match it.`,
+    );
+  }
 }
 
 /** The instant a lifetime of `ttlSeconds` runs out at. @internal */

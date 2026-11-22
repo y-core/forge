@@ -2,7 +2,7 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { AuthChallenge, ChallengeStore } from "../types";
-import { ephemeralKey, ephemeralExpiry } from "./ephemera";
+import { assertEphemeralPrefix, ephemeralExpiry, ephemeralKey } from "./ephemera";
 import { readRow, storeError } from "./rows";
 import type { ChallengeStoreOptions } from "./types";
 
@@ -10,12 +10,8 @@ const DEFAULT_PREFIX = "auth:challenge";
 
 /** Creates the `ChallengeStore` over a SQL database — `take` reads and spends in one statement. @public */
 export function createChallengeStore(db: D1Client, options: ChallengeStoreOptions = {}): ChallengeStore {
-  if (options.prefix === "") {
-    throw new Error(
-      "createChallengeStore: `prefix` must not be an empty string — an empty prefix drops the separator too, so the store shares a keyspace with every other store on the binding.",
-    );
-  }
   const prefix = options.prefix ?? DEFAULT_PREFIX;
+  assertEphemeralPrefix("createChallengeStore", prefix);
 
   return {
     async put(key, challenge, ttlSeconds) {

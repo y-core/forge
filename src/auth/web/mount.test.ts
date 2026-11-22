@@ -3,10 +3,16 @@ import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
 import { pageShell } from "../../app/shell";
-import type { AppContext } from "../../context/types";
+import type { MiddlewareGuardGroup } from "../../app/types";
+import { contextVar } from "../../context/accessor";
+import type { AppContext, RefuseHook } from "../../context/types";
+import { getAppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
-import { csrfProtection } from "../../form/csrf";
+import { parseKeyRingSecrets } from "../../crypto/keyring/secrets";
+import { signKeyRingValue, verifyKeyRingValue } from "../../crypto/keyring/signature";
+import { mintCsrf } from "../../form/csrf";
 import { err, ok } from "../../result/result";
+import type { RateLimit } from "../../security/types";
 import { createAnonymousSession } from "../../session/anonymous";
 import { sessionCtx } from "../../session/session";
 import { createD1Client } from "../../storage/db/client";
@@ -17,11 +23,15 @@ import { nullLogger } from "../../testing/context";
 import { fakeKV } from "../../testing/fakes";
 import { mapHandler } from "../../testing/route";
 import type { FakeAuthUser } from "../../testing/types";
+import { AUTH_SESSION_MAX_MS } from "../config";
+import { AuthStoreError } from "../errors";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService, AuthIdentifyingFactorService, AuthSecondFactorKind, AuthSecondFactorService } from "../factors/types";
 import { createSigninFlow } from "../flows/signin";
 import { createSignupFlow } from "../flows/signup";
-import { importAuthKeyRing } from "../keys/ring";
+import { importAuthKeyRing, resolveAuthServices } from "../keys/ring";
+import { decodeAuthToken, encodeAuthToken } from "../keys/token";
+import type { AuthOptions } from "../keys/types";
 import {
   PASSKEY_MODE_ATTR,
   PASSKEY_OPTIONS_PATH_ATTR,
@@ -29,6 +39,7 @@ import {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
+import { SITE_DATA_CSRF_HEADER_ATTR, SITE_DATA_PATH_ATTR, SITE_DATA_SCOPE, SITE_DATA_TOKEN_ATTR } from "../site-data-contract";
 import { createAdminUserStore } from "../stores/admin-users";
 import { createChallengeStore } from "../stores/challenges";
 import { createCredentialStore } from "../stores/credentials";
@@ -39,6 +50,7 @@ import type {
   AuthCredential,
   AuthFactor,
   AuthFactorKind,
+  AuthSessionStore,
   AuthUser,
   CredentialStore,
   FactorStore,
@@ -46,20 +58,23 @@ import type {
   OtpStateStore,
   UserStore,
 } from "../types";
-import { authCsrfRefusal } from "./actions";
+import { AUTH_FORM_MAX_BYTES } from "./actions";
 import { registerApproval } from "./approval";
 import { createAuthGuards, requireAuth, resolveAuth } from "./guards";
 import { authCtx } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import type { AuthRequestServices, AuthWebOptions } from "./types";
+import { authRequestServices } from "./services";
+import type { AuthGuardChainOptions, AuthRequestServices, AuthRequestServicesResolver, AuthWebOptions } from "./types";
 import {
   attrOf,
   attrsOf,
   elementsOf,
   FAKE_APPROVAL_CODE,
+  FAKE_RATE_LIMITS,
   fakeApproval,
+  fakeLimiterContribution,
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthIcon,
@@ -77,6 +92,7 @@ interface MountEnv extends Record<string, unknown> {
   readonly KV: KVNamespace;
   readonly SESSION_SECRET: string;
   readonly CSRF_SECRET: string;
+  readonly LIMITER?: RateLimit;
 }
 
 const authMap = authRoutes("/auth");
@@ -99,13 +115,26 @@ function requestStores(c: AppContext<MountEnv>) {
   };
 }
 
-/** The registry the enrolment guards read, built from this request's bindings like every other store. */
-function factorRegistryFor(c: AppContext<MountEnv>) {
-  return requestStores(c).factors;
+/** `build` as the services resolver the guards and the pages share, built once per request as `authRequestServices` builds its own. */
+function perRequestServices(
+  build: (c: AppContext<MountEnv>) => AuthRequestServices | Promise<AuthRequestServices>,
+): AuthRequestServicesResolver<MountEnv> {
+  const memo = contextVar<Promise<AuthRequestServices>>("mount.services");
+  const resolve = (c: AppContext<MountEnv>): Promise<AuthRequestServices> => {
+    const held = memo.getOptional(c);
+    if (held !== undefined) return held;
+    const building = Promise.resolve(build(c));
+    memo.set(c, building);
+    return building;
+  };
+  return Object.assign(resolve, {
+    sessions: async (c: AppContext<MountEnv>) => (await resolve(c)).sessions,
+    absoluteLifetimeMs: AUTH_SESSION_MAX_MS,
+  });
 }
 
-/** The per-request services every loader and action runs against. */
-function resolveServices(c: AppContext<MountEnv>): AuthRequestServices {
+/** The per-request services every guard, loader and action runs against. */
+const services = perRequestServices((c) => {
   const stores = requestStores(c);
   return fakeAuthServices({
     users: stores.users,
@@ -114,38 +143,66 @@ function resolveServices(c: AppContext<MountEnv>): AuthRequestServices {
     enrolments: stores.enrolments,
     factors: stores.factors,
   });
+});
+
+/** The registry the enrolment guards read, the one this request's services hold. */
+async function factorRegistryFor(c: AppContext<MountEnv>) {
+  return (await services(c)).factors;
 }
 
-const options: AuthWebOptions<MountEnv> = { resolveServices, paths, icon: fakeAuthIcon };
+const options: AuthWebOptions<MountEnv> = { resolveServices: services, paths, icon: fakeAuthIcon };
+
+/** The app's admin-only page answers a non-administrator; every other refusal is declined to the chain's hook, else forge's default. */
+const adminPage: RefuseHook<MountEnv> = (_c, refusal) =>
+  refusal.guard === "admin"
+    ? new Response("<p>Administrators only.</p>", { status: refusal.status, headers: { "content-type": "text/html; charset=utf-8" } })
+    : undefined;
+
+/** What an app adds around the auth mount: its own guard groups ahead of auth's, and per-group limits. */
+interface MountExtras {
+  readonly guards?: readonly MiddlewareGuardGroup<MountEnv>[];
+  readonly rateLimit?: AuthGuardChainOptions<MountEnv>["rateLimit"];
+  readonly trustCfHeaders?: boolean;
+  readonly onRefuse?: RefuseHook<MountEnv>;
+  readonly authRefuse?: RefuseHook<MountEnv> | null;
+  readonly csrfMaxBytes?: number;
+  readonly csrfExclude?: readonly string[];
+}
 
 /** The whole mount, in the order AUTH_MOUNTING.md §1 gives it. */
-function mount(mounted: AuthWebOptions<MountEnv> = options): Forge<MountEnv> {
+function mount(mounted: AuthWebOptions<MountEnv> = options, extras: MountExtras = {}): Forge<MountEnv> {
   const app = new Forge<MountEnv>(nullLogger);
   app.setShell(pageShell({ stylesheet: "/assets/app.css", script: "/assets/auth.js" }));
 
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<MountEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
-    // `globals`, never `before`: the resolver reads the session, which the chain publishes ahead of
-    // this slot and not ahead of that one.
-    globals: [
-      csrfProtection({
-        ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]),
-        subject: (c) => sessionCtx.getOptional(c)?.id,
-        onForbidden: authCsrfRefusal(paths.auth),
+    ...(extras.trustCfHeaders === undefined ? {} : { trustCfHeaders: extras.trustCfHeaders }),
+    rateLimits: FAKE_RATE_LIMITS,
+    session: createAnonymousSession<MountEnv>({ ring: (bindings) => importKeyRing([bindings.SESSION_SECRET]), storage: "cookie" }),
+    csrf: {
+      ring: (bindings) => importKeyRing([bindings.CSRF_SECRET]),
+      subject: "session",
+      ...(extras.csrfMaxBytes === undefined ? {} : { maxBytes: extras.csrfMaxBytes }),
+      ...(extras.csrfExclude === undefined ? {} : { exclude: extras.csrfExclude }),
+    },
+    ...(extras.onRefuse === undefined ? {} : { onRefuse: extras.onRefuse }),
+    guards: [...(extras.guards ?? [])],
+    contributions: [
+      fakeLimiterContribution,
+      createAuthGuards<MountEnv>({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: { services, signinPath: paths.auth.signin() },
+        enrolment: {
+          factors: (c) => factorRegistryFor(c),
+          enrolmentPaths: authEnrolmentPaths(paths.auth),
+          stepUpPath: paths.auth.verify.show(),
+          settledPath: paths.account.passkeys(),
+        },
+        origin: { allowedOrigins: ["http://localhost"] },
+        ...(extras.authRefuse === null ? {} : { onRefuse: extras.authRefuse ?? adminPage }),
+        ...(extras.rateLimit === undefined ? {} : { rateLimit: extras.rateLimit }),
       }),
     ],
-    guards: createAuthGuards<MountEnv>({
-      routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { sessions: (c) => createAuthSessionStore(createD1Client(c.env.DB as never)), signinPath: paths.auth.signin() },
-      enrolment: {
-        factors: (c) => factorRegistryFor(c),
-        enrolmentPaths: authEnrolmentPaths(paths.auth),
-        stepUpPath: paths.auth.verify.show(),
-        settledPath: paths.account.passkeys(),
-      },
-      origin: { allowedOrigins: ["http://localhost"] },
-    }),
   });
 
   registerAuth(app, authMap, mounted);
@@ -208,9 +265,310 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     expect(res.headers.get("location")).toBe("/auth/verify");
   });
 
+  it("answers a sign-in POST over the auth form cap at 413 with the policy's cap raised to 1 MiB, and admits a normal one", async () => {
+    const app = mount(options, { csrfMaxBytes: 1 << 20 });
+    const bindings = env();
+    const page = await app.request("/auth/signin", {}, bindings);
+    const token = (await page.text()).match(/name="_csrf" value="([^"]+)"/)?.[1] ?? "";
+    const cookie =
+      page.headers
+        .getSetCookie()
+        .find((c) => c.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+    const signin = (fields: Record<string, string>) =>
+      app.request(
+        "/auth/signin",
+        {
+          method: "POST",
+          headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
+          body: new URLSearchParams({ email: "ada@example.com", _csrf: token, ...fields }).toString(),
+        },
+        bindings,
+      );
+
+    const oversize = await signin({ padding: "x".repeat(AUTH_FORM_MAX_BYTES) });
+    const normal = await signin({});
+    expect({ oversize: oversize.status, normal: [normal.status, normal.headers.get("location")] }).toEqual({
+      oversize: 413,
+      normal: [303, "/auth/verify"],
+    });
+  });
+
+  it("answers sign-in under a 1 MiB policy by size: admitted to 100 KiB, the form's 413 past it, the policy's plain 413 past 1 MiB, starting no sign-in when refused", async () => {
+    const requested: string[] = [];
+    const recording = perRequestServices((c) => {
+      const stores = requestStores(c);
+      const signin = fakeAuthSigninFlow({ request: (email, at) => (requested.push(email), { kind: "email-otp", expiresAt: at }) });
+      return fakeAuthServices({ ...stores, signin });
+    });
+    const app = mount({ ...options, resolveServices: recording }, { csrfMaxBytes: 1024 * 1024 });
+    const bindings = env();
+    const page = await app.request("/auth/signin", {}, bindings);
+    const token = /name="_csrf" value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const cookie =
+      page.headers
+        .getSetCookie()
+        .find((set) => set.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+
+    /** Posts a valid sign-in padded to exactly `bytes` in a second `_csrf` field, which the policy reads past and the action drops. */
+    async function signinOf(bytes: number) {
+      const prefix = `${new URLSearchParams({ email: "ada@example.com", _csrf: token }).toString()}&_csrf=`;
+      const res = await app.request(
+        "/auth/signin",
+        {
+          method: "POST",
+          headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
+          body: `${prefix}${"x".repeat(bytes - prefix.length)}`,
+        },
+        bindings,
+      );
+      const html = await res.text();
+      return {
+        status: res.status,
+        location: res.headers.get("location"),
+        error: textOf(html, "p", 'data-slot="field-error"'),
+        body: res.headers.get("content-type")?.startsWith("text/html") === true ? "html" : html,
+        requested: requested.splice(0),
+      };
+    }
+
+    expect({
+      atFormCap: await signinOf(100 * 1024),
+      pastFormCap: await signinOf(100 * 1024 + 1),
+      pastPolicyCap: await signinOf(1024 * 1024 + 1),
+    }).toEqual({
+      atFormCap: { status: 303, location: "/auth/verify", error: "", body: "", requested: ["ada@example.com"] },
+      pastFormCap: { status: 413, location: null, error: "That form was too large to read. Please try again.", body: "html", requested: [] },
+      pastPolicyCap: { status: 413, location: null, error: "", body: "Payload Too Large", requested: [] },
+    });
+  });
+
   it("refuses a cross-origin POST to the sign-in endpoint", async () => {
     const res = await mount().request("/auth/signin", { method: "POST", headers: { origin: "https://evil.example.com" } }, env());
     expect(res.status).toBe(403);
+  });
+
+  it("refuses a cross-origin sign-in POST without reading its body", async () => {
+    let bodyRead = false;
+    const body = new ReadableStream(
+      {
+        pull() {
+          bodyRead = true;
+          throw new Error("the body of a cross-origin POST was read");
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const res = await mount().request(
+      "/auth/signin",
+      {
+        method: "POST",
+        headers: { origin: "https://evil.example.com", "content-type": "application/x-www-form-urlencoded" },
+        body,
+        duplex: "half",
+      } as RequestInit,
+      env(),
+    );
+
+    expect({ status: res.status, body: await res.text(), bodyRead }).toEqual({ status: 403, body: "Forbidden", bodyRead: false });
+  });
+
+  it("answers an anonymous ceremony POST whose JSON body carries no token header a 400 problem+json, and the 401 JSON only once it carries a valid one", async () => {
+    const ceremonyPath = "/auth/enrol/passkey/register/finish";
+    const app = mount();
+    mapHandler(app, "GET", "/test/mint", async (c) => new Response(await mintCsrf(c, ceremonyPath)));
+    const bindings = env();
+    const minted = await app.request("/test/mint", {}, bindings);
+    const cookie =
+      minted.headers
+        .getSetCookie()
+        .find((value) => value.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+    const token = await minted.text();
+    const post = (headers: Record<string, string>) =>
+      app.request(
+        ceremonyPath,
+        { method: "POST", headers: { origin: "http://localhost", "content-type": "application/json", cookie, ...headers }, body: "{}" },
+        bindings,
+      );
+
+    const tokenless = await post({});
+    const tokened = await post({ "x-csrf-token": token });
+
+    expect({
+      tokenless: [tokenless.status, tokenless.headers.get("content-type"), await tokenless.json()],
+      tokened: [tokened.status, await tokened.json()],
+    }).toEqual({
+      tokenless: [400, "application/problem+json; charset=utf-8", { type: "about:blank", title: "Bad Request", status: 400 }],
+      tokened: [401, { error: "Not signed in." }],
+    });
+  });
+});
+
+describe("the AUTH_MOUNTING.md §1 mount under a csrf exclude reaching into auth's route maps", () => {
+  const refusalOf = (route: string, entry: string) =>
+    new Error(
+      `applyMiddlewareChain: contribution 1's guard group \`/auth/signin, /auth/signup, /auth/signout, /auth/signout/site-data\`'s route \`${route}\` mints a CSRF token, but the csrf policy's exclude entry \`${entry}\` skips it — narrow the entry so it leaves the route covered.`,
+    );
+
+  for (const { name, exclude, route, entry } of [
+    { name: "the sign-out confirm page", exclude: ["/public/*", "/auth/signout"], route: "/auth/signout", entry: "/auth/signout" },
+    { name: "the whole auth map, at its first leaf", exclude: ["/public/*", "/auth/*"], route: "/auth/signin", entry: "/auth/*" },
+    {
+      name: "a nested ceremony leaf of registerAuth",
+      exclude: ["/auth/verify/passkey/finish"],
+      route: "/auth/verify/passkey/finish",
+      entry: "/auth/verify/passkey/finish",
+    },
+    {
+      name: "one leaf of registerAccount",
+      exclude: ["/public/*", "/account/recovery-codes/confirm"],
+      route: "/account/recovery-codes/confirm",
+      entry: "/account/recovery-codes/confirm",
+    },
+    {
+      name: "a param leaf of registerAccount",
+      exclude: ["/account/passkeys/:id/edit"],
+      route: "/account/passkeys/id/edit",
+      entry: "/account/passkeys/:id/edit",
+    },
+    {
+      name: "the elevation page registerAdmin maps outside the users group",
+      exclude: ["/admin/elevate"],
+      route: "/admin/elevate",
+      entry: "/admin/elevate",
+    },
+    {
+      name: "a param leaf of registerAdmin",
+      exclude: ["/admin/users/:id/factors/reset"],
+      route: "/admin/users/id/factors/reset",
+      entry: "/admin/users/:id/factors/reset",
+    },
+  ]) {
+    it(`throws at registration on an exclude covering ${name}, naming the route and the entry`, () => {
+      expect(() => mount(options, { csrfExclude: exclude })).toThrow(refusalOf(route, entry));
+    });
+  }
+
+  it("mounts under an exclude beside the auth maps, and its sign-out confirm page mints a token the sign-out accepts", async () => {
+    const app = mount(options, { csrfExclude: ["/public/*", "/authority/*", "/accounts", "/admin"] });
+    const bindings = env();
+    const confirm = await app.request("/auth/signout", {}, bindings);
+    const html = await confirm.text();
+    const cookie =
+      confirm.headers
+        .getSetCookie()
+        .find((value) => value.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+    const signout = await app.request(
+      "/auth/signout",
+      {
+        method: "POST",
+        headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
+        body: new URLSearchParams({ _csrf: attrOf(html, 'name="_csrf"', "value") }).toString(),
+      },
+      bindings,
+    );
+
+    expect({
+      confirm: { status: confirm.status, title: /<title>([^<]*)<\/title>/.exec(html)?.[1] },
+      signout: { status: signout.status, location: signout.headers.get("location") },
+    }).toEqual({ confirm: { status: 200, title: "Sign out" }, signout: { status: 303, location: "/auth/signin" } });
+  });
+});
+
+describe("the auth guard table under an app's overlapping `/account/*` group, with a csrf policy (BOUNDARIES §2c)", () => {
+  const ceremonyPath = "/account/passkeys/register/begin";
+  const unlimitedGroups = {
+    auth: false,
+    "auth.verify": false,
+    "auth.verify.ceremony": false,
+    "auth.enrol": false,
+    "auth.enrol.ceremony": false,
+    account: false,
+    "admin.users": false,
+    "admin.elevate": false,
+  } as const;
+
+  function ceremonyWorld(allowed = true) {
+    const events: string[] = [];
+    const counter: RateLimit = {
+      limit: async ({ key }) => {
+        events.push(`limit:${key}`);
+        return { success: allowed };
+      },
+    };
+    const slice: MiddlewareGuardGroup<MountEnv> = {
+      paths: ["/account/*"],
+      guards: [
+        async (_context, next) => {
+          events.push("slice-guard");
+          return next();
+        },
+      ],
+    };
+    const app = mount(options, {
+      guards: [slice],
+      rateLimit: { ...unlimitedGroups, "account.passkeyCeremony": { binding: "LIMITER" } },
+      trustCfHeaders: true,
+    });
+    mapHandler(app, "GET", "/test/mint", async (c) => new Response(await mintCsrf(c, ceremonyPath)));
+    return { app, events, counter };
+  }
+
+  async function signedOutPost(world: ReturnType<typeof ceremonyWorld>, token: (minted: string) => string) {
+    const bindings = { ...env(), LIMITER: world.counter };
+    const minted = await world.app.request("/test/mint", {}, bindings);
+    const cookie =
+      minted.headers
+        .getSetCookie()
+        .find((value) => value.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+    const csrf = token(await minted.text());
+    const res = await world.app.request(
+      ceremonyPath,
+      {
+        method: "POST",
+        headers: {
+          origin: "http://localhost",
+          "content-type": "application/json",
+          "CF-Connecting-IP": "203.0.113.7",
+          "x-csrf-token": csrf,
+          cookie,
+        },
+        body: "{}",
+      },
+      bindings,
+    );
+    return { status: res.status, body: await res.text(), events: world.events };
+  }
+
+  it("consults the passkey ceremony's limiter, then refuses a signed-out client's forged token 403 before any guard can answer 401", async () => {
+    const res = await signedOutPost(ceremonyWorld(), () => "forged.token");
+    expect({ ...res, body: JSON.parse(res.body) }).toEqual({
+      status: 403,
+      body: { type: "about:blank", title: "Forbidden", status: 403 },
+      events: ["limit:203.0.113.7"],
+    });
+  });
+
+  it("answers an over-limit ceremony POST a 429 problem+json before CSRF reads its forged token", async () => {
+    const res = await signedOutPost(ceremonyWorld(false), () => "forged.token");
+    expect({ ...res, body: JSON.parse(res.body) }).toEqual({
+      status: 429,
+      body: { type: "about:blank", title: "Too Many Requests", status: 429 },
+      events: ["limit:203.0.113.7"],
+    });
+  });
+
+  it("runs both groups' guards after verifying a valid token, so a signed-out client gets the 401 JSON", async () => {
+    const res = await signedOutPost(ceremonyWorld(), (minted) => minted);
+    expect({ status: res.status, body: JSON.parse(res.body), events: res.events }).toEqual({
+      status: 401,
+      body: { error: "Not signed in." },
+      events: ["limit:203.0.113.7", "slice-guard"],
+    });
   });
 });
 
@@ -361,10 +719,14 @@ function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorS
   };
 }
 
-/** The whole mount again, this time over stores a drive-through can change and a clock it can move; `passkey` offers a passkey beside `stepUp`, which is required where given. */
+/** The whole mount again, this time over stores a drive-through can change and a clock it can move; `passkey` offers a passkey beside `stepUp`, which is required where given, and `signOut` and `signoutClearsSiteData` are the mount's sign-out mode. */
 function flowMount(
   stepUp: AuthSecondFactorKind | null,
-  { passkey = false }: { readonly passkey?: boolean } = {},
+  {
+    passkey = false,
+    signOut,
+    signoutClearsSiteData,
+  }: { readonly passkey?: boolean; readonly signOut?: AuthWebOptions["signOut"]; readonly signoutClearsSiteData?: boolean | undefined } = {},
 ): { readonly app: Forge<MountEnv>; readonly settle: () => Promise<void>; readonly advance: (ms: number) => void } {
   const users = memoryUsers();
   const sessions = fakeAuthSessionStore(users.rows);
@@ -392,46 +754,40 @@ function flowMount(
   };
   const nonces: NonceStore = { markConsumed: () => Promise.resolve(ok(true)) };
 
-  const flowOptions: AuthWebOptions<MountEnv> = {
-    ...options,
-    now,
-    resolveServices: async () => {
-      const ring = await importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]);
-      return fakeAuthServices({
-        users,
-        sessions,
-        credentials: memoryCredentials(credentials, enrolments),
-        enrolments,
-        factors,
-        signin: createSigninFlow({ keys: ring, users, state: otpState, nonces, factors, defer }),
-        signup: createSignupFlow({ users, factors, defer }),
-      });
-    },
-  };
+  const flowServices = perRequestServices(async () => {
+    const ring = await importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]);
+    return fakeAuthServices({
+      users,
+      sessions,
+      credentials: memoryCredentials(credentials, enrolments),
+      enrolments,
+      factors,
+      signin: createSigninFlow({ keys: ring, users, state: otpState, nonces, factors, defer }),
+      signup: createSignupFlow({ users, factors, defer }),
+    });
+  });
+  const flowOptions: AuthWebOptions<MountEnv> = { ...options, now, resolveServices: flowServices, signOut, signoutClearsSiteData };
 
   const app = new Forge<MountEnv>(nullLogger);
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<MountEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
-    globals: [
-      csrfProtection({
-        ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]),
-        subject: (c) => sessionCtx.getOptional(c)?.id,
-        onForbidden: authCsrfRefusal(paths.auth),
+    session: createAnonymousSession<MountEnv>({ ring: (bindings) => importKeyRing([bindings.SESSION_SECRET]), storage: "cookie" }),
+    csrf: { ring: (bindings) => importKeyRing([bindings.CSRF_SECRET]), subject: "session" },
+    contributions: [
+      createAuthGuards<MountEnv>({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: { services: flowServices, signinPath: paths.auth.signin(), now },
+        enrolment: {
+          factors: () => factors,
+          enrolmentPaths: authEnrolmentPaths(paths.auth),
+          stepUpPath: paths.auth.verify.show(),
+          settledPath: paths.account.passkeys(),
+          now,
+        },
+        origin: { allowedOrigins: ["http://localhost"] },
+        onRefuse: adminPage,
       }),
     ],
-    guards: createAuthGuards<MountEnv>({
-      routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { sessions: () => sessions, signinPath: paths.auth.signin(), now },
-      enrolment: {
-        factors: () => factors,
-        enrolmentPaths: authEnrolmentPaths(paths.auth),
-        stepUpPath: paths.auth.verify.show(),
-        settledPath: paths.account.passkeys(),
-        now,
-      },
-      origin: { allowedOrigins: ["http://localhost"] },
-    }),
   });
 
   registerAuth(app, authMap, flowOptions);
@@ -441,7 +797,7 @@ function flowMount(
   app.use(
     "/app/*",
     requireAuth<MountEnv>({
-      sessions: () => sessions,
+      services: flowServices,
       signinPath: paths.auth.signin(),
       factors: () => factors,
       stepUpPath: paths.auth.verify.show(),
@@ -461,15 +817,25 @@ function flowMount(
   };
 }
 
-/** One visitor keeping their cookie across requests. */
+/** One visitor keeping their cookies across requests, as a browser does: what a response sets is kept, and what it expires is dropped. */
 function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
+  const jar = new Map<string, string>();
   let cookie = "";
 
   function keep(res: Response): Response {
-    const set = res.headers.getSetCookie().find((value) => value.startsWith("__Host-session="));
-    if (set !== undefined) cookie = set.split(";")[0] ?? cookie;
+    for (const set of res.headers.getSetCookie()) {
+      const [pair = ""] = set.split(";");
+      const at = pair.indexOf("=");
+      const [name, value] = [pair.slice(0, at), pair.slice(at + 1)];
+      if (/;\s*max-age=0\b/i.test(set) || value === "") jar.delete(name);
+      else jar.set(name, value);
+    }
+    cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
     return res;
   }
+
+  /** The cookie names the visitor holds. */
+  const holds = (): readonly string[] => [...jar.keys()];
 
   async function get(path: string): Promise<Response> {
     const res = keep(await mounted.app.request(path, { headers: cookie === "" ? {} : { cookie } }, bindings));
@@ -568,8 +934,244 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     return res;
   }
 
-  return { get, formOf, post, form, contract, ceremony, hx };
+  /** Posts the storage clear a page's site-data scope asks for, to its own path with its own token, as the browser controller does. */
+  async function beacon(html: string): Promise<Response> {
+    const scope = `data-scope="${SITE_DATA_SCOPE}"`;
+    const res = keep(
+      await mounted.app.request(
+        attrOf(html, scope, SITE_DATA_PATH_ATTR),
+        {
+          method: "POST",
+          headers: {
+            origin: "http://localhost",
+            [attrOf(html, scope, SITE_DATA_CSRF_HEADER_ATTR)]: attrOf(html, scope, SITE_DATA_TOKEN_ATTR),
+            cookie,
+          },
+        },
+        bindings,
+      ),
+    );
+    await mounted.settle();
+    return res;
+  }
+
+  return { get, formOf, post, form, contract, ceremony, hx, beacon, holds };
 }
+
+describe("the auth groups' refusal hooks, driven through the mount (FORGE_ERRORS.md §3e)", () => {
+  const CEREMONIES = ["/auth/verify/passkey/begin", "/auth/enrol/passkey/register/begin", "/account/passkeys/register/begin"];
+  const PROBLEM = "application/problem+json; charset=utf-8";
+  const unlimited = {
+    auth: false,
+    "auth.verify": false,
+    "auth.verify.ceremony": false,
+    "auth.enrol": false,
+    "auth.enrol.ceremony": false,
+    account: false,
+    "account.passkeyCeremony": false,
+    "admin.users": false,
+    "admin.elevate": false,
+  } as const;
+
+  const htmlRefuse: RefuseHook<MountEnv> = (_c, refusal) =>
+    new Response("<p>refused</p>", { status: refusal.status, headers: { "content-type": "text/html; charset=utf-8" } });
+  const chainRefuse: RefuseHook<MountEnv> = (c, refusal) =>
+    new Response(`chain refused ${c.url.pathname}`, { status: refusal.status, headers: { "content-type": "text/plain; charset=utf-8" } });
+
+  function jsonPost(app: Forge<MountEnv>, path: string, bindings: MountEnv) {
+    return app.request(
+      path,
+      {
+        method: "POST",
+        headers: {
+          origin: "http://localhost",
+          "content-type": "application/json",
+          "CF-Connecting-IP": "203.0.113.7",
+          "x-csrf-token": "forged.token",
+        },
+        body: "{}",
+      },
+      bindings,
+    );
+  }
+
+  function formPost(app: Forge<MountEnv>, path: string, bindings: MountEnv, fields: Record<string, string>, cookie = "") {
+    return app.request(
+      path,
+      {
+        method: "POST",
+        headers: {
+          origin: "http://localhost",
+          "content-type": "application/x-www-form-urlencoded",
+          "CF-Connecting-IP": "203.0.113.7",
+          ...(cookie === "" ? {} : { cookie }),
+        },
+        body: new URLSearchParams(fields).toString(),
+      },
+      bindings,
+    );
+  }
+
+  async function answerOf(res: Response) {
+    const type = res.headers.get("content-type");
+    return { status: res.status, type, body: type === PROBLEM ? await res.json() : await res.text() };
+  }
+
+  it("answers a CSRF refusal on every JSON ceremony group with a 403 problem+json carrying no reason, though the auth groups were handed an HTML hook", async () => {
+    const app = mount(options, { authRefuse: htmlRefuse });
+    const bindings = env();
+
+    const ceremonies = await Promise.all(CEREMONIES.map(async (path) => ({ path, ...(await answerOf(await jsonPost(app, path, bindings))) })));
+    const signin = await answerOf(await formPost(app, "/auth/signin", bindings, { email: "ada@example.com", _csrf: "forged.token" }));
+
+    expect({ ceremonies, signin }).toEqual({
+      ceremonies: CEREMONIES.map((path) => ({ path, status: 403, type: PROBLEM, body: { type: "about:blank", title: "Forbidden", status: 403 } })),
+      signin: { status: 403, type: "text/html; charset=utf-8", body: "<p>refused</p>" },
+    });
+  });
+
+  it.each([
+    {
+      name: "an over-limit 429",
+      counter: { limit: async () => ({ success: false }) } satisfies RateLimit,
+      status: 429,
+      title: "Too Many Requests",
+    },
+    {
+      name: "a failed limiter's 503",
+      counter: {
+        limit: async () => {
+          throw new Error("limiter down");
+        },
+      } satisfies RateLimit,
+      status: 503,
+      title: "Service Unavailable",
+    },
+  ])(
+    "answers $name on every JSON ceremony group as problem+json carrying no reason, though the auth groups were handed an HTML hook",
+    async ({ counter, status, title }) => {
+      const limited = { binding: "LIMITER" };
+      const app = mount(options, {
+        authRefuse: htmlRefuse,
+        rateLimit: {
+          ...unlimited,
+          auth: limited,
+          "auth.verify.ceremony": limited,
+          "auth.enrol.ceremony": limited,
+          "account.passkeyCeremony": limited,
+        },
+        trustCfHeaders: true,
+      });
+      const bindings = { ...env(), LIMITER: counter };
+
+      const ceremonies = await Promise.all(CEREMONIES.map(async (path) => ({ path, ...(await answerOf(await jsonPost(app, path, bindings))) })));
+      const signin = await answerOf(await formPost(app, "/auth/signin", bindings, { email: "ada@example.com" }));
+
+      expect({ ceremonies, signin }).toEqual({
+        ceremonies: CEREMONIES.map((path) => ({ path, status, type: PROBLEM, body: { type: "about:blank", title, status } })),
+        signin: { status, type: "text/html; charset=utf-8", body: "<p>refused</p>" },
+      });
+    },
+  );
+
+  it("sends a CSRF-refused sign-out POST to the confirm page when the auth groups were handed no hook, while the JSON groups still answer problem+json", async () => {
+    const app = mount(options, { onRefuse: chainRefuse, authRefuse: null });
+    const bindings = env();
+
+    const signoutRes = await formPost(app, "/auth/signout", bindings, {});
+    const signout = { ...(await answerOf(signoutRes)), location: signoutRes.headers.get("location") };
+    const ceremony = await answerOf(await jsonPost(app, "/auth/verify/passkey/begin", bindings));
+
+    expect({ signout, ceremony }).toEqual({
+      signout: { status: 303, type: null, body: "", location: "/auth/signout" },
+      ceremony: { status: 403, type: PROBLEM, body: { type: "about:blank", title: "Forbidden", status: 403 } },
+    });
+  });
+
+  it("sends a CSRF-refused sign-out POST to the confirm page, while a POST no auth group covers is answered by the chain's hook", async () => {
+    const app = mount(options, { onRefuse: chainRefuse });
+    const ran: string[] = [];
+    mapHandler(app, "POST", "/contact", (c) => {
+      ran.push(c.url.pathname);
+      return new Response("sent");
+    });
+    const bindings = env();
+    const confirm = await app.request("/auth/signout", {}, bindings);
+    const cookie =
+      confirm.headers
+        .getSetCookie()
+        .find((value) => value.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+
+    const signout = await formPost(app, "/auth/signout", bindings, {}, cookie);
+    const contact = await formPost(app, "/contact", bindings, { message: "hello" }, cookie);
+
+    expect({
+      cookie: cookie !== "",
+      signout: { status: signout.status, location: signout.headers.get("location"), body: await signout.text() },
+      contact: { status: contact.status, location: contact.headers.get("location"), body: await contact.text() },
+      ran,
+    }).toEqual({
+      cookie: true,
+      signout: { status: 303, location: "/auth/signout", body: "" },
+      contact: { status: 403, location: null, body: "chain refused /contact" },
+      ran: [],
+    });
+  });
+
+  it("passes an auth-group origin refusal the documented hook declines to the chain's hook, else to forge's plain-text default", async () => {
+    const crossSite = { method: "POST", headers: { origin: "https://evil.example.com" } };
+
+    const chained = await answerOf(await mount(options, { onRefuse: chainRefuse }).request("/auth/signin", crossSite, env()));
+    const unhooked = await answerOf(await mount().request("/auth/signin", crossSite, env()));
+
+    expect({ chained, unhooked }).toEqual({
+      chained: { status: 403, type: "text/plain; charset=utf-8", body: "chain refused /auth/signin" },
+      unhooked: { status: 403, type: null, body: "Forbidden" },
+    });
+  });
+
+  it("keeps Retry-After on an over-limit 429 the documented hook declines", async () => {
+    const app = mount(options, { rateLimit: { ...unlimited, auth: { binding: "LIMITER" } }, trustCfHeaders: true });
+    const bindings = { ...env(), LIMITER: { limit: async () => ({ success: false }) } satisfies RateLimit };
+
+    const res = await formPost(app, "/auth/signin", bindings, { email: "ada@example.com" });
+
+    expect({ ...(await answerOf(res)), retryAfter: res.headers.get("retry-after") }).toEqual({
+      status: 429,
+      type: null,
+      body: "Too many requests. Please try again later.",
+      retryAfter: String(FAKE_RATE_LIMITS.LIMITER.period),
+    });
+  });
+
+  it("passes a CSRF-refused sign-in POST the documented hook declines to the chain's hook, else to forge's plain-text default", async () => {
+    const forged = { email: "ada@example.com", _csrf: "forged.token" };
+
+    const chained = await answerOf(await formPost(mount(options, { onRefuse: chainRefuse }), "/auth/signin", env(), forged));
+    const unhooked = await answerOf(await formPost(mount(), "/auth/signin", env(), forged));
+
+    expect({ chained, unhooked }).toEqual({
+      chained: { status: 403, type: "text/plain; charset=utf-8", body: "chain refused /auth/signin" },
+      unhooked: { status: 403, type: null, body: "Forbidden" },
+    });
+  });
+
+  it("answers the 503 of an absent limiter binding the documented hook declines with the chain's hook, else forge's default without Retry-After", async () => {
+    const limited = { rateLimit: { ...unlimited, auth: { binding: "LIMITER" } }, trustCfHeaders: true };
+
+    const chainedRes = await formPost(mount(options, { ...limited, onRefuse: chainRefuse }), "/auth/signin", env(), { email: "ada@example.com" });
+    const unhookedRes = await formPost(mount(options, limited), "/auth/signin", env(), { email: "ada@example.com" });
+
+    expect({
+      chained: { ...(await answerOf(chainedRes)), retryAfter: chainedRes.headers.get("retry-after") },
+      unhooked: { ...(await answerOf(unhookedRes)), retryAfter: unhookedRes.headers.get("retry-after") },
+    }).toEqual({
+      chained: { status: 503, type: "text/plain; charset=utf-8", body: "chain refused /auth/signin", retryAfter: null },
+      unhooked: { status: 503, type: null, body: "Service Unavailable", retryAfter: null },
+    });
+  });
+});
 
 describe("a second factor, driven through the mount", () => {
   for (const stepUp of ["totp-app", "passkey"] as const) {
@@ -636,7 +1238,7 @@ describe("a second factor, driven through the mount", () => {
     expect(started.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
 
     const resent = await returning.form(started.headers.get("location") ?? "", {}, "/auth/verify/resend");
-    expect(resent.headers.get("location")).toMatch(/^\/auth\/verify\?next=%2Fapp%2Fdashboard&resent=\d+$/);
+    expect(resent.headers.get("location")?.replace(/&resent=\d+$/, "&resent=<ms>")).toBe("/auth/verify?next=%2Fapp%2Fdashboard&resent=<ms>");
 
     const signedIn = await returning.form(resent.headers.get("location") ?? "", { code: CODE });
     const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });
@@ -674,12 +1276,13 @@ describe("a second factor, driven through the mount", () => {
     await ada.form("/auth/enrol/totp", { code: CODE });
 
     const page = await (await ada.get("/auth/verify")).text();
-    expect(page).toContain("Enter the current code from your authenticator app.");
+    expect(textOf(page, "div", 'data-slot="card-description"')).toBe("Enter the current code from your authenticator app.");
   });
 });
 
-describe("a sign-out whose token aged past the guard's hour, driven through the mount", () => {
+describe("a sign-out whose token aged past the policy's day, driven through the mount", () => {
   const MINUTE = 60_000;
+  const DAY = 24 * 60 * MINUTE;
   const DASHBOARD = [200, null] as const;
   const SIGNED_OUT = [302, "/auth/signin?next=%2Fapp%2Fdashboard"] as const;
 
@@ -689,7 +1292,7 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
     restore = [];
   });
 
-  /** Holds `Date.now`, which `csrfProtection` reads, at the real time it was called; returns the setter. */
+  /** Holds `Date.now`, which the CSRF policy reads, at the real time it was called; returns the setter. */
   function holdClock(): (ms: number) => void {
     const start = Date.now();
     const clock = spyOn(Date, "now").mockReturnValue(start);
@@ -712,11 +1315,11 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
     return ada;
   }
 
-  it("sends a sign-out at +61 minutes to the confirm page, keeps the session, and signs out from that page's form", async () => {
+  it("sends a sign-out a minute past a day to the confirm page, keeps the session, and signs out from that page's form", async () => {
     const ada = await signedInAda();
     const advance = holdClock();
     const { token } = await ada.formOf("/auth/signout");
-    advance(61 * MINUTE);
+    advance(DAY + MINUTE);
 
     const refused = answerOf(await ada.post("/auth/signout", { _csrf: token }));
     const kept = answerOf(await ada.get("/app/dashboard"));
@@ -734,11 +1337,11 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
     });
   });
 
-  it("signs out directly at +59 minutes", async () => {
+  it("signs out directly a minute short of a day", async () => {
     const ada = await signedInAda();
     const advance = holdClock();
     const { token } = await ada.formOf("/auth/signout");
-    advance(59 * MINUTE);
+    advance(DAY - MINUTE);
 
     const signedOut = answerOf(await ada.post("/auth/signout", { _csrf: token }));
     const after = answerOf(await ada.get("/app/dashboard"));
@@ -746,17 +1349,25 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
     expect({ signedOut, after }).toEqual({ signedOut: [303, "/auth/signin"], after: SIGNED_OUT });
   });
 
-  it("answers an htmx sign-out at +61 minutes with a 204 carrying HX-Redirect to the confirm page, and keeps the session", async () => {
+  it("answers an htmx sign-out a minute past a day with a 204 carrying HX-Redirect to the confirm page, and keeps the session", async () => {
     const ada = await signedInAda();
     const advance = holdClock();
     const { token } = await ada.formOf("/auth/signout");
-    advance(61 * MINUTE);
+    advance(DAY + MINUTE);
 
     const res = await ada.post("/auth/signout", { _csrf: token }, { "HX-Request": "true" });
     const refused = { status: res.status, location: res.headers.get("location"), hxRedirect: res.headers.get("hx-redirect") };
     const kept = answerOf(await ada.get("/app/dashboard"));
 
     expect({ refused, kept }).toEqual({ refused: { status: 204, location: null, hxRedirect: "/auth/signout" }, kept: DASHBOARD });
+  });
+
+  it("answers a non-administrator's GET of an admin page with the documented hook's page", async () => {
+    const ada = await signedInAda();
+
+    const res = await ada.get("/admin/users");
+
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "<p>Administrators only.</p>" });
   });
 
   it("never ends a session on a GET of the sign-out path", async () => {
@@ -773,7 +1384,7 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
     const anonymous = visitor(mounted, env());
     const advance = holdClock();
     const { token } = await anonymous.formOf("/auth/signin");
-    advance(61 * MINUTE);
+    advance(DAY + MINUTE);
 
     const stale = await anonymous.post("/auth/signin", { email: "ada@example.com", _csrf: token });
     const missing = await anonymous.post("/auth/signin", { email: "ada@example.com" });
@@ -785,6 +1396,208 @@ describe("a sign-out whose token aged past the guard's hour, driven through the 
       { status: 403, body: "Forbidden" },
       { status: 403, body: "Forbidden" },
     ]);
+  });
+});
+
+describe("a sign-out, driven through the mount", () => {
+  const CLEARED = "__Host-session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure";
+
+  interface CartView {
+    readonly cart: string | null;
+    readonly id: string;
+    readonly token: string;
+  }
+
+  /** Ada signed up and in on a mount signing out in `signOut`'s mode, holding a cart the app set and a sign-in token minted before she signs out. */
+  async function signedInWithCart(signOut?: AuthWebOptions["signOut"], signoutClearsSiteData?: boolean) {
+    const mounted = flowMount(null, { signOut, signoutClearsSiteData });
+    mapHandler(mounted.app, "GET", "/cart", async (c) => {
+      const session = sessionCtx.get(c);
+      const add = c.url.searchParams.get("add");
+      if (add !== null) session.set("cart", add);
+      return Response.json({ cart: session.get("cart") ?? null, id: session.id, token: await mintCsrf(c, "/auth/signin") });
+    });
+    const ada = visitor(mounted, env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    const cart = async (query = ""): Promise<CartView> => (await (await ada.get(`/cart${query}`)).json()) as CartView;
+    const before = await cart("?add=3+books");
+    const dashboard = (await ada.get("/app/dashboard")).status;
+    return { ada, cart, before, dashboard };
+  }
+
+  async function signinWith(ada: ReturnType<typeof visitor>, token: string) {
+    const res = await ada.post("/auth/signin", { email: "ada@example.com", _csrf: token });
+    return { status: res.status, location: res.headers.get("location") };
+  }
+
+  it("destroys the session: the response clears the cookie and the cart set before it is gone", async () => {
+    const { ada, cart, before, dashboard } = await signedInWithCart();
+
+    const res = await ada.form("/auth/signout", {});
+    const after = await cart();
+
+    expect({
+      dashboard,
+      before: before.cart,
+      signedOut: [res.status, res.headers.get("location")],
+      cookie: res.headers.getSetCookie().filter((header) => header.startsWith("__Host-session=")),
+      after: after.cart,
+      dashboardAfter: (await ada.get("/app/dashboard")).status,
+    }).toEqual({ dashboard: 200, before: "3 books", signedOut: [303, "/auth/signin"], cookie: [CLEARED], after: null, dashboardAfter: 302 });
+  });
+
+  it("with keepVisitorData, keeps the cart set before it under a new session id, and signs the visitor out", async () => {
+    const { ada, cart, before, dashboard } = await signedInWithCart({ keepVisitorData: true });
+
+    const res = await ada.form("/auth/signout", {});
+    const after = await cart();
+
+    expect({
+      dashboard,
+      signedOut: [res.status, res.headers.get("location")],
+      cleared: res.headers.getSetCookie().includes(CLEARED),
+      after: after.cart,
+      rotated: after.id !== before.id,
+      dashboardAfter: (await ada.get("/app/dashboard")).status,
+    }).toEqual({ dashboard: 200, signedOut: [303, "/auth/signin"], cleared: false, after: "3 books", rotated: true, dashboardAfter: 302 });
+  });
+
+  for (const [mode, signOut] of [
+    ["by default", undefined],
+    ["with keepVisitorData", { keepVisitorData: true } as const],
+  ] as const) {
+    it(`refuses a session-bound token minted before the sign-out once it has run, ${mode}, while one minted after it passes`, async () => {
+      const { ada, cart, before } = await signedInWithCart(signOut);
+
+      await ada.form("/auth/signout", {});
+      const stale = await signinWith(ada, before.token);
+      const fresh = await signinWith(ada, (await cart()).token);
+
+      expect({ stale, fresh }).toEqual({ stale: { status: 403, location: null }, fresh: { status: 303, location: "/auth/verify" } });
+    });
+  }
+});
+
+describe("a sign-out clearing site data, driven through the mount", () => {
+  const OWED = "__Host-auth-site-data-owed";
+  const MARKED = `${OWED}=MQ==; HttpOnly; Max-Age=300; Path=/; SameSite=Lax; Secure`;
+  const UNMARKED = `${OWED}=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure`;
+  const SCOPE = 'data-scope="auth-site-data"';
+
+  /** Ada signed up and in on a mount clearing site data on sign-out, in `signOut`'s mode. */
+  async function signedIn(signOut?: AuthWebOptions["signOut"]) {
+    const mounted = flowMount(null, { signOut, signoutClearsSiteData: true });
+    const ada = visitor(mounted, env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    return ada;
+  }
+
+  const owedOf = (res: Response) => res.headers.getSetCookie().filter((header) => header.startsWith(`${OWED}=`));
+  const answerOf = (res: Response) => ({ status: res.status, clear: res.headers.get("clear-site-data"), owed: owedOf(res) });
+
+  for (const [mode, signOut, owed] of [
+    ["by default", undefined, [MARKED]],
+    ["with keepVisitorData", { keepVisitorData: true } as const, []],
+  ] as const) {
+    it(`answers the sign-out with only the cache clear, ${mode}`, async () => {
+      const ada = await signedIn(signOut);
+
+      const navigation = answerOf(await ada.form("/auth/signout", {}));
+
+      expect(navigation).toEqual({ status: 303, clear: '"cache"', owed: [...owed] });
+    });
+
+    it(`answers an htmx sign-out with only the cache clear, ${mode}`, async () => {
+      const ada = await signedIn(signOut);
+      const { token } = await ada.formOf("/auth/signout");
+
+      const res = await ada.post("/auth/signout", { _csrf: token }, { "HX-Request": "true" });
+
+      expect({ ...answerOf(res), hxRedirect: res.headers.get("hx-redirect") }).toEqual({
+        status: 204,
+        clear: '"cache"',
+        owed: [...owed],
+        hxRedirect: "/auth/signin",
+      });
+    });
+
+    it(`renders the beacon on the next auth page, clears storage once on its post, and renders it no more, ${mode}`, async () => {
+      const ada = await signedIn(signOut);
+      await ada.form("/auth/signout", {});
+
+      const owing = await (await ada.get("/auth/signin")).text();
+      const first = await ada.beacon(owing);
+      const held = ada.holds().includes(OWED);
+      const second = await ada.beacon(owing);
+      const after = await (await ada.get("/auth/signin")).text();
+
+      expect({
+        beacon: attrOf(owing, SCOPE, "data-site-data-path"),
+        first: answerOf(first),
+        held,
+        second: answerOf(second),
+        beaconAfter: elementsOf(after, "div", SCOPE).length,
+      }).toEqual({
+        beacon: "/auth/signout/site-data",
+        first: { status: 204, clear: '"storage"', owed: owed.length === 0 ? [] : [UNMARKED] },
+        held: false,
+        second: { status: 204, clear: null, owed: [] },
+        beaconAfter: 0,
+      });
+    });
+  }
+
+  it("by default, carries the owed clear on the mark alone: the page after it renders on a fresh session", async () => {
+    const ada = await signedIn();
+
+    const res = await ada.form("/auth/signout", {});
+    const held = ada.holds();
+    const page = await (await ada.get("/auth/signin")).text();
+
+    expect({
+      session: res.headers.getSetCookie().filter((header) => header.startsWith("__Host-session=")),
+      held,
+      beacon: elementsOf(page, "div", SCOPE).length,
+    }).toEqual({ session: ["__Host-session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure"], held: [OWED], beacon: 1 });
+  });
+
+  it("wipes nothing for a visitor who never signed out, whether they follow a link to the endpoint or post to it with a token minted for it", async () => {
+    const mounted = flowMount(null, { signoutClearsSiteData: true });
+    mapHandler(mounted.app, "GET", "/mint", async (c) => new Response(await mintCsrf(c, "/auth/signout/site-data")));
+    const stranger = visitor(mounted, env());
+    const page = await (await stranger.get("/auth/signin")).text();
+    const token = await (await stranger.get("/mint")).text();
+
+    const link = await stranger.get("/auth/signout/site-data");
+    const posted = await stranger.post("/auth/signout/site-data", {}, { "x-csrf-token": token });
+
+    expect({
+      beacon: elementsOf(page, "div", SCOPE).length,
+      link: { clear: link.headers.get("clear-site-data"), owed: owedOf(link) },
+      posted: answerOf(posted),
+    }).toEqual({ beacon: 0, link: { clear: null, owed: [] }, posted: { status: 204, clear: null, owed: [] } });
+  });
+
+  it("expires the mark when the visitor signs in again before the beacon ran", async () => {
+    const ada = await signedIn();
+    await ada.form("/auth/signout", {});
+
+    await ada.form("/auth/signin", { email: "ada@example.com" });
+    const verified = await ada.form("/auth/verify", { code: CODE });
+
+    expect({ owed: owedOf(verified), held: ada.holds().includes(OWED) }).toEqual({ owed: [UNMARKED], held: false });
+  });
+
+  it("queues no mark expiry on a sign-in by a visitor who carries no mark", async () => {
+    const mounted = flowMount(null, { signoutClearsSiteData: true });
+    const ada = visitor(mounted, env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+
+    const verified = await ada.form("/auth/verify", { code: CODE });
+
+    expect({ status: verified.status, owed: owedOf(verified) }).toEqual({ status: 303, owed: [] });
   });
 });
 
@@ -1083,63 +1896,67 @@ const HYBRID_ACCOUNTS: readonly FakeAuthUser[] = [
   { id: ADA_ID, email: "ada@example.com" },
 ];
 
-/** The services of a deployment whose only factor is the emailed code, which any address answers with `CODE`. */
-function hybridServices(c: AppContext<MountEnv>): AuthRequestServices {
-  const db = createD1Client(c.env.DB as never);
-  const users = createUserStore(db);
-  const enrolments = createFactorStore(db);
-  return fakeAuthServices({
-    users,
-    sessions: createAuthSessionStore(db),
-    enrolments,
-    factors: fakeFactorRegistry([], [], enrolments),
-    signin: fakeAuthSigninFlow({
-      complete: async (email, presented) => {
-        const found = await users.findByEmailKey(email.toLowerCase());
-        if (presented !== CODE || !found.ok || found.data === null) return err("unrecognised" as const);
-        return ok({ user: found.data, kind: "email-otp" as const, resolution: { status: "satisfied" as const } });
-      },
-    }),
-    admin: createAdminUserStore(db),
+/** The services of a deployment whose only factor is the emailed code, which any address answers with `CODE`, its session store built by `sessionStore`. */
+function hybridServicesOver(
+  sessionStore: (c: AppContext<MountEnv>) => AuthSessionStore = (c) => createAuthSessionStore(createD1Client(c.env.DB as never)),
+): AuthRequestServicesResolver<MountEnv> {
+  return perRequestServices((c) => {
+    const db = createD1Client(c.env.DB as never);
+    const users = createUserStore(db);
+    const enrolments = createFactorStore(db);
+    return fakeAuthServices({
+      users,
+      sessions: sessionStore(c),
+      enrolments,
+      factors: fakeFactorRegistry([], [], enrolments),
+      signin: fakeAuthSigninFlow({
+        complete: async (email, presented) => {
+          const found = await users.findByEmailKey(email.toLowerCase());
+          if (presented !== CODE || !found.ok || found.data === null) return err("unrecognised" as const);
+          return ok({ user: found.data, kind: "email-otp" as const, resolution: { status: "satisfied" as const } });
+        },
+      }),
+      admin: createAdminUserStore(db),
+    });
   });
 }
 
 /** One session middleware for every path, an anonymous funnel page at `/fica` outside every auth group, and the approval prompt. */
-function hybridMount(storage: "cookie" | "kv"): Forge<MountEnv> {
+function hybridMount(storage: "cookie" | "kv", hybridServices: AuthRequestServicesResolver<MountEnv> = hybridServicesOver()): Forge<MountEnv> {
   const app = new Forge<MountEnv>(nullLogger);
-  const ring = (c: AppContext<MountEnv>) => importKeyRing([c.env.SESSION_SECRET]);
-  const sessions = (c: AppContext<MountEnv>) => createAuthSessionStore(createD1Client(c.env.DB as never));
+  const ring = (bindings: MountEnv) => importKeyRing([bindings.SESSION_SECRET]);
   const hybridOptions: AuthWebOptions<MountEnv> = { resolveServices: hybridServices, paths, icon: fakeAuthIcon };
+  const approval = fakeApproval({ origin: { allowedOrigins: ["http://localhost"] } });
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
+    rateLimits: FAKE_RATE_LIMITS,
     session:
       storage === "cookie"
         ? createAnonymousSession<MountEnv>({ ring, storage: "cookie" })
-        : createAnonymousSession<MountEnv>({ ring, kv: (c) => c.env.KV }),
-    globals: [
-      csrfProtection({
-        ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]),
-        subject: (c) => sessionCtx.getOptional(c)?.id,
-        onForbidden: authCsrfRefusal(paths.auth),
+        : createAnonymousSession<MountEnv>({ ring, kv: (bindings) => bindings.KV }),
+    csrf: { ring: (bindings) => importKeyRing([bindings.CSRF_SECRET]), subject: "session" },
+    globals: [resolveAuth<MountEnv>({ services: hybridServices })],
+    contributions: [
+      createAuthGuards<MountEnv>({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: { services: hybridServices, signinPath: paths.auth.signin() },
+        enrolment: {
+          factors: async (c) => (await hybridServices(c)).factors,
+          enrolmentPaths: authEnrolmentPaths(paths.auth),
+          stepUpPath: paths.auth.verify.show(),
+          settledPath: paths.account.passkeys(),
+        },
+        origin: { allowedOrigins: ["http://localhost"] },
+        onRefuse: adminPage,
       }),
-      resolveAuth<MountEnv>({ sessions }),
+      approval.contribution,
+      fakeLimiterContribution,
     ],
-    guards: createAuthGuards<MountEnv>({
-      routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { sessions, signinPath: paths.auth.signin() },
-      enrolment: {
-        factors: (c) => hybridServices(c).factors,
-        enrolmentPaths: authEnrolmentPaths(paths.auth),
-        stepUpPath: paths.auth.verify.show(),
-        settledPath: paths.account.passkeys(),
-      },
-      origin: { allowedOrigins: ["http://localhost"] },
-    }),
   });
   registerAuth(app, authMap, hybridOptions);
   registerAccount(app, accountMap, hybridOptions);
   registerAdmin(app, adminMap, hybridOptions);
-  registerApproval(app, fakeApproval({ origin: { allowedOrigins: ["http://localhost"] } }));
+  registerApproval(app, approval);
   mapHandler(app, "GET", "/fica", (context) => new Response(authCtx.getOptional(context)?.email ?? "anonymous"));
   return app;
 }
@@ -1167,7 +1984,7 @@ function countingKV(): { readonly kv: KVNamespace; readonly calls: string[] } {
 function hybridEnv() {
   const db = fakeAuthD1(HYBRID_ACCOUNTS);
   const counted = countingKV();
-  const bindings: MountEnv = { ...env(), DB: db, KV: counted.kv };
+  const bindings: MountEnv = { ...env(), DB: db, KV: counted.kv, LIMITER: { limit: async () => ({ success: true }) } };
   return {
     bindings,
     kvCalls: counted.calls,
@@ -1344,6 +2161,46 @@ describe("deactivating a signed-in account from the admin page", () => {
   });
 });
 
+describe('the auth session stores one request builds, under `storage: "cookie"`', () => {
+  /** A session-store factory recording the method and path of the request each store it builds was built for. */
+  function countingSessionStores() {
+    const built: string[] = [];
+    const factory = (c: AppContext<MountEnv>): AuthSessionStore => {
+      built.push(`${c.method.toUpperCase()} ${c.url.pathname}`);
+      return createAuthSessionStore(createD1Client(c.env.DB as never));
+    };
+    return { built, factory };
+  }
+
+  async function signedInOverCountedStores(email: string) {
+    const { bindings } = hybridEnv();
+    const stores = countingSessionStores();
+    const who = browser(hybridMount("cookie", hybridServicesOver(stores.factory)), bindings);
+    await who.signIn(email);
+    stores.built.length = 0;
+    return { who, built: stores.built };
+  }
+
+  it("builds one for a signed-in guarded account page, though the global resolver, the group's guards and the page all read it", async () => {
+    const { who, built } = await signedInOverCountedStores("ada@example.com");
+
+    const page = await who.get(paths.account.factors());
+
+    expect({ status: page.status, built }).toEqual({ status: 200, built: [`GET ${paths.account.factors()}`] });
+  });
+
+  it("builds one for the guarded admin edit page and one for the PATCH action its form sends", async () => {
+    const { who, built } = await signedInOverCountedStores("root@example.com");
+
+    const saved = await who.editAccount(ADA_ID, { role: "member", status: "active" });
+
+    expect({ status: saved.status, built }).toEqual({
+      status: 200,
+      built: [`GET ${paths.admin.users.edit({ id: ADA_ID })}`, `PATCH ${paths.admin.users.update({ id: ADA_ID })}`],
+    });
+  });
+});
+
 describe("a mandatory app beside an optional passkey, driven through the mount", () => {
   const answerOf = (res: Response) => ({ status: res.status, location: res.headers.get("location") });
 
@@ -1354,6 +2211,264 @@ describe("a mandatory app beside an optional passkey, driven through the mount",
     expect({ signedIn: answerOf(signedIn), choice: (await ada.get("/auth/enrol")).status }).toEqual({
       signedIn: { status: 303, location: "/auth/enrol/totp" },
       choice: 404,
+    });
+  });
+});
+
+/** Auth session stores over the deployment's D1, every call answering `unavailable` while `outage.down` is set and recording its method in `outage.asked`. */
+function switchableSessionStores() {
+  const outage = { down: false, asked: [] as string[] };
+  const factory = (c: AppContext<MountEnv>): AuthSessionStore => {
+    const live = createAuthSessionStore(createD1Client(c.env.DB as never));
+    return new Proxy(live, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (typeof value !== "function") return value;
+        return async (...args: unknown[]) => {
+          if (!outage.down) return (value as (...held: unknown[]) => unknown).apply(target, args);
+          outage.asked.push(String(prop));
+          return err(new AuthStoreError("unavailable", String(prop)));
+        };
+      },
+    });
+  };
+  return { outage, factory };
+}
+
+describe("the chain's session slot with the auth session store down (ROUTING_AND_MIDDLEWARE.md §3h)", () => {
+  const answerOf = async (res: Response) => ({ status: res.status, location: res.headers.get("location"), body: await res.text() });
+
+  it("serves a public page resolved anonymous, and sends a guarded one to sign-in, for a session holding no sign-in token", async () => {
+    const { bindings } = hybridEnv();
+    const stores = switchableSessionStores();
+    const stranger = browser(hybridMount("cookie", hybridServicesOver(stores.factory)), bindings);
+    const started = await stranger.form("/auth/signin", { email: "ada@example.com" });
+    stores.outage.down = true;
+
+    const funnel = await stranger.get("/fica");
+    const guarded = await stranger.get(paths.account.factors());
+
+    expect({
+      started: {
+        status: started.status,
+        location: started.headers.get("location"),
+        holdsSession: stranger.holding().startsWith("__Host-session="),
+      },
+      funnel: await answerOf(funnel),
+      guarded: { status: guarded.status, location: guarded.headers.get("location") },
+      asked: stores.outage.asked,
+    }).toEqual({
+      started: { status: 303, location: "/auth/verify", holdsSession: true },
+      funnel: { status: 200, location: null, body: "anonymous" },
+      guarded: { status: 302, location: "/auth/signin?next=%2Faccount%2Ffactors" },
+      asked: [],
+    });
+  });
+
+  it("answers 503 and never anonymous for a session holding a sign-in token, on a guarded and an unguarded path, and keeps it signed in", async () => {
+    const { bindings } = hybridEnv();
+    const stores = switchableSessionStores();
+    const ada = browser(hybridMount("cookie", hybridServicesOver(stores.factory)), bindings);
+    const signedIn = await ada.signIn("ada@example.com");
+    stores.outage.down = true;
+
+    const guarded = await answerOf(await ada.get(paths.account.factors()));
+    const unguarded = await answerOf(await ada.get("/fica"));
+    const asked = [...stores.outage.asked];
+    stores.outage.down = false;
+    const recovered = await answerOf(await ada.get("/fica"));
+
+    expect({ signedIn: signedIn.status, guarded, unguarded, asked, recovered }).toEqual({
+      signedIn: 303,
+      guarded: { status: 503, location: null, body: "Service Unavailable" },
+      unguarded: { status: 503, location: null, body: "Service Unavailable" },
+      asked: ["resolve", "resolve"],
+      recovered: { status: 200, location: null, body: "ada@example.com" },
+    });
+  });
+});
+
+/** A deployment's four key rings, each its own comma-joined, newest-first variable. */
+interface RingEnv extends Record<string, unknown> {
+  readonly DB: D1DatabaseLike;
+  readonly SESSION_SECRETS: string;
+  readonly CSRF_SECRETS: string;
+  readonly AUTH_SECRETS: string;
+  readonly APP_SECRETS: string;
+}
+
+type RingName = "session" | "csrf" | "auth" | "app";
+
+const RING_VARIABLES = { session: "SESSION_SECRETS", csrf: "CSRF_SECRETS", auth: "AUTH_SECRETS", app: "APP_SECRETS" } as const;
+
+const ORIGINAL_SECRETS: Record<RingName, string> = {
+  session: "5d6c903ecd93afeb252bd967607746db2fdcb8551be0bd2eb1c13cc48f5ad64d",
+  csrf: "16bbbb8bec48e45d6c0c9a55314bdf3afc6067371bce0f0c10c07e1395db59d8",
+  auth: "ca1dfb40c29137a0ce6f91119eacab27a497b024825fc2fefcc179a61ede6ba4",
+  app: "9d9311636c953143a3974810bb9960e78d0b85a4665b0ba987a57da7fe2dba9a",
+};
+
+const ROTATED_IN_SECRETS: Record<RingName, string> = {
+  session: "de8c1410a5bfca985d3eb9ef1d723a35db511d765a5974f65aa769fcb613ccf3",
+  csrf: "8fe0223c389a0b1eddd1d735f1a273ef783b434ed35a9272272ef0f53abd5f70",
+  auth: "721f269bd8e3c55d4d5df4c9e133222594a539bb9c32703b55833d2f05ed39e2",
+  app: "68851b07f2eed85cd75ace9f8e6e037361987729f2ada674d923d2c5405a6ef7",
+};
+
+const appRingOf = (secrets: string) => importKeyRing(parseKeyRingSecrets(secrets));
+const RING_AUTH: AuthOptions<RingEnv> = { ring: (bindings: RingEnv) => importAuthKeyRing(parseKeyRingSecrets(bindings.AUTH_SECRETS)) };
+const RECEIPT = { purpose: "receipt", value: "order-42" };
+
+function ringEnv(): RingEnv {
+  return {
+    DB: fakeAuthD1([]),
+    SESSION_SECRETS: ORIGINAL_SECRETS.session,
+    CSRF_SECRETS: ORIGINAL_SECRETS.csrf,
+    AUTH_SECRETS: ORIGINAL_SECRETS.auth,
+    APP_SECRETS: ORIGINAL_SECRETS.app,
+  };
+}
+
+function rotated(bindings: RingEnv, ring: RingName): RingEnv {
+  const variable = RING_VARIABLES[ring];
+  return { ...bindings, [variable]: `${ROTATED_IN_SECRETS[ring]},${bindings[variable]}` };
+}
+
+/** The auth mount under four independent rings, with a route minting and a route checking a value under each. */
+function ringMount(): Forge<RingEnv> {
+  const app = new Forge<RingEnv>(nullLogger);
+  const ringServices = authRequestServices<RingEnv>({
+    auth: RING_AUTH,
+    db: (c) => createD1Client(c.env.DB as never),
+    notifier: () => ({ send: async () => ok() }),
+    defer: () => () => undefined,
+    confirmUrl: (_c, token) => token,
+  });
+  applyMiddlewareChain<RingEnv>(app, {
+    securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
+    session: createAnonymousSession<RingEnv>({ ring: (bindings) => appRingOf(bindings.SESSION_SECRETS), storage: "cookie" }),
+    csrf: { ring: (bindings) => appRingOf(bindings.CSRF_SECRETS), subject: "session" },
+    guards: [{ paths: ["/submit"], origin: { allowedOrigins: ["http://localhost"] } }],
+    contributions: [
+      createAuthGuards<RingEnv>({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: { services: ringServices, signinPath: paths.auth.signin() },
+        enrolment: {
+          factors: async (c) => (await ringServices(c)).factors,
+          enrolmentPaths: authEnrolmentPaths(paths.auth),
+          stepUpPath: paths.auth.verify.show(),
+          settledPath: paths.account.passkeys(),
+        },
+        origin: { allowedOrigins: ["http://localhost"] },
+      }),
+    ],
+  });
+  mapHandler(app, "GET", "/note", (context) => {
+    const session = sessionCtx.get(context);
+    const note = context.url.searchParams.get("set");
+    if (note !== null) session.set("note", note);
+    return new Response(String(session.get("note") ?? "none"));
+  });
+  mapHandler(app, "GET", "/csrf-token", async (context) => new Response(await mintCsrf(context, "/submit")));
+  mapHandler(app, "POST", "/submit", () => new Response("submitted"));
+  mapHandler(app, "GET", "/auth-token", async (context) => {
+    const { keys } = await resolveAuthServices(context, RING_AUTH);
+    return new Response(await encodeAuthToken(keys, "identity", "ada", 600_000));
+  });
+  mapHandler(app, "GET", "/auth-token/check", async (context) => {
+    const { keys } = await resolveAuthServices(context, RING_AUTH);
+    const decoded = await decodeAuthToken(keys, "identity", context.url.searchParams.get("token") ?? "");
+    return new Response(decoded.ok ? "authentic" : decoded.error);
+  });
+  mapHandler(app, "GET", "/receipt", async (context) => {
+    const ring = await appRingOf(getAppContext<RingEnv>(context).env.APP_SECRETS);
+    return new Response(await signKeyRingValue(ring, RECEIPT));
+  });
+  mapHandler(app, "GET", "/receipt/check", async (context) => {
+    const ring = await appRingOf(getAppContext<RingEnv>(context).env.APP_SECRETS);
+    return new Response(await verifyKeyRingValue(ring, RECEIPT, context.url.searchParams.get("signature") ?? ""));
+  });
+  return app;
+}
+
+interface RingArtifacts {
+  readonly cookie: string;
+  readonly csrf: string;
+  readonly auth: string;
+  readonly app: string;
+}
+
+/** A session cookie noting `note`, and a CSRF token, an auth token and an app signature, each minted under `bindings`, the token bound to the session `held` names. */
+async function mintUnder(app: Forge<RingEnv>, bindings: RingEnv, note: string, held?: string): Promise<RingArtifacts> {
+  const noted = await app.request(`/note?set=${note}`, held === undefined ? {} : { headers: { cookie: held } }, bindings);
+  const cookie =
+    noted.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("__Host-session="))
+      ?.split(";")[0] ?? "";
+  const text = async (path: string) => (await app.request(path, { headers: { cookie: held ?? cookie } }, bindings)).text();
+  return { cookie, csrf: await text("/csrf-token"), auth: await text("/auth-token"), app: await text("/receipt") };
+}
+
+/** What `bindings` makes of each artifact: the note its session holds, the answer to a submission carrying its token from `csrfCookie`'s session, and each verdict. */
+async function verdictsUnder(app: Forge<RingEnv>, bindings: RingEnv, artifacts: RingArtifacts, csrfCookie: string) {
+  const text = async (path: string, init: RequestInit = {}) => (await app.request(path, init, bindings)).text();
+  const submitted = await app.request(
+    "/submit",
+    {
+      method: "POST",
+      headers: { cookie: csrfCookie, origin: "http://localhost", "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ _csrf: artifacts.csrf }).toString(),
+    },
+    bindings,
+  );
+  return {
+    session: await text("/note", { headers: { cookie: artifacts.cookie } }),
+    csrf: `${submitted.status} ${await submitted.text()}`,
+    auth: await text(`/auth-token/check?token=${encodeURIComponent(artifacts.auth)}`),
+    app: await text(`/receipt/check?signature=${encodeURIComponent(artifacts.app)}`),
+  };
+}
+
+describe("the session, CSRF, auth and app rings rotate independently through the chain (ROUTING_AND_MIDDLEWARE.md §3h)", () => {
+  const REFUSED_UNDER_ORIGINAL: Record<RingName, Partial<Record<RingName, string>>> = {
+    session: { session: "none" },
+    csrf: { csrf: "403 Forbidden" },
+    auth: { auth: "unknown-key" },
+    app: { app: "no-key" },
+  };
+
+  for (const ring of ["session", "csrf", "auth", "app"] as const) {
+    it(`keeps every ring's existing cookie and tokens verifying after the ${ring} ring rotates, and signs under the new ${ring} secret alone`, async () => {
+      const app = ringMount();
+      const original = ringEnv();
+      const rotation = rotated(original, ring);
+
+      const before = await mintUnder(app, original, "before");
+      const after = await mintUnder(app, rotation, "after", before.cookie);
+
+      expect({
+        beforeUnderRotation: await verdictsUnder(app, rotation, before, before.cookie),
+        afterUnderOriginal: await verdictsUnder(app, original, after, before.cookie),
+      }).toEqual({
+        beforeUnderRotation: { session: "before", csrf: "200 submitted", auth: "authentic", app: "verified" },
+        afterUnderOriginal: { session: "after", csrf: "200 submitted", auth: "authentic", app: "verified", ...REFUSED_UNDER_ORIGINAL[ring] },
+      });
+    });
+  }
+
+  it("refuses a CSRF token minted under the session ring's secret, so the policy never reads the session's ring", async () => {
+    const app = ringMount();
+    const original = ringEnv();
+    const sharing = { ...original, CSRF_SECRETS: original.SESSION_SECRETS };
+
+    const minted = await mintUnder(app, sharing, "shared");
+
+    expect(await verdictsUnder(app, original, minted, minted.cookie)).toEqual({
+      session: "shared",
+      csrf: "403 Forbidden",
+      auth: "authentic",
+      app: "verified",
     });
   });
 });

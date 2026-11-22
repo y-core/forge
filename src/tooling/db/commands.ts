@@ -88,25 +88,31 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
     standby,
     createCommand({
       name: "reset",
-      description: "Empty the standby database, apply every migration, then apply every seed. Asks first",
+      description: "Empty the standby database, apply every migration, then apply every seed, or with --empty stop after emptying it. Asks first",
       flags: {
         ...sharedDbFlags,
         // The verb refuses every other place, so the shared `local` default would only ever be a typo.
         target: { ...sharedDbFlags.target, default: "standby" },
         dir: { type: "string" as const, description: "Seed just this directory, instead of every one `config/db.config.ts` names" },
         "no-seed": { type: "boolean" as const, description: "Stop after the migrations, leaving every table empty" },
+        empty: {
+          type: "boolean" as const,
+          description: "Stop after clearing the state, with no migration and no seed, ready for `forge db restore`",
+        },
       },
       run: async (_args, flags, ctx?: CliContext) => {
         return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
           await confirm({
             verb: "rebuild",
             what: `${run.home.database} (${run.config.target.place})`,
-            consequence: "Every row in it is discarded; what it holds afterwards comes from the migrations and the seeds alone.",
+            consequence: flags.empty
+              ? "Every row and table in it is discarded, and it is left holding nothing."
+              : "Every row in it is discarded; what it holds afterwards comes from the migrations and the seeds alone.",
             yes: run.yes,
             print: confirmPrinter(run),
             cancelMessage: "Reset cancelled; the standby database is unchanged.",
           });
-          const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"] });
+          const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"], empty: flags.empty });
           if (run.json) run.print(JSON.stringify({ ...where(run), ...outcome }));
           else run.print(`${outcome.database}: ${outcome.applied.length} migration(s), ${outcome.seeded.length} seed(s)`);
         });

@@ -3,14 +3,17 @@ import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
-import type { AppContext } from "../../context/types";
+import { refuseHookCtx } from "../../context/refusal";
+import type { AppContext, Refusal, RefuseHook } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
 import { bytesToHex } from "../../crypto/primitives/bytes";
 import { sha256 } from "../../crypto/primitives/digest";
-import { createCsrfToken, csrfMinterCtx, csrfProtection } from "../../form/csrf";
+import { hotpCode } from "../../crypto/primitives/hotp";
+import { createCsrfToken, csrfMintStage, csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
-import type { CsrfFailure, CsrfProtectionOptions } from "../../form/types";
+import { TURNSTILE_TEST_KEYS } from "../../form/turnstile-keys";
+import type { CsrfFailure, CsrfPolicyOptions } from "../../form/types";
 import { requestLog } from "../../logging/request-logger";
 import { err, ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
@@ -21,7 +24,10 @@ import { AUTH_OTP_MAX_ATTEMPTS, AUTH_SESSION_MAX_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import { createEmailOtpFactor } from "../factors/email-otp";
 import { createPasskeyFactor } from "../factors/passkey";
+import { createRecoveryCodeFactor } from "../factors/recovery-code";
 import { createFactorRegistry } from "../factors/registry";
+import { createTotpAppFactor } from "../factors/totp-app";
+import { sealTotpSecret } from "../factors/totp-secret";
 import type { AuthSecondFactorKind, AuthSecondFactorRequirement, AuthSecondFactorService, RecoveryCodeFactorService } from "../factors/types";
 import type { AuthFactorReason, TotpReplaceableFactorService } from "../factors/types";
 import { createEmailChangeFlow } from "../flows/email-change";
@@ -41,6 +47,7 @@ import type {
   AuthSessionStore,
   AuthUser,
   CredentialStore,
+  FactorStore,
   OtpState,
   OtpStateStore,
   UserStore,
@@ -57,6 +64,7 @@ import {
   createRecoveryCodeActions,
   createSessionActions,
   AUTH_CEREMONY_MAX_BYTES,
+  AUTH_FORM_MAX_BYTES,
   createSigninActions,
   createSignoutActions,
   createSignupActions,
@@ -71,6 +79,7 @@ import {
   authCtx,
   establishAuthSession,
   markAuthStepUp,
+  NO_SESSION,
   resolveAuthIdentity,
 } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
@@ -89,19 +98,23 @@ import {
   fakeAuthCredentialStore,
   fakeAuthEmailChangeFlow,
   fakeAuthServices,
+  fakeAuthServicesResolver,
   fakeAuthSessionStore,
   fakeAuthSigninFlow,
   fakeAuthSignupFlow,
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
+  fakeChallengeStore,
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeRecoveryCodeStore,
   fakeSecurityNotices,
   fakeRecoveryCodeService,
   fakeSecondFactorOffering,
   fakeSessionCookie,
+  tagOf,
   textOf,
 } from "./web.fixture";
 
@@ -174,9 +187,9 @@ function mounted(app: Forge, method: "POST" | "PATCH" | "DELETE", pattern: strin
   return app;
 }
 
-/** `app` behind the admin stack `createAuthGuards` wires from `onForbidden`, which admits the seeded administrator before a demotion lands. */
-function demotedBehindAdminChain(app: Forge, onForbidden: AuthAdminGuardOptions["onForbidden"]): Forge {
-  app.use("*", ...fakeAdminGuardChain(onForbidden), demoteAuthIdentity);
+/** `app` behind the admin stack `createAuthGuards` wires from `onRefuse`, which admits the seeded administrator before a demotion lands. */
+function demotedBehindAdminChain(app: Forge, onRefuse: AuthAdminGuardOptions["onRefuse"]): Forge {
+  app.use("*", ...fakeAdminGuardChain(onRefuse), demoteAuthIdentity);
   return app;
 }
 
@@ -243,7 +256,9 @@ describe("createSigninActions", () => {
       const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", [name]: "x" }));
       expect(res.status).toBe(422);
       const html = await res.text();
-      expect(html).toContain("We could not read that. Please check the form and try again.");
+      expect(elementOf(html, "p", 'data-slot="field-error"')).toBe(
+        '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-email-error">We could not read that. Please check the form and try again.</p>',
+      );
       expect(html).not.toContain("Pick a role from the list.");
       expect(html).not.toContain("[object Object]");
       expect(html).not.toContain("[native code]");
@@ -272,12 +287,53 @@ describe("createSigninActions", () => {
     expect(res.status).toBe(500);
   });
 
-  it("still re-renders the form for an oversize body, which is the visitor's to fix", async () => {
+  it("answers an oversize body at 413, re-rendering the form, which is the visitor's to fix", async () => {
     const options = fakeAuthWebOptions();
     const app = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);
 
-    const res = await app.request("/auth/signin", formBody({ email: `${"x".repeat(200_000)}@example.com` }));
-    expect(res.status).toBe(422);
+    const res = await app.request("/auth/signin", formBody({ email: `${"x".repeat(AUTH_FORM_MAX_BYTES)}@example.com` }));
+    expect({ status: res.status, error: textOf(await res.text(), "p", 'id="field-email-error"') }).toEqual({
+      status: 413,
+      error: "That form was too large to read. Please try again.",
+    });
+  });
+
+  it("holds the body to the auth cap when an earlier parse admitted it under a larger one", async () => {
+    const requested: string[] = [];
+    const signin = fakeAuthSigninFlow({
+      request: (email, at) => {
+        requested.push(email);
+        return { kind: "email-otp", expiresAt: at };
+      },
+    });
+    const app = actionApp();
+    app.use("*", async (c, next) => {
+      await parseFormData(c, { maxBytes: 1 << 20 });
+      return next();
+    });
+    mounted(
+      app,
+      "POST",
+      "/auth/signin",
+      createSigninActions(fakeAuthWebOptions({ resolveServices: () => fakeAuthServices({ signin }) })).signinSubmit,
+    );
+
+    const oversize = await app.request("/auth/signin", formBody({ email: "ada@example.com", padding: "x".repeat(AUTH_FORM_MAX_BYTES) }));
+    const normal = await app.request("/auth/signin", formBody({ email: "grace@example.com" }));
+    expect({ oversize: oversize.status, normal: normal.status, requested }).toEqual({
+      oversize: 413,
+      normal: 303,
+      requested: ["grace@example.com"],
+    });
+  });
+
+  it("fails the request with the shared no-session message when no session middleware ran, rather than starting a sign-in", async () => {
+    const app = new Forge(nullLogger);
+    app.setOnError((error) => new Response(error.message, { status: 500 }));
+    mounted(app, "POST", "/auth/signin", createSigninActions(fakeAuthWebOptions()).signinSubmit);
+
+    const res = await app.request("/auth/signin", formBody({ email: "ada@example.com" }));
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 500, body: NO_SESSION });
   });
 });
 
@@ -392,6 +448,50 @@ describe("createVerifyActions on the second half of a sign-in", () => {
       expect({ status: res.status, notice: textOf(await res.text(), "div", 'data-slot="alert-description"') }).toEqual({ status: 422, notice });
     });
   }
+
+  describe("a primary-path code whose attempt budget is spent", () => {
+    const member = fakeAuthUser({ id: "u9", email: "grace@example.com", emailKey: "grace@example.com" });
+
+    async function answer(reason: AuthFactorReason, checked: string[] = []) {
+      const keys = await importAuthKeyRing(["5c1f0e2a9b7d4c3e8f6a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a"]);
+      const primary = { ...fakeFactorService("email-otp"), verifyChallenge: async (userId: string) => (checked.push(userId), err(reason)) };
+      const users = fakeAuthUserStore([member]);
+      const factors = createFactorRegistry(fakeFactorStore([]), { primary });
+      const state: OtpStateStore = {
+        issue: async () => ok(true),
+        countAttempt: async () => ok(null),
+        read: async () => ok(null),
+        discard: async () => ok(),
+        clear: async () => ok(),
+      };
+      const nonces = { markConsumed: async () => ok(true) };
+      const signin = createSigninFlow({ keys, users, state, nonces, factors, defer: () => undefined });
+      const options = optionsWith({ users, factors, signin });
+      const app = mounted(actionApp({ pendingEmail: member.email }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+      const res = await app.request("/auth/verify", formBody({ code: "123456" }));
+      return { status: res.status, retryAfter: res.headers.get("retry-after"), body: await res.text() };
+    }
+
+    it("answers a member's code that did not match at 422 with the did-not-match notice and no Retry-After", async () => {
+      const checked: string[] = [];
+      const unrecognised = await answer("unrecognised", checked);
+      expect({
+        checked,
+        status: unrecognised.status,
+        retryAfter: unrecognised.retryAfter,
+        notice: textOf(unrecognised.body, "div", 'data-slot="alert-description"'),
+      }).toEqual({ checked: ["u9"], status: 422, retryAfter: null, notice: "That did not match. Ask for a new code and try again." });
+    });
+
+    for (const reason of ["too-many-attempts", "too-soon"] as const) {
+      it(`answers a member's ${reason} with exactly what a code that did not match answers, so the status reveals no membership`, async () => {
+        const checked: string[] = [];
+        const throttled = await answer(reason, checked);
+        expect({ checked, answer: throttled }).toEqual({ checked: ["u9"], answer: await answer("unrecognised") });
+      });
+    }
+  });
 
   it("re-renders at 422 for a code the schema refuses, without reaching the flow", async () => {
     const options = completing({ status: "satisfied" });
@@ -515,21 +615,185 @@ describe("createVerifyActions on a step-up", () => {
   });
 
   const stepUpNotices = [
-    ["totp-app", "123456", "unrecognised", "That code did not match. Enter the code your app shows now."],
-    ["totp-app", "123456", "too-many-attempts", "Too many attempts. Wait a while, then try again."],
-    ["recovery-code", "ABCD-EFGH", "unrecognised", "That recovery code did not match. Check it and try again."],
-    ["recovery-code", "ABCD-EFGH", "too-many-attempts", "Too many attempts. Wait a while, then try again."],
+    ["totp-app", "123456", "unrecognised", 422, "That code did not match. Enter the code your app shows now."],
+    ["totp-app", "123456", "too-many-attempts", 429, "Too many attempts. Wait a while, then try again."],
+    ["recovery-code", "ABCD-EFGH", "unrecognised", 422, "That recovery code did not match. Check it and try again."],
+    ["recovery-code", "ABCD-EFGH", "too-many-attempts", 429, "Too many attempts. Wait a while, then try again."],
   ] as const;
 
-  for (const [factor, code, reason, notice] of stepUpNotices) {
-    it(`answers a ${factor} step-up refused as ${reason} without offering a new code, which only an email can send`, async () => {
+  for (const [factor, code, reason, status, notice] of stepUpNotices) {
+    it(`answers a ${factor} step-up refused as ${reason} at ${status} without offering a new code or a Retry-After the factor never states`, async () => {
       const options = optionsWith({ ...holdingBoth, signin: fakeAuthSigninFlow({ stepUp: async () => err(reason) }) });
       const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
 
       const res = await app.request(`/auth/verify?factor=${factor}`, formBody({ code }));
-      expect({ status: res.status, notice: textOf(await res.text(), "div", 'data-slot="alert-description"') }).toEqual({ status: 422, notice });
+      const html = await res.text();
+      expect({
+        status: res.status,
+        retryAfter: res.headers.get("retry-after"),
+        title: textOf(html, "div", 'data-slot="alert-title"'),
+        notice: textOf(html, "div", 'data-slot="alert-description"'),
+      }).toEqual({ status, retryAfter: null, title: "We could not confirm that", notice });
     });
   }
+
+  describe("an emailed step-up code whose attempt budget is spent", () => {
+    function emailedStepUp(reason: AuthFactorReason, primary = fakeFactorService("email-otp")): Forge {
+      const options = optionsWith({
+        users: fakeAuthUserStore([signedIn]),
+        factors: createFactorRegistry(fakeFactorStore([]), { primary }),
+        signin: fakeAuthSigninFlow({ stepUp: async () => err(reason) }),
+      });
+      return mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+    }
+
+    const THROTTLED_EMAIL = "Too many attempts. Wait a while before asking for another code.";
+
+    const answers = [
+      { window: "a fifteen-minute attempt window", primary: { ...fakeFactorService("email-otp"), attemptWindowMs: 900_000 }, retryAfter: "900" },
+      {
+        window: "an attempt window one millisecond past 90 seconds, rounded up",
+        primary: { ...fakeFactorService("email-otp"), attemptWindowMs: 90_001 },
+        retryAfter: "91",
+      },
+      {
+        window: "no attempt window, which leaves the header out",
+        primary: { ...fakeFactorService("email-otp"), reissueAfterMs: 60_000 },
+        retryAfter: null,
+      },
+    ] as const;
+
+    for (const { window, primary, retryAfter } of answers) {
+      it(`re-renders the verify page and its failure panel at 429 for a factor stating ${window}, never its resend cooldown`, async () => {
+        const res = await emailedStepUp("too-many-attempts", primary).request("/auth/verify", formBody({ code: "123456" }));
+        const html = await res.text();
+        expect({
+          status: res.status,
+          retryAfter: res.headers.get("retry-after"),
+          location: res.headers.get("location"),
+          contentType: res.headers.get("content-type"),
+          title: textOf(html, "div", 'data-slot="alert-title"'),
+          notice: textOf(html, "div", 'data-slot="alert-description"'),
+          codeAutocomplete: attrOf(html, 'name="code"', "autocomplete"),
+        }).toEqual({
+          status: 429,
+          retryAfter,
+          location: null,
+          contentType: "text/html; charset=utf-8",
+          title: "We could not confirm that",
+          notice: THROTTLED_EMAIL,
+          codeAutocomplete: "one-time-code",
+        });
+      });
+    }
+
+    it("answers an emailed code that did not match at 422 with no Retry-After, though the factor states a window", async () => {
+      const primary = { ...fakeFactorService("email-otp"), attemptWindowMs: 900_000 };
+      const res = await emailedStepUp("unrecognised", primary).request("/auth/verify", formBody({ code: "123456" }));
+      expect({
+        status: res.status,
+        retryAfter: res.headers.get("retry-after"),
+        notice: textOf(await res.text(), "div", 'data-slot="alert-description"'),
+      }).toEqual({ status: 422, retryAfter: null, notice: "That did not match. Ask for a new code and try again." });
+    });
+  });
+
+  describe("a second factor whose attempt budget the real factor spends", () => {
+    const TOTP_SECRET = new Uint8Array(20).fill(7);
+
+    /** The real sign-in flow over a real authenticator-app and recovery-code factor, each admitting one wrong guess. */
+    async function secondFactorStepUp(lockoutMs: number | undefined): Promise<Forge> {
+      const keys = await importAuthKeyRing(["2c83943e16eb5c3741d74260b4751de91afeab397689cfd139f7263b21aec037"]);
+      const row = (kind: AuthFactorKind, secret: Uint8Array<ArrayBuffer> | null): AuthFactor => ({
+        id: `f-${kind}`,
+        userId: signedIn.id,
+        kind,
+        secret,
+        lastCounter: null,
+        failedAttempts: 0,
+        lastVerifiedAt: null,
+        confirmedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const rows = [row("totp-app", await sealTotpSecret(keys, signedIn.id, TOTP_SECRET)), row("recovery-code", null)];
+      const held = (userId: string, kind: AuthFactorKind) => rows.findIndex((entry) => entry.userId === userId && entry.kind === kind);
+      const store: FactorStore = {
+        ...fakeFactorStore([]),
+        listByUser: async (userId) => ok(rows.filter((entry) => entry.userId === userId)),
+        find: async (userId, kind) => ok(rows[held(userId, kind)] ?? null),
+        listConfirmedKinds: async (userId, kinds) =>
+          ok(rows.filter((entry) => entry.userId === userId && kinds.includes(entry.kind)).map((entry) => entry.kind)),
+        countAttempt: async (userId, kind, maxAttempts, at, windowMs) => {
+          const index = held(userId, kind);
+          const found = rows[index];
+          if (found === undefined) return ok(null);
+          if (found.failedAttempts >= maxAttempts && found.updatedAt > at - windowMs) return ok(null);
+          const spent = { ...found, failedAttempts: found.failedAttempts >= maxAttempts ? 1 : found.failedAttempts + 1, updatedAt: at };
+          rows[index] = spent;
+          return ok(spent);
+        },
+      };
+      const limits = { maxAttempts: 1, ...(lockoutMs === undefined ? {} : { lockoutMs }) };
+      const totp = createTotpAppFactor({
+        keys,
+        factors: store,
+        challenges: fakeChallengeStore(),
+        issuer: "Forge",
+        account: () => signedIn.email,
+        ...limits,
+      });
+      const recovery = createRecoveryCodeFactor({ factors: store, codes: fakeRecoveryCodeStore(), ...limits });
+      const users = fakeAuthUserStore([signedIn]);
+      const factors = createFactorRegistry(store, {
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([totp], [], recovery),
+      });
+      const state: OtpStateStore = {
+        issue: async () => ok(true),
+        countAttempt: async () => ok(null),
+        read: async () => ok(null),
+        discard: async () => ok(),
+        clear: async () => ok(),
+      };
+      const signin = createSigninFlow({ keys, users, state, nonces: { markConsumed: async () => ok(true) }, factors, defer: () => undefined });
+      return mounted(
+        actionApp({ userId: signedIn.id }),
+        "POST",
+        "/auth/verify",
+        createVerifyActions(optionsWith({ users, factors, signin })).submit,
+      );
+    }
+
+    /** A six-digit code neither step the drift window reaches at the fixed clock accepts, found rather than assumed. */
+    async function wrongTotpCode(): Promise<string> {
+      const live = await Promise.all([0, 1].map((counter) => hotpCode(TOTP_SECRET, counter)));
+      return ["000000", "111111", "222222"].find((candidate) => !live.includes(candidate)) ?? "";
+    }
+
+    const spent = [
+      { factor: "totp-app", lockoutMs: undefined, window: "the default fifteen-minute lockout", retryAfter: "900" },
+      { factor: "totp-app", lockoutMs: 90_001, window: "a lockout one millisecond past 90 seconds, rounded up", retryAfter: "91" },
+      { factor: "recovery-code", lockoutMs: undefined, window: "the default fifteen-minute lockout", retryAfter: "900" },
+      { factor: "recovery-code", lockoutMs: 90_001, window: "a lockout one millisecond past 90 seconds, rounded up", retryAfter: "91" },
+    ] as const;
+
+    for (const { factor, lockoutMs, window, retryAfter } of spent) {
+      it(`answers the ${factor} guess past a spent budget at 429 with a Retry-After of ${window}`, async () => {
+        const app = await secondFactorStepUp(lockoutMs);
+        const code = factor === "totp-app" ? await wrongTotpCode() : "ABCD-EFGH-IJKL-MNOP-QRST-UVWX";
+        const answers = [];
+        for (let ordinal = 0; ordinal < 2; ordinal++) {
+          const res = await app.request(`/auth/verify?factor=${factor}`, formBody({ code }));
+          answers.push({ status: res.status, retryAfter: res.headers.get("retry-after") });
+        }
+        expect(answers).toEqual([
+          { status: 422, retryAfter: null },
+          { status: 429, retryAfter },
+        ]);
+      });
+    }
+  });
 
   it("hands the presented kind to the flow, so a recovery code is never checked as an app code", async () => {
     const presented: string[] = [];
@@ -606,12 +870,20 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
     return createVerifyActions(optionsWith(services)).submit;
   }
 
-  const refusedStepUps = (["unrecognised", "too-many-attempts", "unavailable", "unusable", "expired"] as const).map((reason) => ({
+  const refusedStepUps = (
+    [
+      ["unrecognised", 422],
+      ["too-many-attempts", 429],
+      ["unavailable", 422],
+      ["unusable", 422],
+      ["expired", 422],
+    ] as const
+  ).map(([reason, status]) => ({
     outcome: `a step-up code the flow refuses as ${reason}`,
     services: { ...secondFactor(["totp-app"], "optional"), signin: fakeAuthSigninFlow({ stepUp: async () => err(reason) }) },
     url: "/auth/verify",
     code: "123456",
-    status: 422,
+    status,
     location: null,
   }));
 
@@ -856,55 +1128,102 @@ describe("createSignoutActions", () => {
     expect(res.headers.has("clear-site-data")).toBe(false);
   });
 
-  it("clears the site's cache, and only its cache, on the navigation when signoutClearsSiteData is set", async () => {
-    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+  const KEEP_VISITOR_DATA = { signOut: { keepVisitorData: true } } as const;
+  const OWED_MARKED = "__Host-auth-site-data-owed=MQ==; HttpOnly; Max-Age=300; Path=/; SameSite=Lax; Secure";
+  const OWED_CLEARED = "__Host-auth-site-data-owed=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure";
+  const owedCookies = (res: Response) => res.headers.getSetCookie().filter((header) => header.startsWith("__Host-auth-site-data-owed="));
 
-    const res = await app.request("/auth/signout", formBody({}));
-    expect(res.status).toBe(303);
-    expect(res.headers.get("clear-site-data")).toBe('"cache"');
-  });
+  for (const [mode, extra, owed] of [
+    ["destroying the session", {}, [OWED_MARKED]],
+    ["keeping visitor data", KEEP_VISITOR_DATA, []],
+  ] as const) {
+    it(`clears only the cache on the navigation when signoutClearsSiteData is set, ${mode}`, async () => {
+      const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true, ...extra };
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
 
-  it("clears the site's cache on an htmx sign-out too", async () => {
-    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
-
-    const res = await app.request("/auth/signout", {
-      method: "POST",
-      body: "",
-      headers: { "content-type": "application/x-www-form-urlencoded", ...HX_REQUEST },
+      const res = await app.request("/auth/signout", formBody({}));
+      expect([res.status, res.headers.get("clear-site-data")]).toEqual([303, '"cache"']);
     });
-    expect(res.status).toBe(204);
-    expect(res.headers.get("hx-redirect")).toBe("/auth/signin");
-    expect(res.headers.get("clear-site-data")).toBe('"cache"');
+
+    it(`clears only the cache on an htmx sign-out too, ${mode}`, async () => {
+      const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true, ...extra };
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+
+      const res = await app.request("/auth/signout", {
+        method: "POST",
+        body: "",
+        headers: { "content-type": "application/x-www-form-urlencoded", ...HX_REQUEST },
+      });
+      expect([res.status, res.headers.get("hx-redirect"), res.headers.get("clear-site-data")]).toEqual([204, "/auth/signin", '"cache"']);
+    });
+
+    it(`${owed.length === 0 ? "sets no owed-storage mark" : "sets the owed-storage mark"} when signoutClearsSiteData is set, ${mode}`, async () => {
+      const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true, ...extra };
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+
+      expect(owedCookies(await app.request("/auth/signout", formBody({})))).toEqual([...owed]);
+    });
+  }
+
+  it("sets no owed-storage mark by default", async () => {
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(fakeAuthWebOptions()).signout);
+
+    expect(owedCookies(await app.request("/auth/signout", formBody({})))).toEqual([]);
   });
 
-  /** Signs out under `options`, then posts the site-data clear `times` times on the session the sign-out left. */
+  /** A browser's cookie jar: keeps what each response sets, drops what it expires, and sends the rest. */
+  function cookieJar() {
+    const held = new Map<string, string>();
+    return {
+      header: () => [...held].map(([name, value]) => `${name}=${value}`).join("; "),
+      keep(res: Response): Response {
+        for (const set of res.headers.getSetCookie()) {
+          const [pair = ""] = set.split(";");
+          const at = pair.indexOf("=");
+          const [name, value] = [pair.slice(0, at), pair.slice(at + 1)];
+          if (/;\s*max-age=0\b/i.test(set) || value === "") held.delete(name);
+          else held.set(name, value);
+        }
+        return res;
+      },
+    };
+  }
+
+  /** Signs out under `options`, then posts the site-data clear `times` times, carrying every cookie the sign-out left. */
   async function siteDataAfterSignout(options: AuthWebOptions, times: number): Promise<Response[]> {
     const actions = createSignoutActions(options);
     const app = mounted(actionApp(), "POST", "/auth/signout", actions.signout);
     mapHandler(app, "POST", "/auth/signout/site-data", actions.signoutSiteData);
-    let cookie = (await app.request("/auth/signout", formBody({}))).headers.get("set-cookie")?.split(";")[0] ?? "";
+    const jar = cookieJar();
+    jar.keep(await app.request("/auth/signout", formBody({})));
     const answers: Response[] = [];
     for (let i = 0; i < times; i++) {
-      const res = await app.request("/auth/signout/site-data", { method: "POST", headers: { cookie } });
-      cookie = res.headers.get("set-cookie")?.split(";")[0] ?? cookie;
-      answers.push(res);
+      answers.push(jar.keep(await app.request("/auth/signout/site-data", { method: "POST", headers: { cookie: jar.header() } })));
     }
     return answers;
   }
 
-  it("clears the site's storage once, on the first site-data post after a sign-out that owes it", async () => {
+  const answerOf = (res: Response) => [res.status, res.headers.get("clear-site-data"), owedCookies(res)];
+
+  it("clears the site's storage once after a sign-out that destroyed the session, expiring the mark it carried", async () => {
     const answers = await siteDataAfterSignout({ ...fakeAuthWebOptions(), signoutClearsSiteData: true }, 2);
-    expect(answers.map((res) => [res.status, res.headers.get("clear-site-data")])).toEqual([
-      [204, '"storage"'],
-      [204, null],
+    expect(answers.map(answerOf)).toEqual([
+      [204, '"storage"', [OWED_CLEARED]],
+      [204, null, []],
+    ]);
+  });
+
+  it("with keepVisitorData, clears the site's storage once, on the first site-data post after a sign-out that owes it, touching no mark", async () => {
+    const answers = await siteDataAfterSignout({ ...fakeAuthWebOptions(), signoutClearsSiteData: true, ...KEEP_VISITOR_DATA }, 2);
+    expect(answers.map(answerOf)).toEqual([
+      [204, '"storage"', []],
+      [204, null, []],
     ]);
   });
 
   it("clears no storage on a site-data post after a sign-out that owes none", async () => {
     const answers = await siteDataAfterSignout(fakeAuthWebOptions(), 1);
-    expect(answers.map((res) => [res.status, res.headers.get("clear-site-data")])).toEqual([[204, null]]);
+    expect(answers.map(answerOf)).toEqual([[204, null, []]]);
   });
 
   it("clears no storage on a site-data post from a session that never signed out", async () => {
@@ -912,12 +1231,22 @@ describe("createSignoutActions", () => {
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout/site-data", createSignoutActions(options).signoutSiteData);
 
     const res = await app.request("/auth/signout/site-data", { method: "POST" });
-    expect([res.status, res.headers.get("clear-site-data")]).toEqual([204, null]);
+    expect(answerOf(res)).toEqual([204, null, []]);
   });
 
-  it("clears no storage on a site-data post after a sign-in that followed the sign-out", async () => {
+  it("clears the site's storage on a site-data post carrying the mark on a session that never held the key", async () => {
+    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
+    const app = mounted(actionApp(), "POST", "/auth/signout/site-data", createSignoutActions(options).signoutSiteData);
+
+    const res = await app.request("/auth/signout/site-data", { method: "POST", headers: { cookie: "__Host-auth-site-data-owed=MQ==" } });
+    expect(answerOf(res)).toEqual([204, '"storage"', [OWED_CLEARED]]);
+  });
+
+  /** Signs out under `signoutClearsSiteData`, signs in again and posts the site-data clear, carrying every cookie as a browser would. */
+  async function signinAfterSignout(signOutFirst: boolean, sessions: AuthSessionStore = actionSessions) {
     const options = {
       ...optionsWith({
+        sessions,
         signin: fakeAuthSigninFlow({
           complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" } }),
         }),
@@ -930,18 +1259,27 @@ describe("createSignoutActions", () => {
     mapHandler(app, "POST", "/auth/signin", createSigninActions(options).signinSubmit);
     mapHandler(app, "POST", "/auth/verify", createVerifyActions(options).submit);
 
-    let cookie = "";
-    const send = async (path: string, init: RequestInit): Promise<Response> => {
-      const res = await app.request(path, { ...init, headers: { ...init.headers, cookie } });
-      cookie = res.headers.get("set-cookie")?.split(";")[0] ?? cookie;
-      return res;
-    };
-    await send("/auth/signout", formBody({}));
+    const jar = cookieJar();
+    const send = async (path: string, init: RequestInit): Promise<Response> =>
+      jar.keep(await app.request(path, { ...init, headers: { ...init.headers, cookie: jar.header() } }));
+    if (signOutFirst) await send("/auth/signout", formBody({}));
     await send("/auth/signin", formBody({ email: "grace@example.com" }));
     const verified = await send("/auth/verify", formBody({ code: "123456" }));
-    const res = await send("/auth/signout/site-data", { method: "POST" });
+    const siteData = await send("/auth/signout/site-data", { method: "POST" });
+    return { verified: [verified.status, verified.headers.get("location"), owedCookies(verified)], siteData: answerOf(siteData) };
+  }
 
-    expect([verified.headers.get("location"), res.status, res.headers.get("clear-site-data")]).toEqual(["/account/passkeys", 204, null]);
+  it("expires the mark on a sign-in completed while carrying it, so a site-data post after it clears no storage", async () => {
+    expect(await signinAfterSignout(true)).toEqual({ verified: [303, "/account/passkeys", [OWED_CLEARED]], siteData: [204, null, []] });
+  });
+
+  it("keeps the mark through a sign-in the session store failed to establish, so the site-data post after it still clears storage", async () => {
+    const sessions = { ...fakeAuthSessionStore([]), create: async () => err(new AuthStoreError("unavailable", "sessions.create")) };
+    expect(await signinAfterSignout(true, sessions)).toEqual({ verified: [503, null, []], siteData: [204, '"storage"', [OWED_CLEARED]] });
+  });
+
+  it("queues no mark expiry on a sign-in completed without the mark", async () => {
+    expect(await signinAfterSignout(false)).toEqual({ verified: [303, "/account/passkeys", []], siteData: [204, null, []] });
   });
 });
 
@@ -949,6 +1287,7 @@ describe("authCsrfRefusal", () => {
   const CSRF_SECRET = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
   const MINTED_AT = 1_790_000_000_000;
   const MINUTE = 60_000;
+  const DAY = 24 * 60 * MINUTE;
   const AUTH = authPaths(authRoutes("/auth"));
 
   let restore: (() => void)[] = [];
@@ -957,11 +1296,17 @@ describe("authCsrfRefusal", () => {
     restore = [];
   });
 
-  /** An app whose sign-out and sign-in POSTs sit behind `csrfProtection`, recording every handler that ran. */
-  function guarded(base: string, options: Partial<CsrfProtectionOptions> = {}) {
+  /** An app whose sign-out and sign-in POSTs sit behind a CSRF policy, recording every handler that ran. */
+  function guarded(base: string, options: Partial<CsrfPolicyOptions> = {}, onRefuse?: RefuseHook) {
     const ran: string[] = [];
     const app = new Forge();
-    app.use("*", csrfProtection({ ring: () => importKeyRing([CSRF_SECRET]), subject: false, ...options }));
+    if (onRefuse) {
+      app.use("*", (context, next) => {
+        refuseHookCtx.set(context, onRefuse);
+        return next();
+      });
+    }
+    app.use("*", csrfMintStage({ ring: () => importKeyRing([CSRF_SECRET]), subject: false, ...options }));
     for (const path of [`${base}/signout`, `${base}/signin`]) {
       mapHandler(app, "ANY", path, (c) => {
         ran.push(`${c.method} ${path}`);
@@ -971,8 +1316,8 @@ describe("authCsrfRefusal", () => {
     return { app, ran };
   }
 
-  function refusing(base = "/auth", options: Partial<CsrfProtectionOptions> = {}) {
-    return guarded(base, { onForbidden: authCsrfRefusal(authPaths(authRoutes(base))), ...options });
+  function refusing(base = "/auth", options: Partial<CsrfPolicyOptions> = {}) {
+    return guarded(base, options, authCsrfRefusal(authPaths(authRoutes(base))));
   }
 
   /** A token for `path` minted at `MINTED_AT`, with the clock then moved `ageMs` past it. */
@@ -992,9 +1337,9 @@ describe("authCsrfRefusal", () => {
     return { status: res.status, location: res.headers.get("location"), hxRedirect: res.headers.get("hx-redirect"), body: await res.text() };
   }
 
-  it("sends a sign-out whose token aged 61 minutes to the confirm page without running the sign-out", async () => {
+  it("sends a sign-out whose token aged a minute past a day to the confirm page without running the sign-out", async () => {
     const { app, ran } = refusing();
-    const token = await agedToken("/auth/signout", 61 * MINUTE);
+    const token = await agedToken("/auth/signout", DAY + MINUTE);
 
     const res = await app.request("/auth/signout", post({ _csrf: token }));
     expect({ answer: await answerOf(res), ran }).toEqual({
@@ -1003,9 +1348,9 @@ describe("authCsrfRefusal", () => {
     });
   });
 
-  it("admits a sign-out whose token aged 59 minutes to the sign-out handler", async () => {
+  it("admits a sign-out whose token aged a minute short of a day to the sign-out handler", async () => {
     const { app, ran } = refusing();
-    const token = await agedToken("/auth/signout", 59 * MINUTE);
+    const token = await agedToken("/auth/signout", DAY - MINUTE);
 
     const res = await app.request("/auth/signout", post({ _csrf: token }));
     expect({ status: res.status, ran }).toEqual({ status: 200, ran: ["POST /auth/signout"] });
@@ -1013,7 +1358,7 @@ describe("authCsrfRefusal", () => {
 
   it("answers an htmx sign-out refused for its token with a 204 carrying HX-Redirect to the confirm page", async () => {
     const { app, ran } = refusing();
-    const token = await agedToken("/auth/signout", 61 * MINUTE);
+    const token = await agedToken("/auth/signout", DAY + MINUTE);
 
     const res = await app.request("/auth/signout", post({ _csrf: token }, HX_REQUEST));
     expect({ answer: await answerOf(res), ran }).toEqual({
@@ -1039,7 +1384,7 @@ describe("authCsrfRefusal", () => {
   });
 
   it("answers a refusal on any other path exactly as the guard's own default does", async () => {
-    const token = await agedToken("/auth/signin", 61 * MINUTE);
+    const token = await agedToken("/auth/signin", DAY + MINUTE);
     const recovering = refusing();
     const plain = guarded("/auth");
 
@@ -1065,11 +1410,35 @@ describe("authCsrfRefusal", () => {
       "unknown-key": true,
     };
 
-    const answers = Object.keys(reasons).map((reason) => {
-      const res = refusal(createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })), reason as CsrfFailure);
-      return { reason, status: res.status, location: res.headers.get("location") };
-    });
+    const answers = await Promise.all(
+      (Object.keys(reasons) as CsrfFailure[]).map(async (reason) => {
+        const res = await refusal(createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })), {
+          guard: "csrf",
+          status: 403,
+          reason,
+        });
+        return { reason, status: res?.status, location: res?.headers.get("location") };
+      }),
+    );
     expect(answers).toEqual(Object.keys(reasons).map((reason) => ({ reason, status: 303, location: "/auth/signout" })));
+  });
+
+  it("declines every other refusal of a sign-out POST, leaving it to the next hook out", async () => {
+    const refusal = authCsrfRefusal(AUTH);
+    const refusals: Refusal[] = [
+      { guard: "csrf", status: 403, reason: "unbound-subject" },
+      { guard: "csrf", status: 413, reason: "too-large" },
+      { guard: "csrf", status: 400, reason: "unreadable-body" },
+      { guard: "origin", status: 403, reason: "cross-site" },
+      { guard: "rate-limit", status: 429 },
+      { guard: "rate-limit", status: 503, reason: "binding-failed" },
+      { guard: "admin", status: 403 },
+    ];
+
+    const answers = await Promise.all(
+      refusals.map(async (refused) => refusal(createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })), refused)),
+    );
+    expect(answers).toEqual(refusals.map(() => undefined));
   });
 
   it("refuses at 403 a DELETE to the sign-out path that the guard refused", async () => {
@@ -1081,18 +1450,18 @@ describe("authCsrfRefusal", () => {
 
   it("follows the auth routes to a /login mount point and no longer recognises /auth/signout", async () => {
     const login = refusing("/login");
-    const loginToken = await agedToken("/login/signout", 61 * MINUTE);
+    const loginToken = await agedToken("/login/signout", DAY + MINUTE);
     const atLogin = await login.app.request("/login/signout", post({ _csrf: loginToken }));
 
-    const authAnswer = authCsrfRefusal(authPaths(authRoutes("/login")))(
+    const authAnswer = await authCsrfRefusal(authPaths(authRoutes("/login")))(
       createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })),
-      "expired",
+      { guard: "csrf", status: 403, reason: "expired" },
     );
 
-    expect({
-      atLogin: { status: atLogin.status, location: atLogin.headers.get("location"), ran: login.ran },
-      atAuth: { status: authAnswer.status, body: await authAnswer.text() },
-    }).toEqual({ atLogin: { status: 303, location: "/login/signout", ran: [] }, atAuth: { status: 403, body: "Forbidden" } });
+    expect({ atLogin: { status: atLogin.status, location: atLogin.headers.get("location"), ran: login.ran }, atAuth: authAnswer }).toEqual({
+      atLogin: { status: 303, location: "/login/signout", ran: [] },
+      atAuth: undefined,
+    });
   });
 });
 
@@ -2211,15 +2580,17 @@ describe("createAdminUserActions — resetFactors", () => {
     expect({ status: res.status, body: await res.text(), resets }).toEqual({ status: 403, body: "Forbidden", resets: [] });
   });
 
-  it("refuses a non-administrator through the `onForbidden` given only to `createAuthGuards`, without resetting anything", async () => {
-    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+  it("refuses a non-administrator through the `onRefuse` given only to `createAuthGuards`, without resetting anything", async () => {
+    const refusals: Refusal[] = [];
+    const onRefuse = (c: AppContext, refusal: Refusal) => (refusals.push(refusal), new Response(`admin only: ${c.url.pathname}`, { status: 403 }));
     const seed = { userId: "u9", admin: true };
-    const { resets, app } = resetApp(seed, "changed", demotedBehindAdminChain(actionApp(seed), onForbidden));
+    const { resets, app } = resetApp(seed, "changed", demotedBehindAdminChain(actionApp(seed), onRefuse));
     const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
-    expect({ status: res.status, body: await res.text(), resets }).toEqual({
+    expect({ status: res.status, body: await res.text(), resets, refusals }).toEqual({
       status: 403,
       body: "admin only: /admin/users/u2/factors/reset",
       resets: [],
+      refusals: [{ guard: "admin", status: 403 }],
     });
   });
 
@@ -2262,7 +2633,9 @@ describe("createEmailChangeActions", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await res.text();
-    expect(html).toContain("Open the link we sent to current@example.com.");
+    expect(textOf(html, "div", 'data-slot="alert-description"')).toBe(
+      "Open the link we sent to current@example.com. Until then you keep signing in with grace@example.com.",
+    );
     expect(html).not.toContain("sent to new@example.com");
   });
 
@@ -2545,7 +2918,7 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     expect({ status: res.status, body: await res.text(), writes }).toEqual({ status: 403, body: "Forbidden", writes: 0 });
   });
 
-  it("answers a non-administrator's PATCH through the `onForbidden` given only to `createAuthGuards`, writing nothing", async () => {
+  it("answers a non-administrator's PATCH through the `onRefuse` given only to `createAuthGuards`, writing nothing", async () => {
     let writes = 0;
     const admin = fakeAdminUserStore([member], {
       setAdmin: async () => {
@@ -2553,9 +2926,9 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
         return ok("changed" as const);
       },
     });
-    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const onRefuse = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
     const options = optionsWith({ users: fakeAuthUserStore([member]), admin });
-    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onForbidden);
+    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onRefuse);
     const app = mounted(guarded, "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
@@ -2580,7 +2953,7 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     expect({ status: res.status, body: await res.text(), removals }).toEqual({ status: 403, body: "Forbidden", removals: 0 });
   });
 
-  it("answers a non-administrator's DELETE through what an async `onForbidden` given only to `createAuthGuards` resolves to, deleting nothing", async () => {
+  it("answers a non-administrator's DELETE through what an async `onRefuse` given only to `createAuthGuards` resolves to, deleting nothing", async () => {
     const target = fakeAuthUser({ id: "u3", email: "target@example.com" });
     let removals = 0;
     const admin = fakeAdminUserStore([member, target], {
@@ -2589,9 +2962,9 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
         return ok("changed" as const);
       },
     });
-    const onForbidden = async (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const onRefuse = async (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
     const options = optionsWith({ users: fakeAuthUserStore([member, target]), admin });
-    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onForbidden);
+    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onRefuse);
     const app = mounted(guarded, "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
 
     const res = await app.request("/admin/users/u3", { method: "DELETE" });
@@ -2872,7 +3245,7 @@ describe("the Turnstile guard on the anonymous forms", () => {
     });
 
     describe("with forge's defaults", () => {
-      const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+      const TESTING_SECRET = TURNSTILE_TEST_KEYS.secret.pass;
       // Siteverify's fixed answer under a testing secret names its own hostname and carries no action.
       const TESTING_ANSWER = { success: true, hostname: "example.com" };
 
@@ -2924,6 +3297,22 @@ describe("the Turnstile guard on the anonymous forms", () => {
 
       const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "solved" }));
       expect({ status: res.status, sent }).toEqual({ status: 422, sent: [] });
+    });
+
+    it("answers a sign-in over the auth form cap at 413 behind a 1 MiB parse, asking siteverify nothing and starting no sign-in", async () => {
+      const sent = siteverify(solvedFor("auth-signin"));
+      const requested: string[] = [];
+      const { app, pending } = sessionApp("/auth/signin", createSigninActions(guarded({ signin: recordingSignin(requested) })).signinSubmit);
+      behindRaisedPolicy(app);
+
+      const res = await app.request("/auth/signin", sizedForm({ email: "ada@example.com", "cf-turnstile-response": "solved" }, AUTH_FORM_CAP + 1));
+      expect({ status: res.status, error: textOf(await res.text(), "p", 'data-slot="field-error"'), requested, sent, pending }).toEqual({
+        status: 413,
+        error: TOO_LARGE_COPY,
+        requested: [],
+        sent: [],
+        pending: [null],
+      });
     });
   });
 
@@ -3134,7 +3523,7 @@ describe("the Turnstile guard on the anonymous forms", () => {
           location: res.headers.get("location"),
           calls,
           refusal: textOf(html, "div", 'data-slot="alert-description"'),
-          resentNotice: html.includes('data-ref="verify-resent"'),
+          resentNotice: tagOf(html, 'data-ref="verify-resent"'),
         };
       };
       siteverify(solvedFor("auth-resend"));
@@ -3143,8 +3532,8 @@ describe("the Turnstile guard on the anonymous forms", () => {
       const refused = await resend({});
 
       expect({ admitted, refused }).toEqual({
-        admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["request:grace@example.com"], refusal: "", resentNotice: false },
-        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: false },
+        admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["request:grace@example.com"], refusal: "", resentNotice: "" },
+        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: "" },
       });
     });
 
@@ -3177,6 +3566,60 @@ describe("the Turnstile guard on the anonymous forms", () => {
       });
     });
 
+    it("answers a resend body over the auth form cap at 413, issuing no code and asking siteverify nothing", async () => {
+      const sent = siteverify(solvedFor("auth-resend"));
+      const calls: string[] = [];
+      const options = guarded({ signin: recordingFlow(calls) });
+      const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
+
+      const res = await app.request(
+        "/auth/verify/resend",
+        formBody({ "cf-turnstile-response": "solved", padding: "x".repeat(AUTH_FORM_MAX_BYTES) }),
+      );
+      const refusal = textOf(await res.text(), "div", 'data-slot="alert-description"');
+      expect({ status: res.status, location: res.headers.get("location"), refusal, calls, sent }).toEqual({
+        status: 413,
+        location: null,
+        refusal: "That form was too large to read. Please try again.",
+        calls: [],
+        sent: [],
+      });
+    });
+
+    it("answers a resend over the auth form cap at 413 behind a 1 MiB parse, issuing no code and asking siteverify nothing", async () => {
+      const sent = siteverify(solvedFor("auth-resend"));
+      const calls: string[] = [];
+      const app = behindRaisedPolicy(actionApp({ pendingEmail: "grace@example.com" }));
+      mounted(app, "POST", "/auth/verify/resend", createVerifyActions(guarded({ signin: recordingFlow(calls) })).resend);
+
+      const res = await app.request("/auth/verify/resend", sizedForm({ "cf-turnstile-response": "solved" }, AUTH_FORM_CAP + 1));
+      const refusal = textOf(await res.text(), "div", 'data-slot="alert-description"');
+      expect({ status: res.status, location: res.headers.get("location"), refusal, calls, sent }).toEqual({
+        status: 413,
+        location: null,
+        refusal: TOO_LARGE_COPY,
+        calls: [],
+        sent: [],
+      });
+    });
+
+    it("answers a step-up resend over the auth form cap at 413, asking for no step-up code and asking siteverify nothing", async () => {
+      const sent = siteverify(solvedFor("auth-resend"));
+      const calls: string[] = [];
+      const options = guarded({ ...holdingBoth, signin: recordingFlow(calls) });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
+
+      const res = await app.request("/auth/verify/resend", sizedForm({ "cf-turnstile-response": "solved" }, AUTH_FORM_CAP + 1));
+      const refusal = textOf(await res.text(), "div", 'data-slot="alert-description"');
+      expect({ status: res.status, location: res.headers.get("location"), refusal, calls, sent }).toEqual({
+        status: 413,
+        location: null,
+        refusal: TOO_LARGE_COPY,
+        calls: [],
+        sent: [],
+      });
+    });
+
     it("answers a refused step-up resend with a 422 re-render, asking for no step-up code", async () => {
       siteverify(solvedFor("auth-resend"));
       const calls: string[] = [];
@@ -3190,12 +3633,12 @@ describe("the Turnstile guard on the anonymous forms", () => {
         location: res.headers.get("location"),
         calls: [...calls],
         refusal: textOf(html, "div", 'data-slot="alert-description"'),
-        resentNotice: html.includes('data-ref="verify-resent"'),
+        resentNotice: tagOf(html, 'data-ref="verify-resent"'),
       };
       const admittedRes = await app.request("/auth/verify/resend", formBody({ "cf-turnstile-response": "solved" }));
 
       expect({ refused, admitted: { status: admittedRes.status, location: admittedRes.headers.get("location"), calls } }).toEqual({
-        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: false },
+        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: "" },
         admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["requestStepUp"] },
       });
     });
@@ -3270,7 +3713,7 @@ describe("the auth-session row each action acts on", () => {
     const options = fakeAuthWebOptions({ resolveServices: () => resolved, now: () => CLOCK });
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    app.use("*", resolveAuth({ sessions: () => sessions, now: () => CLOCK }));
+    app.use("*", resolveAuth({ services: fakeAuthServicesResolver({ sessions }), now: () => CLOCK }));
     app.use("*", (context, next) => {
       csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
       csrfFieldCtx.set(context, "_csrf");
@@ -3406,7 +3849,9 @@ describe("the auth-session row each action acts on", () => {
   describe("signing out", () => {
     const signout = (options: AuthWebOptions) => createSignoutActions(options).signout;
 
-    it("deletes the row and rotates the session, so the cookie held before it, replayed, resolves anonymous", async () => {
+    const keeping = (options: AuthWebOptions) => createSignoutActions({ ...options, signOut: { keepVisitorData: true } }).signout;
+
+    it("deletes the row and clears the session cookie, so the cookie held before it, replayed, resolves anonymous", async () => {
       const { sessions, rows } = rowStore();
       const app = rowApp(sessions, {}, "POST", "/auth/signout", signout);
       const held = pairOf(await app.request("/seed", { method: "POST" }));
@@ -3419,25 +3864,57 @@ describe("the auth-session row each action acts on", () => {
         status: res.status,
         location: res.headers.get("location"),
         rows: rows.size,
-        rotated: (await stored(pairOf(res))).id !== (await stored(held)).id,
+        cookie: res.headers.getSetCookie().filter((header) => header.startsWith("__session=")),
         replayed: await whoami(app, held),
-      }).toEqual({ before: "u9", status: 303, location: "/auth/signin", rows: 0, rotated: true, replayed: "anonymous" });
-    });
-
-    it("answers 503 when the row cannot be deleted, keeping the row and the session as they were so the visitor can retry", async () => {
-      const { sessions, rows } = rowStore(["remove"]);
-      const app = rowApp(sessions, {}, "POST", "/auth/signout", signout);
-      const held = pairOf(await app.request("/seed", { method: "POST" }));
-
-      const res = await app.request("/auth/signout", { method: "POST", headers: { cookie: held ?? "" } });
-
-      expect({ answer: await answerOf(res), cookie: pairOf(res), rows: rows.size, still: await whoami(app, held) }).toEqual({
-        answer: { status: 503, body: "Service Unavailable" },
-        cookie: null,
-        rows: 1,
-        still: "u9",
+      }).toEqual({
+        before: "u9",
+        status: 303,
+        location: "/auth/signin",
+        rows: 0,
+        cookie: ["__session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure"],
+        replayed: "anonymous",
       });
     });
+
+    it("with keepVisitorData, deletes the row and rotates the session, so the cookie held before it, replayed, resolves anonymous", async () => {
+      const { sessions, rows } = rowStore();
+      const app = rowApp(sessions, {}, "POST", "/auth/signout", keeping);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      const before = await whoami(app, held);
+
+      const res = await app.request("/auth/signout", { method: "POST", headers: { cookie: held ?? "" } });
+      const after = await stored(pairOf(res));
+
+      expect({
+        before,
+        status: res.status,
+        location: res.headers.get("location"),
+        rows: rows.size,
+        rotated: after.id !== (await stored(held)).id,
+        token: after.data[AUTH_SESSION_TOKEN_KEY],
+        replayed: await whoami(app, held),
+      }).toEqual({ before: "u9", status: 303, location: "/auth/signin", rows: 0, rotated: true, token: undefined, replayed: "anonymous" });
+    });
+
+    for (const [mode, action] of [
+      ["", signout],
+      [" with keepVisitorData", keeping],
+    ] as const) {
+      it(`answers 503 when the row cannot be deleted${mode}, keeping the row and the session as they were so the visitor can retry`, async () => {
+        const { sessions, rows } = rowStore(["remove"]);
+        const app = rowApp(sessions, {}, "POST", "/auth/signout", action);
+        const held = pairOf(await app.request("/seed", { method: "POST" }));
+
+        const res = await app.request("/auth/signout", { method: "POST", headers: { cookie: held ?? "" } });
+
+        expect({ answer: await answerOf(res), cookie: pairOf(res), rows: rows.size, still: await whoami(app, held) }).toEqual({
+          answer: { status: 503, body: "Service Unavailable" },
+          cookie: null,
+          rows: 1,
+          still: "u9",
+        });
+      });
+    }
   });
 
   describe("removing a factor signs every other session out", () => {
@@ -3801,7 +4278,7 @@ describe("the auth-session row each action acts on", () => {
 
   describe("a single-factor re-proof through the resend action", () => {
     /** A real sign-in flow over an emailed-code primary on a settable clock, behind `resolveAuth`, with a cookie jar and one guarded mutation. */
-    async function reproofScene() {
+    async function reproofScene(guessWindowMs?: number) {
       let clock = CLOCK;
       const now = () => clock;
       const sent: AuthMessage[] = [];
@@ -3838,7 +4315,14 @@ describe("the auth-session row each action acts on", () => {
       };
       const keys = await importAuthKeyRing(["17bd3b2b6521b7cfde60fad521de43d2860704680c51641152e6e05aa786d162"]);
       const notifier = { send: async (message: AuthMessage) => (sent.push(message), ok()) };
-      const emailOtp = createEmailOtpFactor({ keys, state, nonces, notifier, address: async () => ok(signedIn.email) });
+      const emailOtp = createEmailOtpFactor({
+        keys,
+        state,
+        nonces,
+        notifier,
+        address: async () => ok(signedIn.email),
+        ...(guessWindowMs === undefined ? {} : { guessWindowMs }),
+      });
       const users = fakeAuthUserStore([signedIn]);
       const factors = createFactorRegistry(fakeFactorStore([]), { primary: emailOtp });
       const sessions = fakeAuthSessionStore([signedIn]);
@@ -3848,7 +4332,7 @@ describe("the auth-session row each action acts on", () => {
 
       const app = new Forge();
       app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-      app.use("*", resolveAuth({ sessions: () => sessions, now }));
+      app.use("*", resolveAuth({ services: fakeAuthServicesResolver({ sessions }), now }));
       app.use("*", (context, next) => {
         csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
         csrfFieldCtx.set(context, "_csrf");
@@ -3945,6 +4429,33 @@ describe("the auth-session row each action acts on", () => {
         otherAfter: 303,
       });
     });
+
+    const spentWindows = [
+      { guessWindowMs: undefined, window: "the default fifteen-minute guess window", retryAfter: "900" },
+      { guessWindowMs: 90_001, window: "a guess window one millisecond past 90 seconds, rounded up", retryAfter: "91" },
+    ] as const;
+
+    for (const { guessWindowMs, window, retryAfter } of spentWindows) {
+      it(`answers the guess past a spent budget at 429 with a Retry-After of ${window}, not the minute's resend cooldown`, async () => {
+        const { send, sent } = await reproofScene(guessWindowMs);
+        await send("/auth/verify/resend");
+        const code = lastCode(sent);
+        const wrong = code === "000000" ? "111111" : "000000";
+        const answers = [];
+        for (const presented of [...Array.from({ length: AUTH_OTP_MAX_ATTEMPTS }, () => wrong), code]) {
+          const res = await send("/auth/verify", {
+            method: "POST",
+            body: new URLSearchParams({ code: presented }).toString(),
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+          });
+          answers.push({ status: res.status, retryAfter: res.headers.get("retry-after") });
+        }
+        expect(answers).toEqual([
+          ...Array.from({ length: AUTH_OTP_MAX_ATTEMPTS }, () => ({ status: 422, retryAfter: null })),
+          { status: 429, retryAfter },
+        ]);
+      });
+    }
 
     it("mails again once the default minute's cooldown has run, and not the millisecond before", async () => {
       const { send, sent, advance } = await reproofScene();
@@ -4369,5 +4880,422 @@ describe("the verify POST's onward redirect after a step-up by code", () => {
     const { reads, options } = steppingUp(async () => ok(10));
     const answer = await answerTo(options);
     expect({ status: answer.status, location: answer.location, reads }).toEqual({ status: 303, location: "/account/passkeys", reads: ["u9"] });
+  });
+});
+
+const AUTH_FORM_CAP = 100 * 1024;
+const RAISED_POLICY_CAP = 1024 * 1024;
+const TOO_LARGE_COPY = "That form was too large to read. Please try again.";
+const URLENCODED = { "content-type": "application/x-www-form-urlencoded" };
+
+/** `fields` urlencoded and padded to exactly `bytes` in the CSRF field, which every auth action drops before it validates. */
+function formOfBytes(fields: Record<string, string>, bytes: number): string {
+  const prefix = `${new URLSearchParams(fields).toString()}&_csrf=`;
+  return `${prefix}${"x".repeat(bytes - prefix.length)}`;
+}
+
+function sizedForm(fields: Record<string, string>, bytes: number, method = "POST"): RequestInit {
+  return { method, body: formOfBytes(fields, bytes), headers: URLENCODED };
+}
+
+function declaredForm(fields: Record<string, string>, bytes: number): RequestInit {
+  return { method: "POST", body: formOfBytes(fields, bytes), headers: { ...URLENCODED, "content-length": String(bytes) } };
+}
+
+function chunkedForm(fields: Record<string, string>, bytes: number): RequestInit {
+  const encoded = new TextEncoder().encode(formOfBytes(fields, bytes));
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let at = 0; at < encoded.length; at += 16_384) controller.enqueue(encoded.slice(at, at + 16_384));
+      controller.close();
+    },
+  });
+  return { method: "POST", body, headers: URLENCODED, duplex: "half" } as RequestInit;
+}
+
+function multipartForm(fields: Record<string, string>, csrfPadding = 0): RequestInit {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.append(name, value);
+  if (csrfPadding > 0) form.append("_csrf", "x".repeat(csrfPadding));
+  return { method: "POST", body: form };
+}
+
+/** Parses the body at 1 MiB ahead of the action, as the CSRF policy does for an app that raised its cap for one large route. */
+function behindRaisedPolicy(app: Forge): Forge {
+  app.use("*", async (context, next) => {
+    await parseFormData(context, { maxBytes: RAISED_POLICY_CAP });
+    return next();
+  });
+  return app;
+}
+
+const firstParse = (app: Forge): Forge => app;
+
+describe("every auth action that reads a form holds it to 100 KiB, whatever an earlier parse admitted", () => {
+  const NOW = 10_000_000;
+  const fieldError = (html: string) => textOf(html, "p", 'data-slot="field-error"');
+  const confirmedTotp: AuthFactor = {
+    id: "f-totp-app",
+    userId: "u9",
+    kind: "totp-app",
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  /** A TOTP offering recording every enrolment and replacement it is asked to complete; `enrolled` holds a confirmed app to replace. */
+  function totpOffering(calls: string[], enrolled: boolean) {
+    const totp = {
+      ...fakeFactorService("totp-app"),
+      beginEnrolment: async () => ok({ kind: "totp-app" as const, expiresAt: NOW, options: { secret: "JBSWY3DP", uri: "otpauth://totp/x" } }),
+      completeEnrolment: async (userId: string, code: string) => {
+        calls.push(`enrol:${userId}:${code}`);
+        return err("unrecognised" as const);
+      },
+      beginReplacement: async () => ok({ kind: "totp-app" as const, expiresAt: NOW, options: { secret: "KRSXG5CT", uri: "otpauth://totp/r" } }),
+      completeReplacement: async (userId: string, code: string) => {
+        calls.push(`replace:${userId}:${code}`);
+        return ok(confirmedTotp);
+      },
+    } as unknown as TotpReplaceableFactorService;
+    const store = fakeFactorStore(enrolled ? ["totp-app"] : []);
+    return {
+      enrolments: store,
+      factors: createFactorRegistry(store, { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([totp], ["totp-app"]) }),
+    };
+  }
+
+  function freshlySteppedUp(app: Forge, options: AuthWebOptions): Forge {
+    app.use(
+      "*",
+      requireFreshStepUp({
+        factors: () => ({ resolve: async () => ok({ status: "satisfied" as const }) }),
+        enrolmentPaths: authEnrolmentPaths(options.paths.auth),
+        stepUpPath: options.paths.auth.verify.show(),
+        settledPath: "/account",
+        now: () => NOW,
+      }),
+    );
+    return app;
+  }
+
+  interface CappedAction {
+    readonly action: string;
+    readonly method: "POST" | "PATCH";
+    readonly path: string;
+    /** A submission the action acts on when it is small enough to read. */
+    readonly fields: Record<string, string>;
+    /** What acting on `fields` records. */
+    readonly acted: readonly string[];
+    /** The copy the re-rendered page shows for a body over the cap. */
+    readonly refusal: string;
+    readonly read: (html: string) => string;
+    readonly build: (calls: string[], ahead: (app: Forge) => Forge) => Forge;
+  }
+
+  const actions: readonly CappedAction[] = [
+    {
+      action: "sign-in",
+      method: "POST",
+      path: "/auth/signin",
+      fields: { email: "ada@example.com" },
+      acted: ["signin:ada@example.com"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const signin = fakeAuthSigninFlow({ request: (email, at) => (calls.push(`signin:${email}`), { kind: "email-otp", expiresAt: at }) });
+        return mounted(ahead(actionApp()), "POST", "/auth/signin", createSigninActions(optionsWith({ signin })).signinSubmit);
+      },
+    },
+    {
+      action: "sign-up",
+      method: "POST",
+      path: "/auth/signup",
+      fields: { email: "ada@example.com" },
+      acted: ["signup:ada@example.com"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const signup = fakeAuthSignupFlow({ request: (email, at) => (calls.push(`signup:${email}`), { kind: "email-otp", expiresAt: at }) });
+        return mounted(ahead(actionApp()), "POST", "/auth/signup", createSignupActions(optionsWith({ signup })).signupSubmit);
+      },
+    },
+    {
+      action: "the verify code",
+      method: "POST",
+      path: "/auth/verify",
+      fields: { code: "123456" },
+      acted: ["complete"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const signin = fakeAuthSigninFlow({ complete: async () => (calls.push("complete"), err("unrecognised" as const)) });
+        const app = ahead(actionApp({ pendingEmail: "grace@example.com" }));
+        return mounted(app, "POST", "/auth/verify", createVerifyActions(optionsWith({ signin })).submit);
+      },
+    },
+    {
+      action: "a passkey rename",
+      method: "PATCH",
+      path: "/account/passkeys/c1",
+      fields: { label: "Phone" },
+      acted: ["relabel:c1:Phone"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const credentials: CredentialStore = {
+          ...fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+          relabel: async (id, _userId, label) => (calls.push(`relabel:${id}:${label}`), ok(true)),
+        };
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials, factors: fakeFactorRegistry(["passkey"]) });
+        return mounted(ahead(actionApp({ userId: "u9" })), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(options).passkeyRename);
+      },
+    },
+    {
+      action: "the TOTP enrolment a sign-in owes",
+      method: "POST",
+      path: "/auth/enrol/totp",
+      fields: { code: "123456" },
+      acted: ["enrol:u9:123456"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), ...totpOffering(calls, false) });
+        return mounted(ahead(actionApp({ userId: "u9" })), "POST", "/auth/enrol/totp", createTotpEnrolActions(options).totpEnrol);
+      },
+    },
+    {
+      action: "a TOTP enrolment from the account pages",
+      method: "POST",
+      path: "/account/totp",
+      fields: { code: "123456" },
+      acted: ["enrol:u9:123456"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), ...totpOffering(calls, false) });
+        return mounted(ahead(actionApp({ userId: "u9" })), "POST", "/account/totp", createTotpManageActions(options).totpEnrol);
+      },
+    },
+    {
+      action: "a TOTP replacement",
+      method: "POST",
+      path: "/account/totp/replace",
+      fields: { code: "123456" },
+      acted: ["replace:u9:123456"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const services = fakeAuthServices({ sessions: actionSessions, users: fakeAuthUserStore([signedIn]), ...totpOffering(calls, true) });
+        const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+        const app = freshlySteppedUp(ahead(actionApp({ userId: "u9", stepUpAt: NOW - 1 })), options);
+        return mounted(app, "POST", "/account/totp/replace", createTotpManageActions(options).totpReplaceConfirm);
+      },
+    },
+    {
+      action: "a recovery-code confirmation",
+      method: "POST",
+      path: "/account/recovery-codes/confirm",
+      fields: { code: "AAAA-BBBB-CCCC-DDDD-EEEE-FFFF" },
+      acted: ["complete:u9:AAAA-BBBB-CCCC-DDDD-EEEE-FFFF"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const recovery = {
+          ...fakeRecoveryCodeService(),
+          completeEnrolment: async (userId: string, code: string) => (calls.push(`complete:${userId}:${code}`), err("unrecognised" as const)),
+        };
+        const store = fakeFactorStore(["totp-app"]);
+        const services = fakeAuthServices({
+          users: fakeAuthUserStore([signedIn]),
+          factors: createFactorRegistry(store, {
+            primary: fakeFactorService("email-otp"),
+            second: fakeSecondFactorOffering([fakeFactorService("totp-app"), fakeFactorService("passkey")], [], recovery),
+          }),
+          enrolments: store,
+        });
+        const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+        const app = freshlySteppedUp(ahead(actionApp({ userId: "u9", stepUpAt: NOW - 1 })), options);
+        return mounted(app, "POST", "/account/recovery-codes/confirm", createRecoveryCodeActions(options).recoveryCodesConfirm);
+      },
+    },
+    {
+      action: "a session revoke",
+      method: "POST",
+      path: "/account/sessions/revoke",
+      fields: { session: "0190f3a0-0000-7000-8000-000000000002" },
+      acted: ["revoke:0190f3a0-0000-7000-8000-000000000002"],
+      refusal: "",
+      read: fieldError,
+      build: (calls, ahead) => {
+        const sessions: AuthSessionStore = { ...actionSessions, revoke: async (_userId, id) => (calls.push(`revoke:${id}`), ok(true)) };
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), sessions });
+        return mounted(ahead(actionApp({ userId: "u9" })), "POST", "/account/sessions/revoke", createSessionActions(options).sessionRevoke);
+      },
+    },
+    {
+      action: "an email change",
+      method: "POST",
+      path: "/account/email-change",
+      fields: { email: "new@example.com" },
+      acted: ["change:new@example.com"],
+      refusal: TOO_LARGE_COPY,
+      read: fieldError,
+      build: (calls, ahead) => {
+        const emailChange = fakeAuthEmailChangeFlow({
+          request: async (_userId, email) => (calls.push(`change:${email}`), err("unavailable" as const)),
+        });
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), emailChange });
+        return mounted(ahead(actionApp({ userId: "u9" })), "POST", "/account/email-change", createEmailChangeActions(options).emailChangeSubmit);
+      },
+    },
+    {
+      action: "an administrator's account update",
+      method: "PATCH",
+      path: "/admin/users/u2",
+      fields: { role: "admin", status: "active" },
+      acted: ["setAdmin:u2:true"],
+      refusal: "",
+      read: fieldError,
+      build: (calls, ahead) => {
+        const admin = fakeAdminUserStore([fakeAuthUser({ id: "u2", email: "member@example.com" })], {
+          setAdmin: async (id, isAdmin) => (calls.push(`setAdmin:${id}:${isAdmin}`), ok("changed" as const)),
+        });
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
+        return mounted(ahead(actionApp({ userId: "u9", admin: true })), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+      },
+    },
+    {
+      action: "the first administrator's claim",
+      method: "POST",
+      path: "/admin/elevate",
+      fields: { confirm: "yes" },
+      acted: ["claim:u9"],
+      refusal: "",
+      read: fieldError,
+      build: (calls, ahead) => {
+        const admin = fakeAdminUserStore([signedIn], { claimFirstAdmin: async (id) => (calls.push(`claim:${id}`), ok("changed" as const)) });
+        const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
+        return mounted(approved(ahead(actionApp({ userId: "u9" }))), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+      },
+    },
+  ];
+
+  async function submitted(row: CappedAction, ahead: (app: Forge) => Forge, init: RequestInit) {
+    const calls: string[] = [];
+    const res = await row.build(calls, ahead).request(row.path, init);
+    return { status: res.status, location: res.headers.get("location"), refusal: row.read(await res.text()), calls };
+  }
+
+  for (const row of actions) {
+    it(`answers ${row.action} at 413 over the cap, as the first parse and behind a 1 MiB one, acting on nothing`, async () => {
+      const over = sizedForm(row.fields, AUTH_FORM_CAP + 1, row.method);
+      expect({
+        first: await submitted(row, firstParse, over),
+        raised: await submitted(row, behindRaisedPolicy, sizedForm(row.fields, AUTH_FORM_CAP + 1, row.method)),
+      }).toEqual({
+        first: { status: 413, location: null, refusal: row.refusal, calls: [] },
+        raised: { status: 413, location: null, refusal: row.refusal, calls: [] },
+      });
+    });
+
+    it(`acts on ${row.action} padded to exactly the cap behind a 1 MiB parse`, async () => {
+      const { calls } = await submitted(row, behindRaisedPolicy, sizedForm(row.fields, AUTH_FORM_CAP, row.method));
+      expect(calls).toEqual([...row.acted]);
+    });
+
+    it(`still answers ${row.action} carrying an undeclared field at 422, acting on nothing`, async () => {
+      const invalid = { ...row.fields, stray: "" };
+      const res = await submitted(row, behindRaisedPolicy, formBody(invalid, row.method));
+      expect({ status: res.status, calls: res.calls }).toEqual({ status: 422, calls: [] });
+    });
+  }
+});
+
+describe("the auth form cap on sign-in, by transport", () => {
+  function signinApp(ahead: (app: Forge) => Forge) {
+    const requested: string[] = [];
+    const signin = fakeAuthSigninFlow({ request: (email, at) => (requested.push(email), { kind: "email-otp", expiresAt: at }) });
+    const app = mounted(ahead(actionApp()), "POST", "/auth/signin", createSigninActions(optionsWith({ signin })).signinSubmit);
+    return { app, requested };
+  }
+
+  async function answerTo(ahead: (app: Forge) => Forge, init: RequestInit) {
+    const { app, requested } = signinApp(ahead);
+    const res = await app.request("/auth/signin", init);
+    return { status: res.status, location: res.headers.get("location"), requested };
+  }
+
+  const ADMITTED = { status: 303, location: "/auth/verify", requested: ["ada@example.com"] };
+  const REFUSED = { status: 413, location: null, requested: [] };
+  const ada = { email: "ada@example.com" };
+
+  const transports: readonly { readonly transport: string; readonly init: (bytes: number) => RequestInit }[] = [
+    { transport: "a streamed body with no Content-Length", init: (bytes) => sizedForm(ada, bytes) },
+    { transport: "a body declaring its Content-Length", init: (bytes) => declaredForm(ada, bytes) },
+    { transport: "a chunked body with no Content-Length", init: (bytes) => chunkedForm(ada, bytes) },
+  ];
+
+  for (const { transport, init } of transports) {
+    it(`admits ${transport} of exactly 100 KiB and refuses one a byte longer, as the first parse and behind a 1 MiB one`, async () => {
+      expect({
+        first: { at: await answerTo(firstParse, init(AUTH_FORM_CAP)), over: await answerTo(firstParse, init(AUTH_FORM_CAP + 1)) },
+        raised: { at: await answerTo(behindRaisedPolicy, init(AUTH_FORM_CAP)), over: await answerTo(behindRaisedPolicy, init(AUTH_FORM_CAP + 1)) },
+      }).toEqual({ first: { at: ADMITTED, over: REFUSED }, raised: { at: ADMITTED, over: REFUSED } });
+    });
+  }
+
+  it("admits a small multipart sign-in and refuses one over the cap, as the first parse and behind a 1 MiB one", async () => {
+    expect({
+      first: { small: await answerTo(firstParse, multipartForm(ada)), over: await answerTo(firstParse, multipartForm(ada, AUTH_FORM_CAP)) },
+      raised: {
+        small: await answerTo(behindRaisedPolicy, multipartForm(ada)),
+        over: await answerTo(behindRaisedPolicy, multipartForm(ada, AUTH_FORM_CAP)),
+      },
+    }).toEqual({ first: { small: ADMITTED, over: REFUSED }, raised: { small: ADMITTED, over: REFUSED } });
+  });
+
+  it("answers a small body no form can be read from at 422 with the unreadable copy, not the too-large one", async () => {
+    const { app, requested } = signinApp(firstParse);
+    // A multipart content type whose body carries no boundary-delimited part.
+    const res = await app.request("/auth/signin", {
+      method: "POST",
+      body: "not multipart",
+      headers: { "content-type": "multipart/form-data; boundary=x" },
+    });
+    expect({ status: res.status, error: textOf(await res.text(), "p", 'data-slot="field-error"'), requested }).toEqual({
+      status: 422,
+      error: "We could not read that. Please check the form and try again.",
+      requested: [],
+    });
+  });
+});
+
+describe("the passkey ceremony cap, which stays at 64 KiB beside the form cap", () => {
+  const CEREMONY_CAP = 64 * 1024;
+  const CEREMONY_PATH = "/auth/enrol/passkey/register/finish";
+
+  /** A ceremony body the endpoint reads and refuses as no passkey, padded to exactly `bytes`. */
+  function ceremonyOfBytes(bytes: number): string {
+    const shell = JSON.stringify({ credential: { id: "c", padding: "" } });
+    return JSON.stringify({ credential: { id: "c", padding: "x".repeat(bytes - shell.length) } });
+  }
+
+  async function answerTo(bytes: number, declared: boolean) {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", CEREMONY_PATH, createPasskeyEnrolActions(options).finish);
+    const headers = { "content-type": "application/json", ...(declared ? { "content-length": String(bytes) } : {}) };
+    return (await app.request(CEREMONY_PATH, { method: "POST", body: ceremonyOfBytes(bytes), headers })).status;
+  }
+
+  it("reads a ceremony body of exactly 64 KiB and refuses one a byte longer, streamed or declared", async () => {
+    expect({
+      streamed: [await answerTo(CEREMONY_CAP, false), await answerTo(CEREMONY_CAP + 1, false)],
+      declared: [await answerTo(CEREMONY_CAP, true), await answerTo(CEREMONY_CAP + 1, true)],
+    }).toEqual({ streamed: [400, 413], declared: [400, 413] });
   });
 });

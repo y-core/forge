@@ -10,6 +10,7 @@ import type { BundleCheckConfig, ExportsMap, NodeBundle, NodeExportsCheckConfig,
 
 // A specifier the compiler cannot read keeps the optional peer out of a consumer's type-check.
 const ESBUILD = "esbuild";
+const NODE_BUNDLE_CONDITION = "forge-node-bundle";
 
 /** Whether `esbuild` can be resolved — a bundle cannot be rebuilt without it, and it is an optional peer. @public */
 export function hasEsbuild(): boolean {
@@ -35,6 +36,7 @@ export async function bundleSource(config: BundleCheckConfig): Promise<string> {
     format: "esm",
     platform: "node",
     packages: "external",
+    conditions: [NODE_BUNDLE_CONDITION],
     write: false,
     // Node refuses to strip types under `node_modules`, so a consumer can only load a plain `.mjs`.
     // The banner is what tells a reader of that file not to edit it.
@@ -76,14 +78,15 @@ export async function writeBundle(config: BundleCheckConfig): Promise<void> {
   writeFileSync(resolve(config.root, config.bundle), await bundleSource(config), "utf-8");
 }
 
-function importTarget(target: ExportsMap[string]): string | undefined {
-  return typeof target === "string" ? target : target.import;
+function nodeTarget(target: ExportsMap[string]): string | undefined {
+  return typeof target === "string" ? target : (target.node ?? target.import);
 }
 
-/** The `types` source and `import` bundle of an export shaped as Node needs it, or `undefined` for any other shape. */
+/** The `types` source and node bundle of an export shaped as Node needs it, or `undefined` for any other shape. */
 function bundlePair(target: ExportsMap[string] | undefined): { entry: string; bundle: string } | undefined {
   if (target === undefined || typeof target === "string") return undefined;
-  const { types, import: bundle } = target;
+  const { types } = target;
+  const bundle = nodeTarget(target);
   if (types?.endsWith(".ts") !== true || bundle?.endsWith(".mjs") !== true) return undefined;
   return { entry: types.replace(/^\.\//, ""), bundle: bundle.replace(/^\.\//, "") };
 }
@@ -124,7 +127,30 @@ export function nodeBundles(root: string, manifest: NodeManifest): NodeBundle[] 
   });
 }
 
-/** The finding for one `forge.node` subpath, or none when its export already points `import` at a bundle. */
+// Bun matches `node` as well as `bun`, and every resolver takes the first key that matches.
+const SOURCE_BEFORE_NODE = ["workerd", "bun"] as const;
+
+/** The finding for a `node` bundle whose export lets a Worker or Bun reach it, or none. */
+function sourceConditionFinding(subpath: string, target: Exclude<ExportsMap[string], string>): Finding[] {
+  const keys = Object.keys(target);
+  const at = (condition: string) => keys.indexOf(condition);
+  const misplaced = [
+    ...SOURCE_BEFORE_NODE.filter((condition) => target[condition] !== target.types || at(condition) > at("node")),
+    ...(target.import !== target.types || at("import") < at("node") ? ["import"] : []),
+  ];
+  if (misplaced.length === 0) return [];
+  return [
+    fail(`\`${subpath}\` points \`node\` at a bundle but \`${misplaced.join("`, `")}\` does not keep its runtime on the \`.ts\` source`, {
+      file: "package.json",
+      detail: [
+        "wrangler matches `workerd`, Bun matches `bun` and `node`, and each takes the first key that matches",
+        `give it \`{ "types", "workerd", "bun", "node", "import" }\` in that order, every one but \`node\` naming the \`types\` file`,
+      ],
+    }),
+  ];
+}
+
+/** The finding for one `forge.node` subpath, or none when its export already points Node at a bundle. */
 function nodeExportFinding(subpath: string, target: ExportsMap[string] | undefined, fixer: string): Finding[] {
   if (target === undefined)
     return [
@@ -133,8 +159,9 @@ function nodeExportFinding(subpath: string, target: ExportsMap[string] | undefin
         detail: [`add the export, or drop \`${subpath}\` from \`forge.node\``],
       }),
     ];
-  if (bundlePair(target) !== undefined) return [];
-  if (importTarget(target)?.endsWith(".mjs") === true)
+  if (bundlePair(target) !== undefined)
+    return typeof target === "string" || target.node === undefined ? [] : sourceConditionFinding(subpath, target);
+  if (nodeTarget(target)?.endsWith(".mjs") === true)
     return [
       fail(`\`${subpath}\` points \`import\` at a \`.mjs\` but has no \`.ts\` \`types\` condition to build it from`, {
         file: "package.json",
@@ -146,7 +173,7 @@ function nodeExportFinding(subpath: string, target: ExportsMap[string] | undefin
       file: "package.json",
       detail: [
         "Node refuses to strip types under `node_modules`, so a consumer cannot load a `.ts` target",
-        `give it \`{ "types": "<entry>.ts", "import": "<entry>.mjs" }\`, then run \`${fixer}\``,
+        `give it \`{ "types": "<entry>.ts", "import": "<entry>.node.mjs" }\`, then run \`${fixer}\``,
       ],
     }),
   ];
@@ -156,7 +183,7 @@ function nodeExportFinding(subpath: string, target: ExportsMap[string] | undefin
 export function checkNodeExports(config: NodeExportsCheckConfig): CheckResult {
   const listed = config.node.flatMap((subpath) => nodeExportFinding(subpath, config.exports[subpath], config.fixer));
   const unlisted = Object.entries(config.exports)
-    .filter(([subpath, target]) => importTarget(target)?.endsWith(".mjs") === true && !config.node.includes(subpath))
+    .filter(([subpath, target]) => nodeTarget(target)?.endsWith(".mjs") === true && !config.node.includes(subpath))
     .map(([subpath]) =>
       fail(`\`${subpath}\` exports a \`.mjs\` bundle but is not listed under \`forge.node\``, {
         file: "package.json",

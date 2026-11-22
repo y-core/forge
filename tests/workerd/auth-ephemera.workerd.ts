@@ -4,7 +4,7 @@ import { purgeAuthEphemera } from "../../src/auth/stores/ephemera";
 import { createD1Client } from "../../src/storage/db/client";
 import type { SqlFragment } from "../../src/storage/db/types";
 import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import { explainPlan, scansTable, type TestD1, usesIndex } from "../../src/testing/d1";
+import { explainPlan, scansTable, type TestD1, usesIndex } from "../../src/testing/d1/mod";
 import { insertSession, openAuthD1, signedUp, tokenHash } from "./auth-d1.fixture";
 
 const PURGE_AT = 4_000_000_000;
@@ -171,7 +171,7 @@ test("reaches lapsed unverified accounts through auth_users_unverified_created_a
     OPTIONS,
   );
   const users = fragments.filter((fragment) => fragment.text.startsWith("DELETE FROM auth_users "));
-  const plans = await Promise.all(users.map((fragment) => explainPlan(db, fragment)));
+  const plans = await Promise.all(users.map((fragment) => explainPlan(db, fragment.text, fragment.params)));
   expect(plans.map((plan) => ({ index: usesIndex(plan, "auth_users_unverified_created_at"), scan: scansTable(plan, "auth_users") }))).toEqual([
     { index: true, scan: false },
   ]);

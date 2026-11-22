@@ -17,7 +17,7 @@ describe("csrfFieldCtx", () => {
   });
 
   it("throws the caller's message when one is supplied", () => {
-    expect(() => csrfFieldCtx.get(context(), "csrfProtection did not run")).toThrow("csrfProtection did not run");
+    expect(() => csrfFieldCtx.get(context(), "the CSRF policy did not run")).toThrow("the CSRF policy did not run");
   });
 
   it("yields undefined from getOptional before it is set", () => {

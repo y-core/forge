@@ -63,6 +63,8 @@ primitives cover the cases where the raw value would make a later check mean the
 | `formDigits()` | a number whose separators are cosmetic | `"4111 1111 1111 1111"` and `"4111111111111111"` are the same card |
 
 ```ts
+import { formDigits, formMultilineText, v } from "@y-core/forge/validation";
+
 const PaymentSchema = v.strictObject({
   card: v.pipe(formDigits(), v.length(16)), // accepts "4111 1111 1111 1111"
   note: v.pipe(formMultilineText(), v.maxLength(2000)),

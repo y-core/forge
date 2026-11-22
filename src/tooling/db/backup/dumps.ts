@@ -6,6 +6,7 @@ import { readDeployment } from "../../cf/config/environment";
 import { resolveLifecycleBucket } from "../../cf/lifecycle/commands";
 import { CliError } from "../../cli/errors";
 import { queryBatches, queryRows } from "../d1";
+import { appHome } from "../home";
 import { queryDeployed } from "../remote";
 import { rowCountSelect } from "../sql";
 import { isRemotePlace } from "../target";
@@ -49,9 +50,14 @@ export function resolveDumpSource(
   );
 }
 
+/** The home the dump bucket is opened through: the app's own on standby, whose generated config binds no R2 bucket. @internal */
+export function dumpHome(run: Pick<DbRunContext, "home" | "config">): Home {
+  return run.config.target.place === "standby" ? appHome(run.config) : run.home;
+}
+
 /** The bucket the dumps are in: the dev session's own R2 for a local target, else the deployed bucket over REST. @internal */
 export async function openDumpBucket(run: DbRunContext, source: DumpSource): Promise<BackupBucket> {
-  if (run.home.persistTo !== null) return run.io.bucket(run.home, source.binding);
+  if (run.home.persistTo !== null) return run.io.bucket(dumpHome(run), source.binding);
   return restBackupBucket(run.io, run.home.auth ?? readCfAuth({}), source.bucketName);
 }
 
@@ -82,7 +88,7 @@ function where(source: DumpSource): string {
 
 /** The sidecar of the named dump, else of the newest complete one, read from the local R2 bucket. @internal */
 export async function readLocalDump(run: DbRunContext, source: DumpSource, key: string | undefined): Promise<D1BackupSidecar> {
-  const bucket = await run.io.bucket(run.home, source.binding);
+  const bucket = await run.io.bucket(dumpHome(run), source.binding);
   if (key !== undefined) {
     const sidecar = await readD1Backup(bucket, key);
     if (sidecar === null) throw new CliError("invalid-args", `${key} has no sidecar in ${source.binding}, so its backup never finished`);
@@ -101,7 +107,7 @@ export async function readLocalDump(run: DbRunContext, source: DumpSource, key: 
 
 /** Loads a dump from the local R2 bucket into an empty local home, in one transaction. @internal */
 export async function loadLocalDump(run: DbRunContext, source: DumpSource, sidecar: D1BackupSidecar, into: Home): Promise<void> {
-  const object = await (await run.io.bucket(run.home, source.binding)).get(sidecar.key);
+  const object = await (await run.io.bucket(dumpHome(run), source.binding)).get(sidecar.key);
   if (object === null) throw new CliError("invalid-args", `${sidecar.key} is gone from ${source.binding}`);
   await run.io.d1(into, splitDumpStatements(await object.text()));
 }

@@ -33,13 +33,24 @@ const DATA: PdfFontPackData = {
 };
 
 const BYTES = new Uint8Array([0x00, 0x01, 0x00, 0x00]);
-const [FACE] = readPdfEmbeddedFonts(
+const READ = readPdfEmbeddedFonts(
   DATA,
   () => BYTES,
   () => "body",
 );
+const [FACE] = READ.ok ? READ.data : [];
 
 describe("readPdfEmbeddedFonts", () => {
+  test("refuses a pack the engine cannot read, naming the field and not the input's key", () => {
+    const [face] = DATA.faces;
+    const read = readPdfEmbeddedFonts(
+      { ...DATA, faces: [{ ...face, metrics: { ...face?.metrics, glyphs: { "<script>": 3 } } }] },
+      () => BYTES,
+      () => "body",
+    );
+    expect(read.ok ? undefined : read.error).toEqual({ kind: "font-pack", message: "the font pack is malformed at faces.0.metrics.glyphs" });
+  });
+
   test("names the face what the caller calls it and the file what the face calls itself", () => {
     expect(FACE?.name).toBe("body");
     expect(FACE?.postScriptName).toBe("Inter-Regular");

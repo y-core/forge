@@ -159,7 +159,7 @@ export function createD1Client(db: D1Queryable, options?: D1ClientOptions): D1Cl
 /** A D1Client whose calls count against `tally`, the request's, where one is given. @internal */
 export function clientCounting(db: D1Queryable, options: D1ClientOptions | undefined, tally: D1QueryTally | undefined): D1Client {
   const context = {
-    logger: options?.logger ?? createLogger("storage/db", { channels: [] }),
+    logger: options?.logger ?? createLogger("storage/db", { minLevel: "warn" }),
     policy: { ...D1_RETRY_POLICY, ...options?.retry },
     slowQueryMs: options?.slowQueryMs,
     budget: { ...D1_QUERY_BUDGET, ...options?.queryBudget },

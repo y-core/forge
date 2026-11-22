@@ -39,6 +39,8 @@ const PASSKEY_ANNOUNCE_CHANNEL = "passkey";
 
 const PRF_OUTPUT_BYTES = 32;
 
+const GUARD_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 403, 413, 429, 503]);
+
 const PASSKEY_REQUEST_TIMEOUT_MS = 15_000;
 
 let prfHandler: PasskeyPrfHandler | null = null;
@@ -170,6 +172,19 @@ export function ceremonyReason(error: unknown): PasskeyFailureReason {
   return "ceremony-failed";
 }
 
+/** The status a guard refused a step with in `application/problem+json`, or `undefined` for any other failure. */
+async function refusalStatus(response: Response): Promise<number | undefined> {
+  if (!GUARD_REFUSAL_STATUSES.has(response.status)) return undefined;
+  if (!response.headers.get("content-type")?.toLowerCase().startsWith("application/problem+json")) return undefined;
+  await response.body?.cancel();
+  return response.status;
+}
+
+async function failedStep(mode: PasskeyMode, reason: PasskeyFailureReason, response: Response | null): Promise<PasskeyOutcomeDetail> {
+  const status = response === null ? undefined : await refusalStatus(response);
+  return status === undefined ? { mode, reason } : { mode, reason, status };
+}
+
 async function post(
   realm: PasskeyRealm,
   ceremony: PasskeyContract,
@@ -205,7 +220,7 @@ export async function runPasskeyCeremony(
 
   const offered = await post(realm, ceremony, ceremony.optionsPath, ceremony.optionsToken, { mode }, signal);
   signal?.throwIfAborted();
-  if (!offered?.ok) return { mode, reason: "options-failed" };
+  if (!offered?.ok) return failedStep(mode, "options-failed", offered);
   let options: CreationOptionsJson | RequestOptionsJson;
   try {
     options = (await offered.json()) as CreationOptionsJson | RequestOptionsJson;
@@ -233,7 +248,7 @@ export async function runPasskeyCeremony(
   const payload = { credential: encodeCredential(credential as PublicKeyCredential), ...(nickname ? { nickname } : {}) };
   const verified = await post(realm, ceremony, ceremony.verifyPath, ceremony.verifyToken, payload, signal);
   signal?.throwIfAborted();
-  if (!verified?.ok) return { mode, reason: "verification-failed" };
+  if (!verified?.ok) return failedStep(mode, "verification-failed", verified);
 
   if (publicKey.extensions?.prf !== undefined && prfHandler !== null) {
     try {

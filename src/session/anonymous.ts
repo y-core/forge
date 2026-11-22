@@ -2,11 +2,13 @@ import type { Middleware } from "@remix-run/fetch-router";
 import type { Session, SessionStorage } from "@remix-run/session";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
+import { guardResolverEnv } from "../context/env-memo";
 import { getAppContext } from "../context/types";
+import { assertUnwrappedKeyRing } from "../crypto/keyring/resolver";
 import { createSignedCookie } from "./cookie";
 import { assertKVSessionTtl, createKVSessionStorage } from "./kv-storage";
-import { sessionMiddleware } from "./session";
-import type { AnonymousSessionOptions } from "./types";
+import { brandSessionMiddleware, sessionMiddleware } from "./session";
+import type { AnonymousSessionOptions, SessionMiddleware } from "./types";
 
 const DEFAULT_MAX_AGE = 60 * 60 * 24 * 365;
 
@@ -27,7 +29,8 @@ function createQuietCookieSessionStorage(): SessionStorage {
 }
 
 /** Anonymous per-visitor session middleware over a signed id cookie, with data in KV or in the cookie. @public */
-export function createAnonymousSession<Bindings = Record<string, unknown>>(options: AnonymousSessionOptions<Bindings>): Middleware {
+export function createAnonymousSession<Bindings = Record<string, unknown>>(options: AnonymousSessionOptions<Bindings>): SessionMiddleware {
+  assertUnwrappedKeyRing("createAnonymousSession", options.ring);
   const cookieName = options.cookieName ?? "__Host-session";
   const maxAge = options.maxAge ?? DEFAULT_MAX_AGE;
   // An empty name is the one path to `SetCookie.toString()` returning `""`, i.e. an empty header.
@@ -49,7 +52,7 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
   // over one tenant's KV namespace, so a value-keyed cache would serve tenant A's sessions to B.
   const cache = new WeakMap<object, Middleware>();
 
-  return async (context, next) => {
+  return brandSessionMiddleware(async (context, next) => {
     const c = getAppContext<Bindings>(context);
     const envObj: unknown = c.env;
     const cacheKey = envObj !== null && typeof envObj === "object" ? (envObj as object) : null;
@@ -57,15 +60,16 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
     const hit = cacheKey ? cache.get(cacheKey) : undefined;
     if (hit) return hit(context, next);
 
-    const ring = await options.ring(c);
+    const env = guardResolverEnv(c.env);
+    const ring = await options.ring(env);
     const cookie = createSignedCookie(cookieName, { ring, sameSite: "Lax", maxAge });
     const storage = options.kv
-      ? createKVSessionStorage(options.kv(c), { ...(options.prefix !== undefined ? { prefix: options.prefix } : {}), ttlSeconds })
+      ? createKVSessionStorage(options.kv(env), { ...(options.prefix !== undefined ? { prefix: options.prefix } : {}), ttlSeconds })
       : createQuietCookieSessionStorage();
     // `rotating` is not passed on: the cookie carries the ring, so the middleware derives it.
     const mw = sessionMiddleware(storage, cookie, options);
     // No env to key on: build per request rather than share one instance across unrelated envs.
     if (cacheKey) cache.set(cacheKey, mw);
     return mw(context, next);
-  };
+  }, maxAge);
 }

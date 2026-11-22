@@ -3,18 +3,20 @@ import type { Route } from "@remix-run/fetch-router/routes";
 import { ConfigKey, getAppContext } from "../context/types";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
+import { loggerFor } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
 import { renderError } from "../render/htmx/fragment";
 import { toError } from "../result/result";
 import type { RouteParams } from "../router/types";
+import { FAILURE_FRAGMENT_HEADER } from "../ui/contracts/htmx-contract";
 import type { v } from "../validation/validation";
 import { createSubmissionPipeline } from "./pipeline";
 import type { ActionDefinition, RouteHandler } from "./types";
 
-const logger = createLogger("action");
+const fallbackLogger = createLogger("action");
 
 function genericFailure(): Response {
-  return fragmentResponse(renderError("Something went wrong. Please try again."), 500);
+  return fragmentResponse(renderError("Something went wrong. Please try again."), 500, { [FAILURE_FRAGMENT_HEADER]: "1" });
 }
 
 /** Wires a read → guard → validate → handle pipeline into a POST handler with structured error responses. @internal */
@@ -40,6 +42,7 @@ export function defineAction<R extends Route<any, any>, S extends v.GenericSchem
       // The one case this builder rethrows: a gone client gets no fragment and no record, and the
       // boundary answers 499 (`ERROR_HANDLING.md` §5b).
       if (c.request.signal.aborted) throw error;
+      const logger = loggerFor(c, "action", fallbackLogger);
       if (def.onError) {
         try {
           const recovered = await def.onError(error, c);

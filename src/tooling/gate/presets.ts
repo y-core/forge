@@ -6,10 +6,11 @@ import { CONTRAST_PAIRS, CRITERION } from "../../ui/contracts/theme/contrast-pai
 import { loadWranglerConfig } from "../cf/config/parse";
 import { defaultEnvFlags, regenerateCommand, renderEnvSchema } from "../cf/gen/cf-env-command";
 import { declaresSecrets } from "../cf/gen/cf-env-gen";
+import { loadConfigModule } from "../cli/config-module";
 import { CliError } from "../cli/errors";
 import { captureStreams } from "../cli/proc";
 import type { SpawnSync } from "../cli/types";
-import { loadFeatures } from "../curate/config";
+import { DEFAULT_FEATURE_MANIFEST, loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
   assetRootStep,
@@ -19,6 +20,7 @@ import {
   classTokensStep,
   compatibilityStep,
   configFileStep,
+  consumerCssSourcesStep,
   contrastStep,
   cssCoverageStep,
   cssTokensStep,
@@ -33,6 +35,7 @@ import {
   lintStep,
   markdownStep,
   modernCssStep,
+  serviceWorkerStep,
   sourceWatches,
   ssrBoundaryStep,
   testStep,
@@ -137,7 +140,13 @@ export async function checkEnvSchema(root: string, flags: ReturnType<typeof defa
   if (!existsSync(path)) return checkResult([fail("the committed env schema is missing", { file: flags.out, detail: [rerun] })], "");
 
   const committed = readFileSync(path, "utf-8");
-  const { text } = await renderEnvSchema(root, flags, spawn);
+  let text: string;
+  try {
+    ({ text } = await renderEnvSchema(root, flags, spawn));
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    return checkResult([fail(error.message, { file: flags.wrangler, detail: [rerun] })], "");
+  }
   if (committed === text) return checkResult([], `\`${flags.out}\` matches a fresh \`forge cf gen env\``);
   return checkResult(
     [
@@ -177,10 +186,15 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   }
 
   if (options.assetConfig !== undefined) {
-    steps.push({ label: "types:assets", tail: 20, cmd: ["forge", "assets", "gen", "types", "--config", options.assetConfig, "--out", assetOut] });
+    steps.push({
+      label: "types:assets",
+      tail: 20,
+      cmd: ["forge", "assets", "gen", "types", "--config", options.assetConfig, "--out", assetOut, "--root", root],
+    });
     // The step that may rewrite the artifact is followed by the one that judges it, before a
     // typecheck and a test run that would otherwise pass on a manifest ahead of the built tree.
     steps.push(assetManifestStep({ root, assetConfig: options.assetConfig, assetsPath: assetOut }));
+    steps.push(serviceWorkerStep({ root, assetConfig: options.assetConfig, assetsPath: assetOut }));
   }
 
   if (options.envSchema !== false) {
@@ -261,6 +275,13 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
             "validate-import-boundary",
             async () => {
               try {
+                const manifest = await loadConfigModule<unknown>({
+                  root,
+                  path: DEFAULT_FEATURE_MANIFEST,
+                  explicit: false,
+                  what: "feature manifest",
+                });
+                if (manifest === undefined) return checkImportBoundary({ root, ...importBoundary });
                 return checkImportBoundary({ root, ...importBoundary, features: (await loadFeatures({ root })).features });
               } catch (error) {
                 if (!(error instanceof CliError)) throw error;
@@ -289,6 +310,10 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // repository actually draws.
   if (options.contrast !== undefined) {
     steps.push(contrastStep({ root, ...options.contrast }));
+  }
+
+  if (options.assetConfig !== undefined) {
+    steps.push(consumerCssSourcesStep({ root, assetConfig: options.assetConfig, packageName: PACKAGE, ...options.consumerCssSources }));
   }
 
   // Both halves of the coupling have to be present to compare them: the assets config names what is

@@ -3,58 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { sql as storageSql } from "../storage/db/sql";
-import { dropStatements, openTestD1, scansTable, sql, testD1Config, usesIndex } from "./d1";
-import type { PlanStep } from "./d1";
+import { openTestD1, scansTable, testD1Config, usesIndex } from "./mod";
+import type { PlanStep } from "./types";
 
 describe("testD1Config()", () => {
   it("declares one DB binding and no Worker entry", () => {
     const config = JSON.parse(testD1Config()) as { main?: string; d1_databases: { binding: string }[] };
     expect([config.main, config.d1_databases.map((entry) => entry.binding)]).toEqual([undefined, ["DB"]]);
-  });
-});
-
-describe("dropStatements()", () => {
-  const objects = [
-    { type: "table", name: "users" },
-    { type: "table", name: "posts" },
-    { type: "table", name: "comments" },
-    { type: "index", name: "posts_user" },
-    { type: "view", name: "v" },
-    { type: "trigger", name: "t" },
-  ];
-
-  it("drops triggers, views and indexes, then each table before the tables it references", () => {
-    const parents = new Map([
-      ["posts", ["users"]],
-      ["comments", ["posts", "users"]],
-    ]);
-    expect(dropStatements(objects, parents)).toEqual([
-      'DROP TRIGGER IF EXISTS "t"',
-      'DROP VIEW IF EXISTS "v"',
-      'DROP INDEX IF EXISTS "posts_user"',
-      'DROP TABLE IF EXISTS "comments"',
-      'DROP TABLE IF EXISTS "posts"',
-      'DROP TABLE IF EXISTS "users"',
-    ]);
-  });
-
-  it("ignores a table's reference to itself, and falls back to name order on a cycle", () => {
-    const tables = [
-      { type: "table", name: "b" },
-      { type: "table", name: "a" },
-      { type: "table", name: "tree" },
-    ];
-    const parents = new Map([
-      ["a", ["b"]],
-      ["b", ["a"]],
-      ["tree", ["tree"]],
-    ]);
-    expect(dropStatements(tables, parents)).toEqual(['DROP TABLE IF EXISTS "tree"', 'DROP TABLE IF EXISTS "a"', 'DROP TABLE IF EXISTS "b"']);
-  });
-
-  it("quotes a name carrying a double quote", () => {
-    expect(dropStatements([{ type: "table", name: 'a"b' }], new Map())).toEqual(['DROP TABLE IF EXISTS "a""b"']);
   });
 });
 
@@ -133,14 +88,8 @@ describe("scansTable()", () => {
   });
 });
 
-describe("sql", () => {
-  it("is the storage/db tag itself", () => {
-    expect(sql).toBe(storageSql);
-  });
-
-  it("builds a fragment with a placeholder per interpolated value", () => {
-    const fragment = sql`SELECT id FROM posts WHERE user_id = ${1}`;
-
-    expect({ text: fragment.text, params: fragment.params }).toEqual({ text: "SELECT id FROM posts WHERE user_id = ?", params: [1] });
+describe("the testing/d1 barrel", () => {
+  it("exports no sql tag, so no fragment it mints reaches app code", async () => {
+    expect("sql" in (await import("./mod"))).toBe(false);
   });
 });

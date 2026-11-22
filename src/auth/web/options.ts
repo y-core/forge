@@ -52,7 +52,7 @@ export function authReturnQuery<Bindings>(c: AppContext<Bindings>, options: Auth
   return safe === "" ? path : `${path}?${new URLSearchParams({ [param]: safe }).toString()}`;
 }
 
-/** The header a rendered form must send its token on, absent when `csrfProtection` uses the default. @internal */
+/** The header a rendered form must send its token on, absent when the CSRF policy uses the default. @internal */
 export function authCsrfHeader<Bindings>(c: AppContext<Bindings>): { csrfHeader?: string } {
   const csrfHeader = csrfHeaderCtx.getOptional(c);
   return csrfHeader === undefined || csrfHeader === CSRF_HEADER_DEFAULT ? {} : { csrfHeader };

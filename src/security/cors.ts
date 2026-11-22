@@ -1,5 +1,6 @@
-import type { Middleware } from "@remix-run/fetch-router";
+import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
+import { memoizePerEnv } from "../context/env-memo";
 import { rebuildResponse } from "../http/rebuild";
 import type { CorsOptions } from "./types";
 
@@ -25,8 +26,30 @@ function compileOriginMatcher(patterns: readonly string[]): (origin: string) => 
 }
 
 /** Pure function: tests whether an origin matches an exact string or a subdomain wildcard pattern. @public */
-export function matchOrigin(origin: string, patterns: string[]): boolean {
+export function matchOrigin(origin: string, patterns: readonly string[]): boolean {
   return compileOriginMatcher(patterns)(origin);
+}
+
+interface OriginPolicy {
+  readonly acaoConstant: "*" | undefined;
+  readonly isAllowed: (origin: string) => boolean;
+}
+
+function compileOriginPolicy(origins: readonly string[], credentials: boolean): OriginPolicy {
+  const wildcard = origins.includes("*");
+  if (credentials && wildcard) {
+    throw new Error('cors: cannot use wildcard origin "*" with credentials: true');
+  }
+  const matchesOrigin = compileOriginMatcher(origins);
+  return { acaoConstant: wildcard ? "*" : undefined, isAllowed: (origin) => wildcard || matchesOrigin(origin) };
+}
+
+function originPolicySource<Bindings>(
+  origins: CorsOptions<Bindings>["origins"],
+  credentials: boolean,
+): OriginPolicy | ((context: RequestContext) => Promise<OriginPolicy>) {
+  if (typeof origins !== "function") return compileOriginPolicy(origins, credentials);
+  return memoizePerEnv(async (env: Bindings) => compileOriginPolicy(await origins(env), credentials));
 }
 
 function appendVary(headers: Headers, token: string): void {
@@ -51,7 +74,7 @@ function refuseNonTokenHeaderNames(option: string, names: readonly string[], hea
 }
 
 /** Middleware that adds CORS response headers for allowed origins. @public */
-export function cors(options: CorsOptions): Middleware {
+export function cors<Bindings = Record<string, unknown>>(options: CorsOptions<Bindings>): Middleware {
   const {
     origins,
     methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -61,9 +84,7 @@ export function cors(options: CorsOptions): Middleware {
     maxAge = 86400,
   } = options;
 
-  if (credentials && origins.includes("*")) {
-    throw new Error('cors: cannot use wildcard origin "*" with credentials: true');
-  }
+  const policySource = originPolicySource(origins, credentials);
   refuseNonTokenHeaderNames("allowedHeaders", allowedHeaders, "Access-Control-Allow-Headers");
   refuseNonTokenHeaderNames("exposedHeaders", exposedHeaders, "Access-Control-Expose-Headers");
   if (credentials && exposedHeaders.includes("*")) {
@@ -73,14 +94,9 @@ export function cors(options: CorsOptions): Middleware {
   }
   const exposeHeaderValue = exposedHeaders.length > 0 ? exposedHeaders.join(", ") : undefined;
 
-  const wildcard = origins.includes("*");
-  const matchesOrigin = compileOriginMatcher(origins);
-  const isAllowed = (origin: string): boolean => wildcard || matchesOrigin(origin);
-
   // A constant `*` answers every caller alike, so `Vary: Origin` would only shred the cache key.
   // Every other configuration answers per origin — including the refusal a cache could replay.
-  const acaoConstant = wildcard && !credentials ? "*" : undefined;
-  const variesOnOrigin = acaoConstant === undefined;
+  const variesOnOrigin = typeof policySource === "function" || policySource.acaoConstant === undefined;
 
   const preflightHeaders: Record<string, string> = {
     "Access-Control-Allow-Methods": methods.join(", "),
@@ -91,6 +107,7 @@ export function cors(options: CorsOptions): Middleware {
   };
 
   return async (context, next) => {
+    const { acaoConstant, isAllowed } = typeof policySource === "function" ? await policySource(context) : policySource;
     const origin = context.request.headers.get("Origin");
 
     if (context.method === "OPTIONS" && context.request.headers.get("Access-Control-Request-Method") != null) {

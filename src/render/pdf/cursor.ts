@@ -253,13 +253,14 @@ function drawLetterhead(cursor: PdfCursor, letterhead: PdfLetterhead, content: {
   const nameY = content.top + LETTERHEAD_NAME_SIZE;
   const taglineY = nameY + LETTERHEAD_LINE_GAP + LETTERHEAD_TAGLINE_SIZE;
 
-  if (letterhead.mark !== undefined) {
+  const mark = letterhead.mark;
+  if (mark !== undefined) {
     cursor.tagged(
       "artwork",
       () => {
-        drawArtwork(cursor, letterhead.mark as PdfArtwork, content.x, content.top, markWidth);
+        drawArtwork(cursor, mark, content.x, content.top, markWidth);
       },
-      letterhead.mark.alt,
+      mark.alt,
     );
   }
 

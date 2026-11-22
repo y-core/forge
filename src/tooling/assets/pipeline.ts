@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import type { CacheControlInit } from "../../http/headers";
 import { CacheControl } from "../../http/headers";
@@ -18,7 +18,14 @@ import { buildJS } from "./js";
 import { buildMarks } from "./mark-build";
 import { assetUrlBase, deployRoot, safeJoin } from "./paths";
 import { buildRasters } from "./rasters";
-import { buildServiceWorker, precacheUrls, precacheVersion, removeServiceWorker, SERVICE_WORKER_FILE } from "./service-worker";
+import {
+  buildRecordedServiceWorker,
+  precacheUrls,
+  precacheVersion,
+  removeServiceWorker,
+  SERVICE_WORKER_FILE,
+  serviceWorkerRecordPath,
+} from "./service-worker";
 import { buildSite } from "./site";
 import { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
 import type { AssetsTypesOutcome, BuildOptions, FontPackData, IconsConfig, SpriteGroupResult } from "./types";
@@ -91,7 +98,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions, spaw
     }
   }
 
-  const outputPath = opts?.assetsPath ?? DEFAULT_ASSETS_PATH;
+  const outputPath = resolve(config.root, opts?.assetsPath ?? DEFAULT_ASSETS_PATH);
   const spec = (): ModuleSpec => ({ manifest, spriteGroups, publicPrefix, icons: config.icons, cursorBakes });
   // esbuild resolves `@assets` while bundling, so the module must exist before `buildJS`.
   await generateAssetsModule(spec(), outputPath);
@@ -104,7 +111,9 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions, spaw
 
   if (config.js.serviceWorker !== null) {
     const outDir = deployRoot(config.root, publicDir);
-    await buildServiceWorker(config.js.serviceWorker, {
+    await buildRecordedServiceWorker(config.js.serviceWorker, {
+      root: config.root,
+      recordPath: serviceWorkerRecordPath(outputPath),
       outDir,
       precache: precacheUrls(publicPrefix, [...shellAssets, ...js.precache]),
       // A single-segment publicDir is the deploy root, where the last build's worker and headers sit.
@@ -113,6 +122,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions, spaw
     });
   } else {
     removeServiceWorker(deployRoot(config.root, publicDir));
+    rmSync(serviceWorkerRecordPath(outputPath), { force: true });
   }
 
   emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons, config.securityHeaders);

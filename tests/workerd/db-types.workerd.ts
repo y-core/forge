@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
-import { openTestD1 } from "../../src/testing/d1";
+import { openTestD1 } from "../../src/testing/d1/mod";
 import { type CliRun, collect, forgeDb } from "./cli";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));

@@ -5,6 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { spawnSync } from "bun";
+
 import { collectSurface, diffSurface, removedSurfaceSince } from "./surface";
 import { ReleaseError } from "./types";
 
@@ -181,7 +183,7 @@ describe("the published tarball", () => {
       .map((name) => `docs/${name}`)
       .sort();
     // A child process because the assertion is about what `bun pm pack` itself packs.
-    const run = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot, env: { ...process.env, FORCE_COLOR: "0" } });
+    const run = spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot, env: { ...process.env, FORCE_COLOR: "0" } });
     const output = run.stdout.toString();
     const packed = [...output.matchAll(/^packed \S+ (docs\/\S+\.md)$/gm)].map((match) => match[1]).sort();
 

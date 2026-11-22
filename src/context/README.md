@@ -26,6 +26,7 @@ your bindings interface as the type argument and the rest follows.
 ```ts
 import { getAppContext } from "@y-core/forge/context";
 import type { RequestContext } from "@y-core/forge/context";
+import type { KVNamespace } from "@y-core/forge/storage/kv";
 
 interface Bindings {
   CSRF_SECRET: string;
@@ -61,7 +62,7 @@ export const userCtx = contextVar<User>("user");
 userCtx.set(context, user);
 
 // in a handler that requires it
-const user = userCtx.get(context, "Authentication middleware must run first");
+const signedInUser = userCtx.get(context, "Authentication middleware must run first");
 
 // in a handler that renders differently when signed out
 const maybeUser = userCtx.getOptional(context);
@@ -79,7 +80,7 @@ the one-accessor-per-slot rule in §4b. `createContextKey<T>()` is re-exported f
 
 ## Reading which route a request matched
 
-`matchedRoutePattern` holds the pattern source of the route a request dispatched to — `"/orders/:id"`, not the `/orders/8c1e…` in the URL — for a
+`matchedRoutePattern` holds the pattern source of the route that serves a request — `"/orders/:id"`, not the `/orders/8c1e…` in the URL — for a
 metric label or a log field that must not carry ids.
 
 ```ts
@@ -93,9 +94,9 @@ app.use("*", async (context, next) => {
 });
 ```
 
-**Read it after `await next()` in an `app.use` middleware.** Forge sets it as the matched route starts, ahead of that route's own middleware, so a
-global middleware sees nothing before `next()`. It stays unset when no route matched — a 404, a 405, or a throw before dispatch — so reach for
-`getOptional`. `requestLogger` already records it as `routePattern` ([`src/logging/README.md`][logging-readme]).
+**Read it before or after `next()` in an `app.use` middleware.** Forge resolves the route before the first `app.use` middleware runs, so a guard
+that refuses the request still sees the pattern of the route it refused. It stays unset when no route matches the URL and method — a 404 or a 405 —
+so reach for `getOptional`. `requestLogger` already records it as `routePattern` ([`src/logging/README.md`][logging-readme]).
 
 ---
 
@@ -127,6 +128,26 @@ and the storage namespaces' `validateKVBinding` / `validateD1Binding` / `validat
 
 Outside a request — a script, a test, a bootstrap path where you already hold the raw env — `validateEnv(env, schema)` runs the same check once and
 returns the typed env.
+
+---
+
+## Building a value once per env
+
+`memoizePerEnv(compute)` turns `(env) => T` into `(c) => Promise<T>` that computes once for each `env` object, which every request one Worker
+isolate serves shares. Calls racing on a cold `env` share one computation, and a rejection is retried by the next request rather than cached.
+
+```ts
+import { memoizePerEnv } from "@y-core/forge/context";
+
+const resolveCatalog = memoizePerEnv((env: Env) => buildCatalog(env.CATALOG_JSON));
+
+// inside a handler
+const catalog = await resolveCatalog(c);
+```
+
+**`compute` is handed the `env` and nothing else.** The value is shared by every later request under that `env`, so it must not depend on one
+request's host, session or headers; the signature leaves no way to read them. `createKeyRingResolver`, `createWebhookSigningResolver` and a
+`cors` origins resolver are built on it.
 
 ---
 

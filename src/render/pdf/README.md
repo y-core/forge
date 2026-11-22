@@ -24,16 +24,19 @@ It is a child of the `render/` container, which holds one namespace per renderer
 
 ```ts
 import { createPdfRenderer } from "@y-core/forge/render/pdf";
-import { ContentDisposition, pdfResponse } from "@y-core/forge/http";
+import { ContentDisposition, fragmentResponse, pdfResponse } from "@y-core/forge/http";
+import { renderError } from "@y-core/forge/render/htmx";
 
 const renderer = createPdfRenderer({ maxPages: 8 });
 
-const rendered = await renderer.render(doc);
-if (!rendered.ok) return renderError(rendered.error.message);
+async function download() {
+  const rendered = await renderer.render(doc);
+  if (!rendered.ok) return fragmentResponse(renderError(rendered.error.message), 500);
 
-return pdfResponse(rendered.data, 200, {
-  "content-disposition": new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString(),
-});
+  return pdfResponse(rendered.data, 200, {
+    "content-disposition": new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString(),
+  });
+}
 ```
 
 `http` owns the response, and it takes bytes without knowing what made them — so this namespace never reaches into the response path, and `http`
@@ -70,6 +73,8 @@ A `Row` divides its width into **tracks**: a number is a share of what is left, 
 is no `grow`, `shrink`, `basis` or `justify` — one model, so a document is never laid out half in each.
 
 ```ts
+import { Row } from "@y-core/forge/render/pdf";
+
 Row({ tracks: [{ points: 120 }, 1, 1], gap: 12, children: [label, first, second] });
 ```
 
@@ -92,6 +97,24 @@ const doc = {
 };
 ```
 
+A container takes JSX children the same way, one or several:
+
+```tsx
+/** @jsxImportSource @y-core/forge/render/pdf */
+const contact = (
+  <Stack gap={6}>
+    <Box padding={4}>
+      <KeepTogether>
+        <Row tracks={[{ points: 120 }, 1]} gap={12}>
+          <Text>Email</Text>
+          <Text>a@b.example</Text>
+        </Row>
+      </KeepTogether>
+    </Box>
+  </Stack>
+);
+```
+
 **The pragma is not optional, and `@y-core/forge/render/jsx` will not do.** TypeScript resolves the `JSX` namespace through `jsxImportSource`, and
 the HTML runtime's requires a component to answer with a `JSXElement`; a PDF component answers with a `PdfElement`.
 `@y-core/forge/render/pdf/jsx-runtime` declares the namespace that admits one — and declares no intrinsic elements at all, so `<div>` in a document
@@ -108,6 +131,8 @@ Paper is data. `resolvePdfPage` settles a named size, an explicit point size, an
 downstream — measurement, pagination, `/MediaBox` — sees points only.
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 createPdfRenderer({ page: { size: "letter", orientation: "landscape", margin: { all: 40, left: 72 } } });
 ```
 
@@ -121,9 +146,11 @@ createPdfRenderer({ page: { size: "letter", orientation: "landscape", margin: { 
 that would cross the ceiling is never built, and a document that overruns produces no bytes at all rather than a truncated file:
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 const rendered = await createPdfRenderer({ maxPages: 2 }).render(longDocument);
 rendered.ok; // false
-rendered.error.kind; // "max-pages"
+if (!rendered.ok) rendered.error.kind; // "max-pages"
 ```
 
 `DEFAULT_PDF_MAX_PAGES` is what a renderer takes when the caller names none. Raise it explicitly for a genuinely long document — the ceiling is
@@ -140,6 +167,8 @@ the band takes, and a document with a footer simply breaks sooner.
 room and the writer substitutes the number as it emits:
 
 ```ts
+import { createPdfRenderer, PageNumber, Row, Text } from "@y-core/forge/render/pdf";
+
 const renderer = createPdfRenderer({ page: { size: "a4" } });
 const doc = { title: "Declaration", footer: Row({ children: [PageNumber(), Text({ children: " of " }), PageNumber({ total: true })] }), content };
 ```
@@ -155,6 +184,8 @@ A `Table` is the one construct whose columns must agree across every row. They a
 the top of every page the table continues onto, and a row moves whole rather than splitting across the seam.
 
 ```ts
+import { Table, Text } from "@y-core/forge/render/pdf";
+
 Table({
   tracks: [{ points: 120 }, 1, 1],
   header: [Text({ children: "Class" }), Text({ children: "Held" }), Text({ children: "Percentage" })],
@@ -186,6 +217,8 @@ and in the cross-reference stream's own dictionary otherwise. **`/ID` is derived
 one document are the same file, a caller can cache on content, and the identity survives a change of compressor.
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 createPdfRenderer({ metadata: "standard", info: { title: "Declaration of interest", author: "Meridian Attorneys" } });
 ```
 
@@ -197,6 +230,8 @@ A tagged render writes a structure tree a screen reader follows, a document lang
 filename.
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 createPdfRenderer({ tagged: true, lang: "en-ZA" });
 ```
 
@@ -253,6 +288,8 @@ Colour enters through one object. `createPdfPalette` names the colours a documen
 values around — so a scheme is one thing to change, not a scattering of literals.
 
 ```ts
+import { createPdfPalette, createPdfRenderer } from "@y-core/forge/render/pdf";
+
 const palette = createPdfPalette({ heading: "#1f4e79", rule: "#1f4e79", letterhead: "#1f4e79" });
 if (!palette.ok) throw new Error(palette.error.message);
 
@@ -290,7 +327,7 @@ the next.
 **A gradient takes the place of a fill rather than joining one.** `fill` is an ink or a shading, axial between two points or radial between two
 circles, and a shading needs two stops because the type says so:
 
-```ts
+```tsx
 <Path commands={chevron} height={12} alpha={0.4} fill={{ kind: "axial", from: [0, 0], to: [0, 12], stops: [{ at: 0, ink: [1, 1, 1] }, { at: 1, ink: [0, 0, 0] }] }} />
 ```
 
@@ -301,18 +338,29 @@ circles, and a shading needs two stops because the type says so:
 ## The letterhead's mark
 
 **Forge holds no artwork of its own.** A letterhead's mark is caller data: an SVG converted to paths at build time by
-`@y-core/forge/tooling/assets`, handed to the letterhead as the artifact that step wrote.
+`@y-core/forge/tooling/assets`, handed to the letterhead as the artifact that step wrote. Read it with `readPdfArtwork`, which checks the
+artifact rather than trusting it:
 
 ```ts
-const letterhead = {
-  name: "Meridian Attorneys",
-  tagline: "Commercial and estate practice",
-  email: "records@meridian.example",
-  phone: "+27 21 555 0143",
-  mark: JSON.parse(await markJson) as PdfArtwork,
-  markWidth: 250,
-};
+import { readPdfArtwork } from "@y-core/forge/render/pdf";
+
+async function readLetterhead() {
+  const mark = readPdfArtwork(JSON.parse(await markJson));
+  if (!mark.ok) return mark;
+  const letterhead = {
+    name: "Meridian Attorneys",
+    tagline: "Commercial and estate practice",
+    email: "records@meridian.example",
+    phone: "+27 21 555 0143",
+    mark: mark.data,
+    markWidth: 250,
+  };
+}
 ```
+
+A refusal has kind `"artwork"` and names the malformed field, never its value. **A render checks the mark the same way**, so a mark built in
+code with a zero width, a non-finite number, an ink outside 0–1 or an unknown op is refused with kind `"artwork"` before anything is written. So
+is a `markWidth` that is not a positive number.
 
 The wording is set beside whatever box the mark occupies, and the block is as tall as whichever of the two is taller. A letterhead with no mark sets
 its wording from the left margin. **The mark keeps its own colours** — they are the mark; everything set in type takes the palette's `letterhead`
@@ -328,7 +376,7 @@ diffs text a reviewer can read instead of bytes nobody can.
 ```ts
 import { describePdfLayout, formatPdfLayout } from "@y-core/forge/render/pdf";
 
-const described = describePdfLayout(doc, options);
+const described = describePdfLayout(doc, rendererOptions);
 if (!described.ok) throw new Error(described.error.message);
 const fixture = formatPdfLayout(described.data);
 ```
@@ -364,7 +412,7 @@ conformant file. It is a separate subpath because conformance checking is a choi
 ```ts
 import { auditPdf } from "@y-core/forge/render/pdf/audit";
 
-const findings = auditPdf(doc, options);
+const findings = auditPdf(doc, rendererOptions);
 if (findings.length > 0) throw new Error(findings.map((finding) => finding.message).join("\n"));
 ```
 
@@ -403,7 +451,10 @@ before a byte is written, rather than printed as something else. This binds what
 run, written as UTF-16BE the moment it leaves ASCII, so what a face can draw never bounds what a document may be called.
 
 ```ts
-(await createPdfRenderer().render(docContaining("価"))).error.kind; // "encoding"
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
+const rendered = await createPdfRenderer().render(docContaining("価"));
+if (!rendered.ok) rendered.error.kind; // "encoding"
 ```
 
 Beyond that set, `@y-core/forge/render/pdf/fonts` carries font packs and the face a document selects through the **CSS font-matching ladder** —
@@ -412,9 +463,19 @@ stretch, then style, then weight, in the order CSS Fonts 4 §5.2 specifies.
 ```ts
 import { createPdfFontSet, readPdfFontPack } from "@y-core/forge/render/pdf/fonts";
 
-const fonts = createPdfFontSet(packs.map((pack) => readPdfFontPack(pack, (path) => bytesOf(path))));
+const fonts = createPdfFontSet(
+  packs.map((pack) => {
+    const read = readPdfFontPack(pack, (path) => bytesOf(path));
+    if (!read.ok) throw new Error(read.error.message);
+    return read.data;
+  }),
+);
 const face = fonts.match({ family: "Oswald", weight: 700, style: "italic" });
 ```
+
+**A malformed pack is refused, not read.** Both readers take the parsed JSON as `unknown` and answer a `PdfResult`, refusing a pack whose
+fields are missing, non-finite or keyed by anything but code points as `kind: "font-pack"`. The message names the field, cut at the record, so
+no key the input carries reaches it. Read the packs once, at module scope, since each call checks every record.
 
 The packs come from the asset pipeline: a `fonts.subsets` entry names the face and **the text it must
 be able to set**, and the build subsets it to exactly those glyphs and writes `fonts/packs.json`
@@ -422,10 +483,12 @@ beside the bytes. The artifact is plain JSON — that is the whole contract betw
 engine, so neither names the other's types and a Worker never parses a font.
 
 ```ts
-// forge.assets.ts
-fonts: {
-  subsets: [{ family: "Oswald", from: "node_modules/…/Oswald_400Regular.ttf", to: "fonts/oswald-400.ttf", covering: CORPUS }],
-}
+// config/assets.config.ts — the `fonts` field of the `defineAssetsConfig({ … })` call it default-exports
+const config = {
+  fonts: {
+    subsets: [{ family: "Oswald", from: "node_modules/…/Oswald_400Regular.ttf", to: "fonts/oswald-400.ttf", covering: CORPUS }],
+  },
+};
 ```
 
 **A whole pack becomes the faces a document embeds in one call.** `readPdfFontPack` feeds the matching
@@ -435,7 +498,9 @@ way the document refers to it and carrying the `postScriptName` the file's `/Bas
 ```ts
 import { readPdfEmbeddedFonts } from "@y-core/forge/render/pdf/fonts";
 
-const fonts = readPdfEmbeddedFonts(pack, (path) => bytesOf(path), (face) => (face.weight >= 700 ? "bold" : "body"));
+const read = readPdfEmbeddedFonts(pack, (path) => bytesOf(path), (face) => (face.weight >= 700 ? "bold" : "body"));
+if (!read.ok) throw new Error(read.error.message);
+const fonts = read.data;
 ```
 
 **Hand every metric over in the face's own units**, never pre-scaled to a 1000-unit em: the engine applies that scale itself, so an adapter that
@@ -458,22 +523,33 @@ a two-page declaration can become three. A face drawn to Helvetica's metrics ref
 | Liberation Sans | OFL 1.1 | Works, and is better known. Unlike Arimo's, its licence names a Reserved Font Name, and that clause binds the subset you ship, so the built face must be renamed. |
 | Nimbus Sans | AFPL/GPL + font exception | No. The exception exempts the documents you produce, not the font files you redistribute — and a pack ships the file. |
 
-Name the face and the text it must set in `forge.assets.ts`, then hand the built pack to the renderer:
+Name the face and the text it must set in `config/assets.config.ts`, then hand the built pack to the renderer:
 
 ```ts
-// forge.assets.ts — `covering` is the corpus, and WinAnsi is the whole of what the base-14 faces set
+// config/assets.config.ts — `covering` is the corpus, and WinAnsi is the whole of what the base-14 faces set
 import { WIN_ANSI_CHARACTERS } from "@y-core/forge/render/pdf";
 
-fonts: {
-  subsets: [{ family: "Arimo", from: "node_modules/…/Arimo-Regular.ttf", to: "fonts/arimo-400.ttf", covering: WIN_ANSI_CHARACTERS }],
-}
+const config = {
+  fonts: {
+    subsets: [{ family: "Arimo", from: "node_modules/…/Arimo-Regular.ttf", to: "fonts/arimo-400.ttf", covering: WIN_ANSI_CHARACTERS }],
+  },
+};
 ```
 
 Then match the face out of the pack and name it as the one the document embeds. `tagged` is not named anywhere: supplying `fonts` is what turns it
 on.
 
 ```ts
-const fonts = createPdfFontSet(packs.map((pack) => readPdfFontPack(pack, (path) => bytesOf(path))));
+import type { PdfEmbeddedFont, PdfRendererOptions } from "@y-core/forge/render/pdf";
+import { createPdfFontSet, readPdfFontPack } from "@y-core/forge/render/pdf/fonts";
+
+const fonts = createPdfFontSet(
+  packs.map((pack) => {
+    const read = readPdfFontPack(pack, (path) => bytesOf(path));
+    if (!read.ok) throw new Error(read.error.message);
+    return read.data;
+  }),
+);
 const matched = fonts.match({ family: "Arimo", weight: 400 });
 if (!matched.ok) throw new Error(matched.error.message);
 
@@ -505,6 +581,8 @@ a face that says it has bytes. Check `sfnt` where you build the face, or pass th
 the writer can embed them once and name them in every page's resources:
 
 ```ts
+import { createPdfRenderer, Text } from "@y-core/forge/render/pdf";
+
 const renderer = createPdfRenderer({ fonts: [oswald] });
 const doc = { title: "Declaration", content: [Text({ children: "Declaration of interest", font: oswald })] };
 ```
@@ -517,6 +595,8 @@ base-14 pair is the last resort, so one glyph missing from the first face falls 
 rather than dragging its neighbours with it — or failing the document:
 
 ```ts
+import { Text } from "@y-core/forge/render/pdf";
+
 Text({ children: "Zürich", font: [oswald, fallbackFace] });
 ```
 
@@ -528,6 +608,8 @@ box and no substitution.
 `defaultFont` names faces from `fonts` — **one per weight, and both are required**:
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 const renderer = createPdfRenderer({
   fonts: [oswaldRegular, oswaldBold],
   defaultFont: { regular: "oswald", bold: "oswald-bold" },
@@ -562,6 +644,8 @@ level and the file gains an `/OutputIntents` entry with an embedded sRGB profile
 `/Group` on any page that composites. The header becomes `%PDF-1.7`.
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 createPdfRenderer({
   archival: "a-2b",
   metadata: "standard",
@@ -599,6 +683,8 @@ themselves. Run an external checker before you rely on a file being conformant.
 spreadsheet behind a table. A reader lists them in its attachments pane and saves each under its `name`.
 
 ```ts
+import { createPdfRenderer } from "@y-core/forge/render/pdf";
+
 createPdfRenderer({
   archival: "a-3b",
   metadata: "standard",
@@ -641,9 +727,11 @@ necessarily write. It uses only Web APIs, so it runs in a Worker and in a browse
 ```ts
 import { readPdfAttachments } from "@y-core/forge/render/pdf/attachments";
 
-const read = await readPdfAttachments(bytes);
-if (!read.ok) return new Response(read.error.message, { status: 422 });
-const xml = read.data.find((file) => file.mime === "application/xml");
+async function readInvoice(bytes: Uint8Array) {
+  const read = await readPdfAttachments(bytes);
+  if (!read.ok) return new Response(read.error.message, { status: 422 });
+  const xml = read.data.find((file) => file.mime === "application/xml");
+}
 ```
 
 **Each file comes back as the `PdfAttachment` a render takes**, so a file read from one PDF can be attached to the next. Its `name` is the

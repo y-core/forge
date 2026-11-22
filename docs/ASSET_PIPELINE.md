@@ -33,6 +33,7 @@ audience: internal
 - §4a The Ordered Stages and the Two Codegen Passes: why codegen straddles `buildJS`
 - §4b Build and Types Artifacts Are Shape-Identical: the header split and the idempotent write
 - §4c The Emitted Glyph Union — the ForgeIcon Seam: the name a consumer spells in type position
+- §4d The Service Worker's Input Record: what a build read for `sw.js`, and the row that holds the worker to it
 
 ---
 
@@ -102,9 +103,9 @@ trailing slash stripped, so `"/"` degrades to `/*` — because the build-time ca
 disagreement between them is invisible: the build stays green and the only symptom is a cache-miss rate in production.
 
 **The incremental-state helpers in `src/tooling/assets/state.ts` are published but unused by the pipeline.** No forge build path calls them, and
-`buildAll` re-runs every configured stage unconditionally. Their contract is a state file the _consumer_ names — forge bakes in no path and writes
-no build state of its own. What makes a repeat build cheap for the one artifact that matters is the skip-if-identical write in §4, not stored
-hashes.
+`buildAll` re-runs every configured stage unconditionally. Their contract is a state file the _consumer_ names — forge bakes in no path for one.
+The only build state forge writes is the service worker's input record (§4d), which the gate reads and no build consults. What makes a repeat
+build cheap for the one artifact that matters is the skip-if-identical write in §4, not stored hashes.
 
 ### 2c. The Namespace Orchestrates Builders and Is Not One
 
@@ -259,6 +260,41 @@ widening a missing union invites does not compile ([`FORGE_REVIEW.md`][cr-3b] §
 
 Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/glyphs.ts` enumerates it as `ForgeUiIconName`, because forge's
 components must name the glyphs they require without depending on any consumer's generated module.
+
+### 4d. The Service Worker's Input Record
+
+**A build that writes `sw.js` also records what it built it from, in `sw.inputs.json` beside the generated module.** The record holds:
+
+- the entry, the worker, and the worker's SHA-256;
+- a digest of every esbuild option the worker builds with, its precache data and output path aside, and the `--minify` the build was given;
+- the SHA-256 of every file esbuild's metafile says the bundle read. `node_modules` is included, so a forge upgrade marks the worker stale too.
+  The precache module is left out, because the build supplies it;
+- the SHA-256 of the files that decide how those imports resolve: the root `tsconfig.json` and every file it `extends`, or a marker that it is
+  absent, the app's `package.json` or a marker that it is absent, and the `package.json` of each package that supplied an input, installed or a
+  symlinked workspace package. With no `package.json` at the root, the nearest one above it is recorded too, since that one resolves `#`
+  imports. esbuild reads no `bunfig.toml`.
+
+A build with no `js.serviceWorker` deletes the record along with the worker. Only the worker is recorded: the client bundles carry no record.
+
+**The record sits beside the module, not inside it.** The module must keep the same shape as its types-only twin (§4b), and that twin has no input
+list to mirror. And a worker that imports `@assets` reads the module, so a digest stored inside it would be one of its own inputs.
+
+**`validate-service-worker` holds the built worker to the record without building anything.** It runs on `static`, after
+`validate-asset-manifest`, and so before any test that imports the built `sw.js`. It rehashes the recorded files. Each of these fails every
+tier, naming the file and the rebuild:
+
+- an input or resolution file that changed or is gone, or a `tsconfig.json` or `package.json` where the record says there was none;
+- a recorded path that is not a file;
+- a `sw.js` that is missing, or is not the file the record names;
+- a config that now builds a different entry, writes the worker somewhere else, or builds it with other options. The check reads the options
+  through the same function the build does, with the config loaded under the same environment.
+
+With no record, the check passes `static` alone and fails every tier above it, for the same reason the manifest row does (§4b). A new import
+becomes an input only through an edit to a file already recorded, which is why the check can skip esbuild. These changes stay unseen:
+
+- a new file that shadows an existing import without any input being edited, such as `prune.tsx` beside `prune.ts`;
+- a resolution file the record does not name, such as a `tsconfig.json` in a subdirectory or a `package.json` field outside the packages that
+  supplied an input.
 
 [bt]: ./BUILD_TOOLING.md
 [bt-2h]: ./BUILD_TOOLING.md#2h-roots-are-stated-or-derived-never-discovered

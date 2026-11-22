@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CONTRAST_PAIRS, CRITERION } from "../../ui/contracts/theme/contrast-pairs";
+import { createAssetsCommands } from "../assets/commands";
+import { loadConfig } from "../assets/config";
+import { buildAll } from "../assets/pipeline";
 import { defaultEnvFlags, renderEnvSchema } from "../cf/gen/cf-env-command";
 import type { SpawnSync } from "../cli/types";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
@@ -121,17 +124,19 @@ describe("cloudflareWorkerSteps() — shape", () => {
     ]);
   });
 
-  it("inserts types:assets, then the check that judges what it wrote, before the type check", () => {
+  it("inserts types:assets, then the checks that judge what it wrote and the worker built beside it, before the type check", () => {
     expect(labelsOf(workerRows({ assetConfig: "src/assets/config.ts" }))).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-service-worker",
       "validate-env-schema",
       "typecheck",
       "lint",
       "format",
       "lint:types",
+      "validate-consumer-css-sources",
       "validate-dev-boundary",
       "validate-config-files",
       "test",
@@ -474,6 +479,84 @@ describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the service-worker row", () => {
+  const ASSET_CONFIG = "assets.config.ts";
+
+  async function builtApp(): Promise<string> {
+    const root = gateFixtureRoot(
+      {
+        [ASSET_CONFIG]: `export default { paths: { publicDir: "public/assets" }, js: { serviceWorker: { entry: "src/sw.ts" } } };\n`,
+        "src/sw.ts": 'self.addEventListener("activate", () => {});\n',
+      },
+      "forge-preset-sw-",
+    );
+    await buildAll(await loadConfig({ root, configPath: ASSET_CONFIG }), { assetsPath: join(root, ".forge", "assets.ts") });
+    return root;
+  }
+
+  function unitRun(root: string): readonly Step[] {
+    const selection = selectSteps(resolved(cloudflareWorkerSteps({ root, assetConfig: ASSET_CONFIG })), { tier: "unit" });
+    if (!selection.ok) throw new Error(selection.error);
+    return selection.steps;
+  }
+
+  async function runUnitRow(root: string): Promise<CheckResult> {
+    const row = unitRun(root).find((step) => step.label === "validate-service-worker");
+    if (row === undefined || !isCheckStep(row)) throw new Error("no validate-service-worker row");
+    return row.run("unit");
+  }
+
+  it("runs in the unit tier ahead of the test row that would read the built worker", () => {
+    const labels = labelsOf(unitRun("/srv/apps/storefront"));
+
+    expect(labels.indexOf("validate-service-worker")).toBeGreaterThan(labels.indexOf("validate-asset-manifest"));
+    expect(labels.indexOf("validate-service-worker")).toBeLessThan(labels.indexOf("test"));
+  });
+
+  it("fails a unit run whose worker source changed after the last asset build, naming the source and the rebuild", async () => {
+    const root = await builtApp();
+    try {
+      writeFileSync(join(root, "src", "sw.ts"), 'self.addEventListener("activate", () => caches.delete("old"));\n');
+
+      const result = await runUnitRow(root);
+
+      expect([result.ok, result.findings.map((f) => [f.message, f.detail])]).toEqual([
+        false,
+        [
+          [
+            "`src/sw.ts` changed since `public/sw.js` was built from `src/sw.ts`",
+            ["run `forge assets build` (an app's `build:assets`) to rebuild the worker from its current sources"],
+          ],
+        ],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes a unit run straight after the asset build", async () => {
+    const root = await builtApp();
+    try {
+      expect((await runUnitRow(root)).ok).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a unit run whose built worker is missing", async () => {
+    const root = await builtApp();
+    try {
+      rmSync(join(root, "public", "sw.js"));
+
+      expect(crossingsOf(await runUnitRow(root))).toEqual([
+        [".forge/sw.inputs.json", "`public/sw.js` is missing, though a build of `src/sw.ts` is recorded"],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("cloudflareWorkerSteps() — the test rows", () => {
   it("emits one row per set, in declared order, where the single test row stood", () => {
     const labels = labelsOf(
@@ -593,15 +676,29 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("reads the feature manifest when the row opts into features, so a root with none fails the row naming it", async () => {
-    const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n" });
+  it("checks no features when the row opts into features on a root with no manifest, as a curation that dropped every feature leaves", async () => {
+    const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n", "src/app.ts": "export const app = 1;\n" });
     const row = workerRows({ root, importBoundary: { ...IMPORT, features: true } }).find((step) => step.label === "validate-import-boundary");
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
     const result = await row.run("static");
     rmSync(root, { recursive: true, force: true });
 
-    expect(result.findings.map((finding) => finding.message)).toEqual([
-      "No feature manifest at `config/features.config.ts` — forge curate needs one, default-exporting defineFeatures({...})",
+    expect([result.ok, result.findings]).toEqual([true, []]);
+  });
+
+  it("fails the features row naming the field when the manifest is malformed", async () => {
+    const root = gateFixtureRoot({
+      "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n",
+      "config/features.config.ts": "export default { features: {} };\n",
+    });
+    const row = workerRows({ root, importBoundary: { ...IMPORT, features: true } }).find((step) => step.label === "validate-import-boundary");
+    if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
+    const result = await row.run("static");
+    rmSync(root, { recursive: true, force: true });
+
+    expect([result.ok, result.findings.map((finding) => finding.message)]).toEqual([
+      false,
+      ["config/features.config.ts: features: a manifest must name a feature"],
     ]);
   });
 
@@ -840,11 +937,13 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-service-worker",
       "validate-env-schema",
       "typecheck",
       "lint",
       "format",
       "lint:types",
+      "validate-consumer-css-sources",
       "validate-dev-boundary",
       "validate-config-files",
       "test",
@@ -985,17 +1084,119 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   it("emits the asset step with --out, since the emitter writes nothing useful without one", () => {
     const assets = workerRows({ assetConfig: "src/assets/config.ts" }).find((s) => s.label === "types:assets");
 
-    expect(assets?.cmd).toEqual(["forge", "assets", "gen", "types", "--config", "src/assets/config.ts", "--out", ".forge/assets.ts"]);
+    expect(assets?.cmd).toEqual([
+      "forge",
+      "assets",
+      "gen",
+      "types",
+      "--config",
+      "src/assets/config.ts",
+      "--out",
+      ".forge/assets.ts",
+      "--root",
+      process.cwd(),
+    ]);
   });
 
   it("lets an app place the emitted module somewhere other than .forge/assets.ts", () => {
     const assets = workerRows({ assetConfig: "src/assets/config.ts", assetOut: "generated/assets.ts" }).find((s) => s.label === "types:assets");
 
-    expect(assets?.cmd).toEqual(["forge", "assets", "gen", "types", "--config", "src/assets/config.ts", "--out", "generated/assets.ts"]);
+    expect(assets?.cmd).toEqual([
+      "forge",
+      "assets",
+      "gen",
+      "types",
+      "--config",
+      "src/assets/config.ts",
+      "--out",
+      "generated/assets.ts",
+      "--root",
+      process.cwd(),
+    ]);
+  });
+
+  it("runs the asset emitter in the preset's root rather than letting the CLI derive one from forge's install path", () => {
+    const assets = workerRows({ root: "/srv/apps/storefront", assetConfig: "src/assets/config.ts" }).find((s) => s.label === "types:assets");
+
+    expect(assets?.cmd).toEqual([
+      "forge",
+      "assets",
+      "gen",
+      "types",
+      "--config",
+      "src/assets/config.ts",
+      "--out",
+      ".forge/assets.ts",
+      "--root",
+      "/srv/apps/storefront",
+    ]);
+  });
+
+  it("passes types:assets only flags that `forge assets gen types` declares", () => {
+    const step = workerRows({ root: "/srv/apps/storefront", assetConfig: "src/assets/config.ts" }).find((s) => s.label === "types:assets");
+    const cmd = step !== undefined && "cmd" in step ? step.cmd : [];
+    const gen = createAssetsCommands().commands.find((c) => c.name === "gen");
+    const declared = Object.keys(gen?.commands.find((c) => c.name === "types")?.flags ?? {});
+    const passed = cmd.filter((token) => token.startsWith("--")).map((token) => token.slice(2));
+
+    expect([cmd.slice(0, 4), passed.filter((flag) => !declared.includes(flag))]).toEqual([["forge", "assets", "gen", "types"], []]);
   });
 
   it("omits types:assets entirely when no asset config is given", () => {
     expect(labelsOf(workerRows())).not.toContain("types:assets");
+  });
+
+  it("judges the app's stylesheet entries against the sources.css exports of the installed @y-core/forge", async () => {
+    const root = gateFixtureRoot(
+      {
+        "node_modules/@y-core/forge/package.json": JSON.stringify({
+          exports: { "./app": "./src/app/mod.ts", "./app/sources.css": "./src/app/sources.css" },
+        }),
+        "node_modules/@y-core/forge/src/app/mod.ts": 'export const createApp = () => ({ class: "flex gap-4" });\n',
+        "src/worker.ts": 'import { createApp } from "@y-core/forge/app";\n\nexport default createApp();\n',
+        "src/assets/main.css": '@import "tailwindcss";\n',
+        "src/assets/config.ts": 'export default { css: [{ tool: "tailwindcss", input: "src/assets/main.css", output: "css/main.css" }] };\n',
+      },
+      "forge-presets-",
+    );
+    try {
+      const result = await runRow(workerRows({ root, assetConfig: "src/assets/config.ts" }), "validate-consumer-css-sources");
+
+      expect([result.ok, result.findings.map((finding) => [finding.file, finding.detail?.[0]])]).toEqual([
+        false,
+        [["src/assets/main.css", 'add: @import "@y-core/forge/app/sources.css";']],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the asset config path it is given and passes once the stylesheet imports the namespace's sources.css", async () => {
+    const root = gateFixtureRoot(
+      {
+        "node_modules/@y-core/forge/package.json": JSON.stringify({
+          exports: { "./app": "./src/app/mod.ts", "./app/sources.css": "./src/app/sources.css" },
+        }),
+        "node_modules/@y-core/forge/src/app/mod.ts": 'export const createApp = () => ({ class: "flex gap-4" });\n',
+        "src/worker.ts": 'import { createApp } from "@y-core/forge/app";\n\nexport default createApp();\n',
+        "src/assets/main.css": '@import "tailwindcss";\n',
+        "src/assets/admin.css": '@import "tailwindcss";\n@import "@y-core/forge/app/sources.css";\n',
+        "src/assets/config.ts": 'export default { css: [{ tool: "tailwindcss", input: "src/assets/main.css", output: "css/main.css" }] };\n',
+        "config/web-assets.ts": 'export default { css: [{ tool: "tailwindcss", input: "src/assets/admin.css", output: "css/admin.css" }] };\n',
+      },
+      "forge-presets-",
+    );
+    try {
+      const result = await runRow(workerRows({ root, assetConfig: "config/web-assets.ts" }), "validate-consumer-css-sources");
+
+      expect([result.ok, result.findings]).toEqual([true, []]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("omits validate-consumer-css-sources when no asset config is given", () => {
+    expect(labelsOf(workerRows())).not.toContain("validate-consumer-css-sources");
   });
 });
 
@@ -1168,6 +1369,64 @@ describe("cloudflareWorkerSteps() — the env-schema row", () => {
     expect(fileAndCommand(await row.run("static"))).toEqual([true, []]);
   });
 
+  it("fails a ratelimits period changed in wrangler.jsonc without regenerating, naming the schema file, and passes after its fix", async () => {
+    const limited = (period: number) =>
+      SECRETS_WRANGLER.replace(
+        /}$/,
+        `, "ratelimits": [{ "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": ${period} } }] }`,
+      );
+    const root = envRoot({ "wrangler.jsonc": limited(60) });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+    writeFileSync(join(root, "wrangler.jsonc"), limited(10));
+
+    expect(fileAndCommand(await row.run("static"))).toEqual([false, [["src/app/env.schema.ts", "run `forge cf gen env`"]]]);
+    await row.fix?.();
+    expect(fileAndCommand(await row.run("static"))).toEqual([true, []]);
+  });
+
+  const LIMITER = `{ "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }`;
+  const unrenderable = [
+    {
+      name: "a ratelimits period wrangler does not accept",
+      wrangler: SECRETS_WRANGLER.replace(/}$/, `, "ratelimits": [${LIMITER.replace('"period": 60', '"period": 30')}] }`),
+      names: ["LOGIN_LIMITER", "30"],
+    },
+    {
+      name: "an env.* ratelimits period that differs from the top level",
+      wrangler: SECRETS_WRANGLER.replace(
+        /}$/,
+        `, "ratelimits": [${LIMITER}], "env": { "staging": { "ratelimits": [${LIMITER.replace('"period": 60', '"period": 10')}] } } }`,
+      ),
+      names: ["LOGIN_LIMITER", "env.staging"],
+    },
+  ];
+  for (const { name, wrangler, names } of unrenderable) {
+    it(`reports ${name} as a finding on the wrangler file naming the binding, rather than throwing`, async () => {
+      const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+      const row = envSchemaRow({ root });
+      await row.fix?.();
+      writeFileSync(join(root, "wrangler.jsonc"), wrangler);
+      const result = await row.run("static");
+
+      expect(fileAndCommand(result)).toEqual([false, [["wrangler.jsonc", "run `forge cf gen env`"]]]);
+      expect(names.filter((fragment) => !result.findings[0]?.message.includes(fragment))).toEqual([]);
+    });
+  }
+
+  it("passes a committed schema unchanged when an env.* sets its own ratelimits limit", async () => {
+    const limited = (env: string) => SECRETS_WRANGLER.replace(/}$/, `, "ratelimits": [${LIMITER}]${env} }`);
+    const root = envRoot({ "wrangler.jsonc": limited("") });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+    writeFileSync(
+      join(root, "wrangler.jsonc"),
+      limited(`, "env": { "dev": { "ratelimits": [${LIMITER.replace('"limit": 5', '"limit": 500')}] } }`),
+    );
+
+    expect(fileAndCommand(await row.run("static"))).toEqual([true, []]);
+  });
+
   it("passes on the schema its own fix writes", async () => {
     const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
     const row = envSchemaRow({ root });
@@ -1288,7 +1547,7 @@ describe("cloudflareWorkerSteps() — the env-schema row", () => {
 
   const placements = [
     { name: "the generated-types check", options: {}, expected: ["validate-generated-types", "typecheck"] },
-    { name: "the asset pair", options: { assetConfig: "src/assets/config.ts" }, expected: ["validate-asset-manifest", "typecheck"] },
+    { name: "the asset rows", options: { assetConfig: "src/assets/config.ts" }, expected: ["validate-service-worker", "typecheck"] },
     { name: "nothing", options: { wranglerTypes: false }, expected: [undefined, "typecheck"] },
   ];
   for (const { name, options, expected } of placements) {
@@ -1344,10 +1603,12 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-service-worker",
       "validate-env-schema",
       "typecheck",
       "lint:types",
       "validate-contrast",
+      "validate-consumer-css-sources",
       "validate-asset-root",
       "db:schema:digests",
       "test",

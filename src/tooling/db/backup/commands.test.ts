@@ -595,6 +595,70 @@ describe("forge db restore --from", () => {
     expect(reportKeys(bucket)).toEqual([`d1-backups/${REMOTE_ID}/restores/STANDBY.json`]);
   });
 
+  describe("--target standby --into standby:DB", () => {
+    async function standbyTarget(): Promise<{ io: FakeDbIo; bucket: FakeBackupBucket; standby: ReturnType<typeof fakeDatabase> }> {
+      const io = fakeDbIo();
+      const bucket = await dumpBucket();
+      const standby = fakeDatabase();
+      io.buckets.set("BACKUPS", bucket);
+      io.databases.set("DB", standby);
+      return { io, bucket, standby };
+    }
+
+    const restoreIntoStandby = (root: string) => [
+      "restore",
+      "--root",
+      root,
+      "--target",
+      "standby",
+      "--from",
+      DUMP_KEY,
+      "--into",
+      "standby:DB",
+      "--yes",
+    ];
+
+    it("reads the dumps through the app's config, opens the database through the standby's generated one, and keeps the report beside the dumps", async () => {
+      const root = appRoot();
+      const { io, bucket } = await standbyTarget();
+      const buffer = await runCli(io, restoreIntoStandby(root));
+
+      expect([buffer.err, buffer.code, buffer.out, io.restCalls]).toEqual([
+        [],
+        null,
+        [`✓ restored ${DUMP_KEY} into DB (DB)`, "  it holds what the dump's sidecar recorded"],
+        [],
+      ]);
+      expect([...new Set(io.bindingCalls.map((call) => `${call.kind} ${call.binding} ${call.configPath}`))]).toEqual([
+        `bucket BACKUPS ${join(root, "wrangler.jsonc")}`,
+        `database DB ${join(root, ".forge", "standby", "app-db-standby", "wrangler.jsonc")}`,
+      ]);
+      expect(reportKeys(bucket)).toEqual([`d1-backups/${REMOTE_ID}/restores/DB.json`]);
+    });
+
+    it("restores into a standby that `standby reset --empty --yes` just emptied, and the sidecar check passes", async () => {
+      const root = appRoot();
+      const { io, bucket, standby } = await standbyTarget();
+      const state = join(root, ".forge", "standby", "app-db-standby", ".wrangler", "state", "v3", "d1", "miniflare-D1DatabaseObject", "db.sqlite");
+      io.writeText(state, "");
+
+      const reset = await runCli(io, ["standby", "reset", "--root", root, "--empty", "--yes"]);
+      const restore = await runCli(io, restoreIntoStandby(root));
+
+      expect([reset.err, reset.code, io.exists(state), restore.err, restore.code]).toEqual([[], null, false, [], null]);
+      expect(restore.out).toEqual([`✓ restored ${DUMP_KEY} into DB (DB)`, "  it holds what the dump's sidecar recorded"]);
+      expect(JSON.parse((await (await bucket.get(`d1-backups/${REMOTE_ID}/restores/DB.json`))?.text()) ?? "null")).toEqual({
+        databaseId: "DB",
+        name: "DB",
+        key: DUMP_KEY,
+        bookmark: null,
+        queries: DUMP_STATEMENTS,
+        mismatches: [],
+      });
+      expect(standby.sqlite.query("SELECT body FROM notes ORDER BY id").all()).toEqual([{ body: "one; two" }, { body: "three" }]);
+    });
+  });
+
   it("refuses a local fresh restore before any request", async () => {
     const root = appRoot();
     const { io, bucket } = await localTarget("");

@@ -51,7 +51,7 @@ obligation for a different reason.
 
 **`isHxRequest` carries the complementary ruling, and this section owns it: `HX-Request` is a client-supplied header any caller can set, so the
 predicate is a UX routing hint and never a security boundary.** It decides _how to render_, never _whether the caller is allowed_. Neither the
-attribute values nor the request hint substitute for `originProtection`/`crossOriginProtection` and `csrfProtection` on mutation routes.
+attribute values nor the request hint substitute for `originProtection`/`crossOriginProtection` and the app's CSRF policy on mutation routes.
 
 ### 7a. URL-Valued hx Attributes Are Deliberately Unsanitized
 

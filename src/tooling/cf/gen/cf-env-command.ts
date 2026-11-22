@@ -7,7 +7,7 @@ import { scopeLogger } from "../../cli/log";
 import { captureStreams, shellQuote } from "../../cli/proc";
 import type { CommandBase, SpawnSync } from "../../cli/types";
 import { loadWranglerConfig } from "../config/parse";
-import { collectBindings, collectNamedEnvVars, collectPolicyVars, collectSecretNames, collectVars, emit } from "./cf-env-gen";
+import { collectBindings, collectNamedEnvVars, collectPolicyVars, collectRateLimits, collectSecretNames, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 import type { Entry, GenOptions } from "./types";
 
@@ -71,7 +71,7 @@ export async function renderEnvSchema(
   const declared = [...collectBindings(cfg, options), ...collectVars(collectSecretNames(cfg, devVars), cfg.vars ?? {}, options)];
   const named = [...declared, ...collectNamedEnvVars(cfg, new Set(declared.map((entry) => entry.name)), options)];
   const entries = [...named, ...collectPolicyVars(new Set(named.map((entry) => entry.name)), options)];
-  const raw = emit(entries, regenerateCommand(flags));
+  const raw = emit(entries, regenerateCommand(flags), collectRateLimits(cfg));
   const formatted = formatSchema(raw, resolve(root, flags.out), root, spawn);
   return { text: formatted ?? raw, entries, formatted: formatted !== undefined, configured };
 }

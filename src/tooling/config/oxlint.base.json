@@ -1,8 +1,8 @@
 {
   "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
   // Resolved against this file, so it names the bundle beside it: node refuses to strip types from a
-  // file under `node_modules`, and `plugin.mjs` is forge's committed esbuild build of `mod.ts`.
-  "jsPlugins": ["../lint/plugin.mjs"],
+  // file under `node_modules`, and `plugin.node.mjs` is forge's committed esbuild build of `mod.ts`.
+  "jsPlugins": ["../lint/plugin.node.mjs"],
   "categories": { "correctness": "error" },
   "rules": {
     "forge/suppression-needs-reason": "error",
@@ -50,12 +50,36 @@
     // The role is what an assistive technology reads; swapping in the tag changes the markup a spec
     // asserts on for no gain here.
     "jsx-a11y/prefer-tag-over-role": "off",
+    // A Worker has none of these globals; `no-restricted-imports` refuses the node modules that supply them.
+    "eslint/no-restricted-globals": [
+      "error",
+      {
+        "globals": [
+          { "name": "Bun", "message": "A Worker has no `Bun`: import from \"bun\" in a spec or a build-time module." },
+          { "name": "Buffer", "message": "A Worker has no global `Buffer`: use `Uint8Array`, or import from \"node:buffer\" in build-time code." },
+          {
+            "name": "process",
+            "message": "A Worker has no global `process`: read the env binding, or import from \"node:process\" in build-time code."
+          }
+        ],
+        "checkGlobalObject": true
+      }
+    ],
     // The facade, and the Worker/build-time boundary. The tooling group names the bare subpath as
     // well as its children: `@y-core/forge/tooling` resolves on its own, and a group matching only
     // `/*` leaves that one spelling open.
     "eslint/no-restricted-imports": [
       "error",
       {
+        "paths": [
+          {
+            "name": "node:process",
+            "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+          },
+          { "name": "process", "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code." },
+          { "name": "node:buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." },
+          { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+        ],
         "patterns": [
           { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
           {
@@ -87,10 +111,12 @@
       // A spec's job is adversarial markup, so the a11y and design rules are off in the suite —
       // forge draws the same line in its own config. `exact-markup-assertion` replaces them: it is
       // the rule that matters for a test, and the canon bans substring matching on markup anyway.
+      // An app's responses are not all pages — a 429's body is plain text — so here only a
+      // renderer's output counts as markup, which is the bar forge holds outside its markup trees.
       "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts", "**/*.workerd.ts"],
       "rules": {
         "typescript/no-non-null-assertion": "off",
-        "forge/exact-markup-assertion": "error",
+        "forge/exact-markup-assertion": ["error", { "responseText": false }],
         "forge/a11y-aria-beside-data": "off",
         "forge/a11y-heading-size-by-class": "off",
         "forge/a11y-label-association": "off",
@@ -144,6 +170,42 @@
       }
     },
     // Worker source only: a spec's fixture deletes rows with no actor to authorise, by design.
-    { "files": ["src/**/*.ts"], "rules": { "forge/sql-delete-authorised": "error" } }
+    { "files": ["src/**/*.ts"], "rules": { "forge/sql-delete-authorised": "error" } },
+    {
+      // A spec runs under Bun, which has node's globals; only `Bun` stays banned, so a spec imports it from "bun".
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "eslint/no-restricted-globals": [
+          "error",
+          {
+            "globals": [{ "name": "Bun", "message": "Import from \"bun\" — the global `Bun` is not declared by forge's stubs." }],
+            "checkGlobalObject": true
+          }
+        ]
+      }
+    },
+    // Where the globals ban is lifted, so is the node-import ban; the facade and build-time bans stay.
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "tests/**", "**/*.workerd.ts", "**/*.browser.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
+              {
+                "group": ["@y-core/forge/tooling", "@y-core/forge/tooling/*", "@y-core/forge/tooling/**"],
+                "message": "A build-time subpath belongs in config/, scripts/ or playwright.config.ts — never in src/ or tests/."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    // Build-time code, and specs that run in a browser or in workerd rather than in Worker source.
+    {
+      "files": ["config/**", "scripts/**", "tests/**", "playwright.config.ts", "**/*.workerd.ts", "**/*.browser.ts"],
+      "rules": { "eslint/no-restricted-globals": "off" }
+    }
   ]
 }

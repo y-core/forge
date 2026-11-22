@@ -224,7 +224,7 @@ describe("PasskeyListView and the per-row token", () => {
     ]);
   });
 
-  // Pinned rather than assumed: `csrfProtection` keys on the pathname, so one token per row
+  // Pinned rather than assumed: the CSRF policy keys on the pathname, so one token per row
   // authorises both writes only while both routes stay on the one path.
   it("holds the rename and the remove to one pathname, which is what lets one token cover both", () => {
     expect(ACCOUNT.passkeyRename({ id: "c1" })).toBe(ACCOUNT.passkeyRemove({ id: "c1" }));

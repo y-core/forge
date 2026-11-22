@@ -252,7 +252,28 @@ describe("the absolute lifetime", () => {
 });
 
 describe("clearAuthSession", () => {
-  it("deletes the session's row, drops its token, pending sign-in, code binding and approval, and rotates the id", async () => {
+  const KEEP = { keepVisitorData: true } as const;
+
+  it("deletes the session's row and destroys the session, so a visitor key set before it reads as gone", async () => {
+    const { store, rows } = recordingStore();
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store), cart: "3 books" });
+    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
+    expect({ rows: rows.size, destroyed: session.destroyed, cart: session.get("cart"), token: session.get(AUTH_SESSION_TOKEN_KEY) }).toEqual({
+      rows: 0,
+      destroyed: true,
+      cart: undefined,
+      token: undefined,
+    });
+  });
+
+  it("destroys a session holding no token too, asking the store nothing", async () => {
+    const { store, calls } = recordingStore();
+    const session = createSession("sid-1");
+    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
+    expect({ calls, destroyed: session.destroyed }).toEqual({ calls: [], destroyed: true });
+  });
+
+  it("with keepVisitorData, deletes the row, drops its token, pending sign-in, code binding and approval, and rotates the id", async () => {
     const { store, rows } = recordingStore();
     const token = await signedInToken(store);
     const session = loaded({
@@ -262,7 +283,7 @@ describe("clearAuthSession", () => {
       [APPROVAL_SESSION_KEY]: NOW,
       [APPROVAL_CODE_SESSION_KEY]: "k.mac",
     });
-    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
+    expect(await clearAuthSession(session, store, KEEP)).toEqual({ ok: true, data: undefined });
     expect({
       rows: rows.size,
       token: session.get(AUTH_SESSION_TOKEN_KEY),
@@ -271,14 +292,35 @@ describe("clearAuthSession", () => {
       approval: resolveApprovalMark(session),
       code: session.get(APPROVAL_CODE_SESSION_KEY),
       deleteId: session.deleteId,
-    }).toEqual({ rows: 0, token: undefined, pending: undefined, binding: undefined, approval: null, code: undefined, deleteId: "sid-1" });
+      destroyed: session.destroyed,
+    }).toEqual({
+      rows: 0,
+      token: undefined,
+      pending: undefined,
+      binding: undefined,
+      approval: null,
+      code: undefined,
+      deleteId: "sid-1",
+      destroyed: false,
+    });
   });
 
-  it("keeps the storage clear a sign-out owes, which the sign-out sets after it", async () => {
+  it("with keepVisitorData, keeps a visitor key and the storage clear a sign-out owes, under a new id", async () => {
     const { store } = recordingStore();
-    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store), [AUTH_SITE_DATA_OWED_SESSION_KEY]: true });
-    await clearAuthSession(session, store);
-    expect(session.get(AUTH_SITE_DATA_OWED_SESSION_KEY)).toBe(true);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store), [AUTH_SITE_DATA_OWED_SESSION_KEY]: true, cart: "3 books" });
+    await clearAuthSession(session, store, KEEP);
+    expect({ owed: session.get(AUTH_SITE_DATA_OWED_SESSION_KEY), cart: session.get("cart"), rotated: session.id !== "sid-1" }).toEqual({
+      owed: true,
+      cart: "3 books",
+      rotated: true,
+    });
+  });
+
+  it("with keepVisitorData, asks the store nothing for a session holding no token, and still rotates it", async () => {
+    const { store, calls } = recordingStore();
+    const session = createSession("sid-1");
+    expect(await clearAuthSession(session, store, KEEP)).toEqual({ ok: true, data: undefined });
+    expect({ calls, deleteId: session.deleteId }).toEqual({ calls: [], deleteId: "sid-1" });
   });
 
   it("leaves only the row it names: another session of the same user stays signed in", async () => {
@@ -288,36 +330,43 @@ describe("clearAuthSession", () => {
     expect([...rows.keys()]).toEqual([await keyOf(kept)]);
   });
 
-  it("asks the store nothing for a session holding no token, and still rotates it", async () => {
-    const { store, calls } = recordingStore();
-    const session = createSession("sid-1");
-    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
-    expect({ calls, deleteId: session.deleteId }).toEqual({ calls: [], deleteId: "sid-1" });
-  });
-
-  it("answers the store's failure and leaves the session untouched, so the visitor can retry and no copied cookie outlives a false sign-out", async () => {
-    const { store, rows } = recordingStore([ADA], { remove: failure("remove") });
-    const token = await signedInToken(store);
-    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token, [APPROVAL_SESSION_KEY]: NOW, [APPROVAL_CODE_SESSION_KEY]: "k.mac" });
-    const result = await clearAuthSession(session, store);
-    expect({
-      code: result.ok ? null : result.error.code,
-      rows: rows.size,
-      token: session.get(AUTH_SESSION_TOKEN_KEY),
-      approval: resolveApprovalMark(session),
-      id: session.id,
-      deleteId: session.deleteId,
-      dirty: session.dirty,
-    }).toEqual({
-      code: "unavailable",
-      rows: 1,
-      token,
-      approval: { presentedAt: NOW, digest: "k.mac" },
-      id: "sid-1",
-      deleteId: undefined,
-      dirty: false,
+  for (const [mode, signOut] of [
+    ["by default", undefined],
+    ["with keepVisitorData", KEEP],
+  ] as const) {
+    it(`answers the store's failure ${mode} and leaves the session untouched, so the visitor can retry and no copied cookie outlives a false sign-out`, async () => {
+      const { store, rows } = recordingStore([ADA], { remove: failure("remove") });
+      const token = await signedInToken(store);
+      const session = loaded({
+        [AUTH_SESSION_TOKEN_KEY]: token,
+        [APPROVAL_SESSION_KEY]: NOW,
+        [APPROVAL_CODE_SESSION_KEY]: "k.mac",
+        cart: "3 books",
+      });
+      const result = await clearAuthSession(session, store, signOut);
+      expect({
+        code: result.ok ? null : result.error.code,
+        rows: rows.size,
+        token: session.get(AUTH_SESSION_TOKEN_KEY),
+        approval: resolveApprovalMark(session),
+        cart: session.get("cart"),
+        id: session.id,
+        deleteId: session.deleteId,
+        dirty: session.dirty,
+        destroyed: session.destroyed,
+      }).toEqual({
+        code: "unavailable",
+        rows: 1,
+        token,
+        approval: { presentedAt: NOW, digest: "k.mac" },
+        cart: "3 books",
+        id: "sid-1",
+        deleteId: undefined,
+        dirty: false,
+        destroyed: false,
+      });
     });
-  });
+  }
 });
 
 describe("authOtpBinding and authFactorCaller", () => {

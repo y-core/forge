@@ -4,7 +4,7 @@ import { checkStep } from "../../src/tooling/gate/builders";
 import type { StepOptions } from "../../src/tooling/gate/types";
 import type { CheckStep, StepRequirement, StepTiers } from "../../src/tooling/gate/types";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
-import { checkDesign, type DesignCheckConfig } from "./checks/design";
+import { checkDesign, checkDocFences, type DesignCheckConfig, type DocFencesCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { libraryDocsDir } from "./corpus/dependency";
 import { checkDuplicates, type DuplicateCheckConfig } from "./gate/duplicates";
@@ -14,7 +14,7 @@ import { GOLDEN_STEP_LABEL, type GoldenStep } from "./gate/step-sets";
 import { checkWarden, type WardenCheckConfig } from "./gate/warden";
 import { CANON_ROOT } from "./paths";
 
-const SQLITE: StepRequirement = { tool: "bun:sqlite", probe: () => typeof Bun !== "undefined", hint: "run the gate under Bun — `bun run verify`" };
+const SQLITE: StepRequirement = { tool: "bun:sqlite", probe: () => "Bun" in globalThis, hint: "run the gate under Bun — `bun run verify`" };
 
 /** Checks the governing documents against the subpaths they are required to cite. @public */
 export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): CheckStep {
@@ -31,6 +31,11 @@ export function changelogStep(config: ChangelogCheckConfig, options: StepOptions
 /** Checks the design corpus against the tree it governs. @public */
 export function designStep(config: DesignCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-design", () => checkDesign(config), options);
+}
+
+/** Compiles the code fences of the listed documentation against the exports. @public */
+export function docFencesStep(config: DocFencesCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-doc-fences", () => checkDocFences(config), options);
 }
 
 /** Rebuilds the knowledge index and asserts what retrieval depends on. @public */

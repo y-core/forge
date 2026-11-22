@@ -21,18 +21,55 @@ declare module "bun:test" {
 
   export function spyOn<T extends object, K extends keyof T>(object: T, method: K): Mock<T[K] extends AnyFn ? T[K] : AnyFn>;
 
-  export function expect(value?: any): any;
+  interface AsymmetricMatchers {
+    any(constructor: AnyFn | (new (...args: any[]) => any)): any;
+    anything(): any;
+    arrayContaining(values: readonly unknown[]): any;
+    objectContaining(value: object): any;
+    stringContaining(value: string): any;
+    stringMatching(pattern: string | RegExp): any;
+    closeTo(value: number, digits?: number): any;
+  }
+
+  export interface Expect extends AsymmetricMatchers {
+    (value?: any): any;
+    not: Omit<AsymmetricMatchers, "any" | "anything">;
+    assertions(count: number): void;
+    hasAssertions(): void;
+    unreachable(message?: string | Error): never;
+  }
+
+  export const expect: Expect;
 
   type TestFn = () => void | Promise<void>;
-  interface TestCase {
-    (name: string, fn: TestFn, timeout?: number): void;
-    /** Skips the case when the condition holds. */
-    skipIf(condition: boolean): (name: string, fn: TestFn, timeout?: number) => void;
-    todo(name: string, fn?: TestFn, timeout?: number): void;
+  export interface Test<Args extends readonly unknown[] = []> {
+    (name: string, fn: (...args: Args) => void | Promise<void>, timeout?: number): void;
+    only: Test<Args>;
+    skip: ((name: string) => void) & Test<Args>;
+    todo: ((name: string) => void) & Test<Args>;
+    failing: Test<Args>;
+    if(condition: boolean): Test<Args>;
+    skipIf(condition: boolean): Test<Args>;
+    each<Row extends readonly [unknown, ...unknown[]]>(table: readonly Row[]): Test<Row>;
+    each<Row extends readonly unknown[]>(table: readonly Row[]): Test<Row>;
+    each<const Row>(table: readonly Row[]): Test<[Row]>;
   }
-  export function describe(name: string, fn: () => void): void;
-  export const it: TestCase;
-  export const test: typeof it;
+
+  export interface Describe<Args extends readonly unknown[] = []> {
+    (name: string, fn: (...args: Args) => void): void;
+    only: Describe<Args>;
+    skip: ((name: string | number) => void) & Describe<Args>;
+    todo: ((name: string | number) => void) & Describe<Args>;
+    if(condition: boolean): Describe<Args>;
+    skipIf(condition: boolean): Describe<Args>;
+    each<Row extends readonly [unknown, ...unknown[]]>(table: readonly Row[]): Describe<Row>;
+    each<Row extends readonly unknown[]>(table: readonly Row[]): Describe<Row>;
+    each<const Row>(table: readonly Row[]): Describe<[Row]>;
+  }
+
+  export const describe: Describe;
+  export const it: Test;
+  export const test: Test;
   export function setSystemTime(time?: Date | number): void;
   export function beforeAll(fn: TestFn, timeout?: number): void;
   export function afterAll(fn: TestFn, timeout?: number): void;
@@ -102,4 +139,20 @@ declare module "bun:sqlite" {
     static deserialize(data: Uint8Array, options?: { readonly?: boolean; strict?: boolean }): Database;
     close(throwOnError?: boolean): void;
   }
+}
+
+// Functions and methods only, never a `const` or a property, so an app that keeps bun-types merges these with its declarations.
+declare module "bun" {
+  interface BunFile {
+    exists(): Promise<boolean>;
+    text(): Promise<string>;
+    arrayBuffer(): Promise<ArrayBuffer>;
+  }
+
+  function file(path: string | URL): BunFile;
+  function write(destination: string | URL, input: string | Uint8Array | ArrayBufferLike): Promise<number>;
+  function spawnSync(
+    cmd: readonly string[],
+    options?: { cwd?: string; env?: Record<string, string | undefined> },
+  ): { stdout: { toString(): string }; exitCode: number };
 }

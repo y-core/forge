@@ -3,7 +3,7 @@ import type { SqlFragment } from "./types";
 /** Placeholder used in generated SQL text. @public */
 export const SQL_PLACEHOLDER = "?";
 
-/** Provenance brand stamped on every fragment {@link sql} mints — never re-exported from `mod.ts`, so consumer data cannot forge a fragment. @internal */
+/** Provenance brand stamped on every fragment {@link sql} mints — a symbol, so no JSON, form data or structured clone can carry one in. @internal */
 export const SQL_FRAGMENT_BRAND: unique symbol = Symbol("forge.storage.db.SqlFragment");
 
 /** Tagged template that builds a SqlFragment, binding every interpolated value as a `?` param and flattening nested fragments. @public */

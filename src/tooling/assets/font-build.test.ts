@@ -3,12 +3,14 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { file } from "bun";
+
 import { buildFont, buildFontSubsets, extractFontMetrics, postScriptName, subsetFont } from "./font-build";
 
 const SOURCE = "node_modules/@expo-google-fonts/oswald/400Regular/Oswald_400Regular.ttf";
 const WASM = "node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm";
 
-const sfnt = new Uint8Array(await Bun.file(SOURCE).arrayBuffer());
+const sfnt = new Uint8Array(await file(SOURCE).arrayBuffer());
 const points = (run: string): number[] => [...new Set([...run].map((character) => character.codePointAt(0) ?? 0))];
 
 describe("subsetFont", () => {
@@ -103,7 +105,7 @@ describe("the subsetter is cached per wasm path, which is the key it takes", () 
     // A byte-identical copy at a second path: same behaviour, different module, so the only way both
     // subsets can succeed is if the path reached the cache lookup.
     const copy = join(tmpdir(), `harfbuzz-subset-${Date.now()}.wasm`);
-    writeFileSync(copy, new Uint8Array(await Bun.file(WASM).arrayBuffer()));
+    writeFileSync(copy, new Uint8Array(await file(WASM).arrayBuffer()));
     try {
       const first = await subsetFont({ sfnt, codePoints: points("abc"), wasm: WASM });
       const second = await subsetFont({ sfnt, codePoints: points("abc"), wasm: copy });

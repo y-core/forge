@@ -1,5 +1,16 @@
-import type { AppContext } from "../context/types";
+import type { Middleware } from "@remix-run/fetch-router";
+
 import type { KeyRing, KeyRingResolver } from "../crypto/keyring/types";
+import type { CookieAttributes } from "../http/types";
+
+declare const kSessionMiddleware: unique symbol;
+
+/** A middleware that puts the visitor's `Session` on `sessionCtx`, as `createAnonymousSession` and `sessionMiddleware` return it; the chain's `session` slot takes nothing else. @public */
+export type SessionMiddleware = Middleware & {
+  /** The session cookie's `maxAge` in seconds, or `undefined` where it sets none. */
+  readonly maxAge: number | undefined;
+  readonly [kSessionMiddleware]: true;
+};
 
 /** Options for `sessionMiddleware`. @public */
 export interface SessionCookieOptions {
@@ -14,8 +25,8 @@ export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> ext
   cookieName?: string;
   /** Resolves the key ring that signs the cookie from the request env; its active key signs and every key on it verifies. */
   ring: KeyRingResolver<Bindings>;
-  /** Resolves the KV binding that holds the session data; exactly one of this and `storage` must be given. */
-  kv?: (c: AppContext<Bindings>) => SessionKVBinding;
+  /** Resolves the KV binding that holds the session data from the request env; exactly one of this and `storage` must be given. */
+  kv?: (env: Bindings) => SessionKVBinding;
   /** Serializes all session data into the cookie itself, accepting that it rides on every request and cannot be revoked before its expiry. */
   storage?: "cookie";
   /** Cookie lifetime in seconds, enforced by the signature as well as announced by `Max-Age`; also the default KV TTL when `ttlSeconds` is not set. */
@@ -37,38 +48,20 @@ export interface KVSessionStorageOptions {
   ttlSeconds?: number;
 }
 
-/** `Set-Cookie` attributes, as defaults at construction or as a per-call override on `serialize`. @public */
-export interface CookieAttributes {
-  domain?: string;
-  expires?: Date;
-  httpOnly?: boolean;
-  maxAge?: number;
-  partitioned?: boolean;
-  path?: string;
-  sameSite?: "Strict" | "Lax" | "None";
-  secure?: boolean;
-}
-
-/** A cookie whose value is carried verbatim, base64-encoded but unauthenticated. @public */
-export interface UnsignedCookie {
-  readonly name: string;
-  /** Reads this cookie's value out of a `Cookie` header, answering `null` when it is absent or malformed; never throws. */
-  parse(header: string | null): Promise<string | null>;
-  /** Builds the `Set-Cookie` header value, merging `attributes` over the construction-time defaults. */
-  serialize(value: string, attributes?: CookieAttributes): Promise<string>;
-}
-
 /** Per-call `Set-Cookie` attributes a signed cookie takes, minus the attributes it fixes itself. @public */
 export type SignedCookieAttributes = Omit<CookieAttributes, "httpOnly" | "sameSite" | "secure">;
 
 /** A cookie whose value is HMAC-signed, verified on the way in under the key its key id names. @public */
-export interface SignedCookie extends Omit<UnsignedCookie, "parse" | "serialize"> {
+export interface SignedCookie {
+  readonly name: string;
   /** Reads this cookie's verified value out of a `Cookie` header, answering `null` when it is absent or malformed; rejects on a ring `importKeyRing` did not build. */
   parse(header: string | null): Promise<string | null>;
   /** Builds the `Set-Cookie` header value, merging `attributes` over the construction-time defaults. */
   serialize(value: string, attributes?: SignedCookieAttributes): Promise<string>;
   /** True while the ring holds more than one key, i.e. a rotation is in flight. */
   readonly rotating: boolean;
+  /** The construction-time `maxAge` in seconds, or `undefined` where none was given. */
+  readonly maxAge: number | undefined;
   /** Reads this cookie off a `Cookie` header, answering `null` where it is absent — which `parse` cannot tell apart from a value that failed to verify. */
   read(header: string | null): Promise<SignedCookieReading | null>;
 }
@@ -87,6 +80,3 @@ export interface SignedCookieOptions extends Omit<CookieAttributes, "httpOnly" |
   ring: KeyRing;
   sameSite?: "Strict" | "Lax";
 }
-
-/** Options for `createUnsignedCookie`. @public */
-export interface UnsignedCookieOptions extends CookieAttributes {}

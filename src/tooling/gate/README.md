@@ -166,14 +166,14 @@ Most rows are opt-in, and each option is a question about your repository rather
 | You have | State | What it adds |
 | --- | --- | --- |
 | A `wrangler.jsonc` this gate should read | `workerConfig` | `--config` on `types:cf-runtime`, plus `validate-exposure` — tuned by `exposure` |
-| An assets pipeline | `assetConfig` (and `assetOut`) | `types:assets` and `validate-asset-manifest`; with `workerConfig` too, `validate-asset-root` |
+| An assets pipeline | `assetConfig` (and `assetOut`) | `types:assets`, `validate-asset-manifest`, `validate-service-worker` and `validate-consumer-css-sources`; with `workerConfig` too, `validate-asset-root` |
 | Runtime types you supply yourself | `wranglerTypes: false` | Drops `types:cf-runtime` and `validate-generated-types`, which fails a wrangler-generated `.types/` file no row writes |
 | An env schema `forge cf gen env` writes elsewhere, or none at all | `envSchema: { out, config }`, or `envSchema: false` | Moves or drops `validate-env-schema`, the default-on row that fails a committed schema a fresh `gen env` would write differently; `--fix` rewrites it |
 | A suite split by the question each set answers | `testSets` | One labelled `bun test` row per set, replacing the single `test` row that `tests` feeds |
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
 | A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary`; `ssrBoundary.serverDirs` adds `validate-client-boundary`, which fails a module under `clientDirs` importing one of those directories at value |
-| A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; `importBoundary.features: true` also reads the feature manifest |
+| A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; `importBoundary.features: true` also reads the feature manifest, and a root without one checks no features |
 | A third-party tree copied into your source | `vendorDir` | `validate-vendor-boundary` — a module inside it may import the tree itself and packages, never a directory or source file beside it under its parent |
 | Markdown `bun fmt` has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
@@ -187,6 +187,14 @@ import another. Code the shared path does call goes behind the app's `#app/relax
 fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. It also fails
 any `imports` entry other than `#app/relax` that carries `forge-dev`, reported on `package.json`. The bundle row below still proves the built
 Worker.
+
+**`validate-consumer-css-sources` fails a stylesheet entry that would render forge's markup unstyled.** Your non-test source requires
+`@import "@y-core/forge/<ns>/sources.css";`, verbatim in a `css[].input` of your assets config, when it imports a namespace's markup: when a
+`@y-core/forge/…` subpath it imports at value reaches, through forge's own value imports, a module under `<ns>` that declares classes.
+Importing `@y-core/forge/app` therefore requires `app/sources.css` and `render/htmx/sources.css`, and `@y-core/forge/auth/web` requires
+`auth/sources.css` and `render/htmx/sources.css`, while `@y-core/forge/logging` requires nothing and `@y-core/forge/logging/viewer` requires
+`logging/sources.css`. Each failure names the stylesheet and the line to add. A type-only import
+requires nothing, and no Tailwind install is needed.
 
 **`validate-dev-bundle` follows it, on the `scheduled` tier.** It bundles every deployment's `main` with esbuild — from the project, or from
 wrangler's own dependency — and fails when a `*.dev.ts` module, the app's or a dependency's, or a module from a directory a `forge.devOnly` subpath
@@ -626,6 +634,10 @@ running `validate-markdown` must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatte
 **A types-only assets artifact passes a `static` run alone.** `gen types` maps every logical name to itself and those files deliberately do not
 exist, which is what lets `bun check` run on a clean checkout — so `validate-asset-manifest` lets it through on `static` and fails it on every tier
 above, where passing on an artifact nobody built is exactly the 404 the check exists to prevent.
+
+**A service worker rebuilt by hand is the only way past `validate-service-worker`.** `forge assets build` records the files the worker's bundle
+read in `sw.inputs.json`, beside the emitted module. The row fails on every tier once one of those files has changed since that build, so run
+your `build:assets` before a test reads the built `sw.js`. With no build recorded, it passes on `static` and nowhere else, as the manifest row does.
 
 **A `playwright.config.ts` reaches forge only through a `forge.node` subpath, never a barrel.** Node refuses to strip types from a file under
 `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a module node loads must be a prebuilt `.mjs` at a `forge.node` subpath. Your

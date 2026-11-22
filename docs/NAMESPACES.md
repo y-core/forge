@@ -319,9 +319,10 @@ APIs, and a module a Worker path imports may not. Reaching for a `tooling` names
 runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/snapshot` reads
 `node:fs` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
 
-**`src/testing/d1.ts` is the one source outside `tooling` that imports it at value**, a ruling `TOOLING_CROSSINGS` in `config/exemptions.ts`
-holds. It is Node-only and off the `testing` barrel, and it loads the host config through `tooling/db`'s loader so a test and `forge db` apply the
-same migrations. Nothing else outside `tooling` may.
+**`TOOLING_CROSSINGS` in `config/exemptions.ts` lists the only sources outside `tooling` that import it at value**: `testing/d1/migrations.ts`
+and `testing/d1/bun.ts`, which load the host config through `tooling/db`'s loader so a test and `forge db` apply the same migrations, and
+`testing/harness.ts`, which arms a build as `forge cf dev` does. Each is off every Worker path and off the `testing` barrel. Nothing else outside
+`tooling` may.
 
 ### 5h. auth — Identity, and Only the Domain of It
 
@@ -399,7 +400,7 @@ export on that pair, never a new alias or a new pair. What a development build l
 map is the list of its relaxations. `validate-dev-boundary` holds the rule for an app: it fails any other `imports` entry that carries `forge-dev`.
 A fake binding is still `testing`'s rather than a relaxation's. The recipe is [`src/relax/README.md`][relax-readme].
 
-**Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
+**Where a relaxation is legitimate in production, it stays an explicit literal.** `csrf: { subject: false, … }` is the idiom — a grep finds
 every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). A `#relax` module is for the ones that are not legitimate, and the difference
 must stay visible at the call site.
 
@@ -558,7 +559,7 @@ second repository needs it.
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-1]: ./FORGE_ERRORS.md#1-result-monad
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
-[iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[iv-3a]: ./INPUT_VALIDATION.md#3a-the-csrf-policy--guard-mutating-routes
 [la]: ./FORGE_STRUCTURE.md
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [nd-1]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1-barrel-rules-and-export-discipline

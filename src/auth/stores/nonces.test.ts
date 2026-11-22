@@ -58,6 +58,11 @@ describe("createNonceStore", () => {
     expect(() => createNonceStore(client, { prefix: "" })).toThrow("createNonceStore: `prefix` must not be an empty string");
   });
 
+  it.each(["a||b", "a|"])("refuses the prefix %s, whose key would split in two places", (prefix) => {
+    const [client] = clientOf();
+    expect(() => createNonceStore(client, { prefix })).toThrow("createNonceStore: `prefix` must not hold `||` or end in `|`");
+  });
+
   it("accepts a lifetime under a minute, which the KV floor used to refuse", async () => {
     const [client] = clientOf();
     expect(await createNonceStore(client).markConsumed("n1", 30)).toEqual({ ok: true, data: true });

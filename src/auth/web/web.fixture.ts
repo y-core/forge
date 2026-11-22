@@ -1,5 +1,6 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
+import type { MiddlewareContribution } from "../../app/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
 import { bytesToHex } from "../../crypto/primitives/bytes";
 import { err, ok } from "../../result/result";
@@ -7,7 +8,7 @@ import { createSignedCookie } from "../../session/cookie";
 import { sessionCtx } from "../../session/session";
 import { uuidv7 } from "../../storage/db/uuid";
 import type { ForgeIcon } from "../../ui/core/types";
-import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
+import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS, AUTH_SESSION_MAX_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import { createFactorRegistry } from "../factors/registry";
 import type {
@@ -45,7 +46,16 @@ import { createAuthGuards, signApprovalCode } from "./guards";
 import { authCtx, establishAuthSession, markApproval, markAuthStepUp } from "./identity";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import type { Approval, ApprovalOptions, AuthAdminGuardOptions, AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+import type {
+  Approval,
+  ApprovalOptions,
+  AuthAdminGuardOptions,
+  AuthIconName,
+  AuthRequestServices,
+  AuthRequestServicesResolver,
+  AuthWebOptions,
+  AuthWebPaths,
+} from "./types";
 import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
@@ -533,11 +543,27 @@ export function fakeAuthServices(overrides: Partial<AuthRequestServices> = {}): 
   };
 }
 
+/** `fakeAuthServices(overrides)` as the per-request resolver the guards take, every call answering the same services. @internal */
+export function fakeAuthServicesResolver<Bindings = Record<string, unknown>>(
+  overrides: Partial<AuthRequestServices> = {},
+): AuthRequestServicesResolver<Bindings> {
+  const services = fakeAuthServices(overrides);
+  return Object.assign(async () => services, { sessions: async () => services.sessions, absoluteLifetimeMs: AUTH_SESSION_MAX_MS });
+}
+
 /** The options every loader, action factory and `register*` is called with in a test. @internal */
 export function fakeAuthWebOptions(overrides: Partial<AuthWebOptions> = {}): AuthWebOptions {
   const services = fakeAuthServices();
   return { resolveServices: () => services, paths: fakeAuthWebPaths(), icon: fakeAuthIcon, now: () => 1_000, ...overrides };
 }
+
+/** The window every fake rate limit's `LIMITER` binding is declared under, as a generated `RATELIMITS` holds it. @internal */
+export const FAKE_RATE_LIMITS = { LIMITER: { limit: 10, period: 60 } } as const;
+
+/** Declares the `LIMITER` binding every fake rate limit names as optional, so a request without one answers `503` rather than failing the chain. @internal */
+export const fakeLimiterContribution: MiddlewareContribution = {
+  bindings: [{ name: "LIMITER", methods: ["limit"], label: "a rate-limit binding", optional: true }],
+};
 
 /** The administrator code a test approval is configured with. @internal */
 export const FAKE_APPROVAL_CODE = "administrator-code";
@@ -548,7 +574,7 @@ export function fakeApproval(overrides: Partial<ApprovalOptions> = {}): Approval
     path: "/approve",
     code: () => FAKE_APPROVAL_CODE,
     origin: { allowedOrigins: ["https://app.example"] },
-    rateLimit: { limiter: () => ({ limit: async () => ({ success: true }) }), key: () => "visitor" },
+    rateLimit: { binding: "LIMITER", key: () => "visitor" },
     ring: () => fakeWebRing,
     ...overrides,
   });
@@ -562,15 +588,17 @@ export function approvedSession(at?: number, code: string = FAKE_APPROVAL_CODE):
   };
 }
 
-/** The `require-auth`, `require-admin` stack `createAuthGuards` wires from `onForbidden`, over an identity a test has already set. @internal */
-export function fakeAdminGuardChain(onForbidden?: AuthAdminGuardOptions["onForbidden"]): Middleware[] {
-  const [group] = createAuthGuards({
+/** The `require-auth`, `require-admin` stack `createAuthGuards` wires from `onRefuse`, over an identity a test has already set. @internal */
+export function fakeAdminGuardChain(onRefuse?: AuthAdminGuardOptions["onRefuse"]): Middleware[] {
+  const {
+    guards: [group],
+  } = createAuthGuards({
     routes: { admin: adminRoutes("/admin") },
-    auth: { sessions: () => fakeAuthSessionStore([]), signinPath: "/auth/signin" },
+    auth: { services: fakeAuthServicesResolver({ sessions: fakeAuthSessionStore([]) }), signinPath: "/auth/signin" },
     enrolment: { factors: () => fakeFactorRegistry([]), enrolmentPaths: { kinds: {} }, stepUpPath: "/auth/verify", settledPath: "/" },
     origin: { allowedOrigins: ["https://app.example"] },
     groups: [{ path: ["admin", "users"], guards: ["require-auth", "require-admin"], medium: "html", clearsStepUp: true }],
-    onForbidden,
+    onRefuse,
   });
   return [...(group?.guards ?? [])];
 }

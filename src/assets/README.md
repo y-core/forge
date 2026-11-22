@@ -36,6 +36,8 @@ import { assets } from "@assets";
 In a test, or anywhere the generated module is not what you want:
 
 ```ts
+import { createManifest, createSpriteRegistry } from "@y-core/forge/assets";
+
 const assets = createManifest({ "styles.css": "styles.abc12345.css" }, "/assets");
 assets.path("styles.css"); // "/assets/styles.abc12345.css"
 assets.path("unknown.png"); // "/assets/unknown.png" — pass-through fallback

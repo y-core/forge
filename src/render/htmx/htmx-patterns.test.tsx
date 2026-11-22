@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf } from "../../testing/markup";
+import { render } from "../../testing/render";
+import { Dialog } from "../../ui/core/dialog";
+import { jsx } from "../jsx/jsx-runtime";
 import {
   asyncDialogTrigger,
   dependentSelect,
@@ -124,14 +128,27 @@ describe("paginatedTableLink", () => {
 });
 
 describe("asyncDialogTrigger", () => {
-  it("includes hx-get, target, default swap=innerHTML, and dialog attrs", () => {
-    const attrs = asyncDialogTrigger({ get: "/modal", target: "#modal-host", dialogId: "my-dialog" });
-    expect(attrs["hx-get"]).toBe("/modal");
-    expect(attrs["hx-target"]).toBe("#modal-host");
-    expect(attrs["hx-swap"]).toBe("innerHTML");
-    expect(attrs["data-dialog-open"]).toBe("my-dialog");
-    expect(attrs["aria-haspopup"]).toBe("dialog");
-    expect(attrs["aria-controls"]).toBe("my-dialog");
+  it("emits exactly the hx-* loader, the show-modal invoker and the ARIA wiring, with swap defaulting to innerHTML", () => {
+    expect(asyncDialogTrigger({ get: "/modal", target: "#modal-host", dialogId: "my-dialog" })).toEqual({
+      "hx-get": "/modal",
+      "hx-target": "#modal-host",
+      "hx-swap": "innerHTML",
+      command: "show-modal",
+      commandfor: "my-dialog",
+      "aria-haspopup": "dialog",
+      "aria-controls": "my-dialog",
+    });
+  });
+
+  it("gives a plain button the same invoker command Dialog.Trigger opens its dialog with", async () => {
+    const spread = await render(
+      jsx("button", { type: "button", ...asyncDialogTrigger({ get: "/m", target: "#t", dialogId: "confirm" }), children: "Open" }),
+    );
+    const trigger = await render(Dialog.Trigger({ for: "confirm", children: "Open" }));
+    const invoker = (attrs: Record<string, string>) => ({ command: attrs["command"], commandfor: attrs["commandfor"] });
+
+    expect(invoker(attrsOf(spread))).toEqual(invoker(attrsOf(trigger)));
+    expect(invoker(attrsOf(spread))).toEqual({ command: "show-modal", commandfor: "confirm" });
   });
 
   it("overrides swap", () => {

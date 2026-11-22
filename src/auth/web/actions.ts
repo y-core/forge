@@ -1,11 +1,12 @@
 import { firstDeclaredField, screenTurnstile } from "../../app/pipeline";
 import { getAppContext } from "../../context/types";
-import type { AppContext, RequestContext, RequestHandler } from "../../context/types";
+import type { AppContext, RefuseHook, RequestHandler } from "../../context/types";
+import { FORM_MAX_BYTES_DEFAULT } from "../../form/config";
 import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { isFormCapConflict, parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
-import type { CsrfRefusal, ReadonlyFormData } from "../../form/types";
+import type { ReadonlyFormData } from "../../form/types";
 import { jsonResponse } from "../../http/response";
 import { requestLog } from "../../logging/request-logger";
 import { err, ok } from "../../result/result";
@@ -17,7 +18,7 @@ import { redactSigninReason } from "../flows/signin";
 import type { AuthSigninNotice, AuthSigninReason } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
 import { authDeviceLabel } from "./device";
-import { approvalCtx } from "./guards";
+import { approvalCtx, signoutCsrfRecovery } from "./guards";
 import {
   AUTH_SITE_DATA_OWED_SESSION_KEY,
   authFactorCaller,
@@ -30,6 +31,7 @@ import {
   authWriteOrigin,
   resolveAuthSigninPending,
   revokeOtherAuthSessions,
+  NO_SESSION,
 } from "./identity";
 import {
   loadAccountSessions,
@@ -79,12 +81,10 @@ import {
   authTotpEnrolSchema,
   authVerifySchema,
 } from "./schemas";
+import { clearSiteDataOwedCookie, hasSiteDataOwedCookie, markSiteDataOwedCookie } from "./site-data";
 import type { AuthEntryPaths, AuthIdentity } from "./types";
 import type { AuthTurnstileCheck } from "./types";
 import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types";
-
-const NO_SESSION =
-  "auth/web action: no session on this request — mount `sessionMiddleware` before the auth routes, or a sign-in writes an identity nothing can read back.";
 
 const SIGNIN_NOTICE: Readonly<Record<Exclude<AuthSigninNotice, "throttled" | "unrecognised">, string>> = {
   unavailable: "We could not reach the sign-in service. Please try again in a moment.",
@@ -107,6 +107,8 @@ const FIELD_REFUSAL_DEFAULT = "We could not read that. Please check the form and
 
 const CHALLENGE_REFUSAL = "Verification failed. Please try again.";
 
+const TOO_LARGE_REFUSAL = "That form was too large to read. Please try again.";
+
 const RECOVERY_CODE_REFUSAL = "That is not one of the new codes. Enter one exactly as it is shown.";
 
 const TOTP_ENROL_REFUSAL = "That code did not match. Enter the code your app shows now.";
@@ -120,6 +122,12 @@ const UNRECOGNISED_NOTICE: Readonly<Record<AuthFactorKind, string>> = {
   "recovery-code": "That recovery code did not match. Check it and try again.",
   passkey: "That did not match. Please try again.",
 };
+
+/** `page` with `Retry-After` set to `windowMs` in whole seconds, or unchanged where the window is unknown. */
+function withRetryAfter(page: Response, windowMs: number | null): Response {
+  if (windowMs !== null) page.headers.set("Retry-After", String(Math.ceil(windowMs / 1000)));
+  return page;
+}
 
 function verifyNoticeFor(factor: AuthFactorKind, reason: AuthSigninReason): string {
   const notice = redactSigninReason(reason);
@@ -156,11 +164,19 @@ function notFound(): Response {
 }
 
 interface AuthSubmissionRefusal {
-  readonly cause: "challenge" | "submission";
+  readonly cause: "challenge" | "submission" | "too-large";
+  readonly status: 413 | 422;
   readonly field: string;
   readonly message: string;
   readonly values: Readonly<Record<string, string>>;
 }
+
+// The CSRF policy parses first at its own cap, which an app raises for its largest route; this
+// re-check off the shared parse is what holds an unauthenticated form to a form's size.
+/** The largest form body an auth action accepts, whatever the CSRF policy's `maxBytes`. @internal */
+export const AUTH_FORM_MAX_BYTES = FORM_MAX_BYTES_DEFAULT;
+
+const isTooLarge = (error: unknown): boolean => (error as { status?: unknown } | null | undefined)?.status === 413;
 
 /** Reads a form submission against `schema`, behind `check` when one is given, dropping the CSRF and Turnstile fields. @internal */
 export async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
@@ -170,10 +186,11 @@ export async function readAuthSubmission<schema extends v.GenericSchema, Binding
 ): Promise<Result<v.InferOutput<schema>, AuthSubmissionRefusal>> {
   let form: ReadonlyFormData;
   try {
-    form = await parseFormData(c);
+    form = await parseFormData(c, { maxBytes: AUTH_FORM_MAX_BYTES });
   } catch (error) {
     if (isFormCapConflict(error)) throw error;
-    return err({ cause: "submission", field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
+    if (isTooLarge(error)) return err({ cause: "too-large", status: 413, field: "", message: TOO_LARGE_REFUSAL, values: {} });
+    return err({ cause: "submission", status: 422, field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
   }
   const csrfField = csrfFieldCtx.getOptional(c);
   const drop = [...(csrfField === undefined ? [] : [csrfField]), ...(check === undefined ? [] : [TURNSTILE_FIELD_DEFAULT])];
@@ -186,14 +203,14 @@ export async function readAuthSubmission<schema extends v.GenericSchema, Binding
   if (check !== undefined) {
     const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
     if (!verification.ok) {
-      return err({ cause: "challenge", field: firstDeclaredField(schema) ?? "", message: CHALLENGE_REFUSAL, values });
+      return err({ cause: "challenge", status: 422, field: firstDeclaredField(schema) ?? "", message: CHALLENGE_REFUSAL, values });
     }
   }
 
   const parsed = v.safeParse(schema, body, { abortEarly: true });
   if (parsed.success) return ok(parsed.output);
   const field = parsed.issues[0] === undefined ? "" : describeValidationIssue(parsed.issues[0]);
-  return err({ cause: "submission", field, message: refusalFor(schema, field), values });
+  return err({ cause: "submission", status: 422, field, message: refusalFor(schema, field), values });
 }
 
 function refusalFor(schema: v.GenericSchema, field: string): string {
@@ -279,7 +296,8 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
       const session = sessionCtx.get(c, NO_SESSION);
 
       const parsed = await readAuthSubmission(c, authSigninSchema(), await authTurnstileCheck(c, options, "signin"));
-      if (!parsed.ok) return loadSignin(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok)
+        return loadSignin(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: parsed.error.status });
 
       // The address is on the session and not in the redirect: `complete` needs it back, and a query
       // parameter carrying it lands in browser history, `Referer` and every proxy log on the way.
@@ -299,7 +317,8 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
       const session = sessionCtx.get(c, NO_SESSION);
 
       const parsed = await readAuthSubmission(c, authSignupSchema(), await authTurnstileCheck(c, options, "signup"));
-      if (!parsed.ok) return loadSignup(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok)
+        return loadSignup(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: parsed.error.status });
 
       services.signup.request(parsed.data.email, authNow(options), await authFactorCaller(session));
       markAuthSigninPending(session, parsed.data.email);
@@ -308,19 +327,25 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
   };
 }
 
-async function resendRefusal<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<string | null> {
+interface ResendRefusal {
+  readonly error: string;
+  readonly status: 413 | 422;
+}
+
+async function resendRefusal<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<ResendRefusal | null> {
   const check = await authTurnstileCheck(c, options, "resend");
   if (check === undefined) return null;
   let form: ReadonlyFormData;
   try {
-    form = await parseFormData(c);
+    form = await parseFormData(c, { maxBytes: AUTH_FORM_MAX_BYTES });
   } catch (error) {
     if (isFormCapConflict(error)) throw error;
+    if (isTooLarge(error)) return { error: TOO_LARGE_REFUSAL, status: 413 };
     requestLog.getOptional(c)?.warn("auth.resend.unreadable");
-    return FIELD_REFUSAL_DEFAULT;
+    return { error: FIELD_REFUSAL_DEFAULT, status: 422 };
   }
   const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
-  return verification.ok ? null : CHALLENGE_REFUSAL;
+  return verification.ok ? null : { error: CHALLENGE_REFUSAL, status: 422 };
 }
 
 /** The POSTs of the verification page: presenting the code, and asking for another. @public */
@@ -344,14 +369,19 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       if (!parsed.ok) {
         const fieldError =
           demand.factor === "recovery-code" && parsed.error.cause === "submission" ? RECOVERY_CODE_UNREADABLE : parsed.error.message;
-        return loadVerify(c, options, { fieldError, status: 422 });
+        return loadVerify(c, options, { fieldError, status: parsed.error.status });
       }
 
       if (demand.identity !== null) {
         const stepped = await services.signin.stepUp(demand.identity.userId, demand.factor, parsed.data.code, at, await authFactorCaller(session));
         if (!stepped.ok) {
           if (stepped.error === "unusable") requestLog.getOptional(c)?.warn("auth.factor.unusable", { kind: demand.factor });
-          return loadVerify(c, options, { error: verifyNoticeFor(demand.factor, stepped.error), status: 422 });
+          const error = verifyNoticeFor(demand.factor, stepped.error);
+          if (redactSigninReason(stepped.error) !== "throttled") return loadVerify(c, options, { error, status: 422 });
+          return withRetryAfter(
+            await loadVerify(c, options, { error, status: 429 }),
+            services.factors.find(demand.factor)?.attemptWindowMs ?? null,
+          );
         }
         if (stepped.data.kind === "recovery-code") {
           services.notices.send(demand.identity.email, { type: "recovery-code-used", factorKind: "recovery-code", at });
@@ -385,6 +415,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         device: authDeviceLabel(c.request.headers),
       });
       if (!established.ok) return unavailable();
+      if (await hasSiteDataOwedCookie(c)) await clearSiteDataOwedCookie(c);
       if (resolution.status === "enrolment-required" && resolution.stepUpKinds.length === 0) {
         return createAuthRedirect(c, authReturnQuery(c, options, enrolTarget(options, resolution.kinds)));
       }
@@ -408,7 +439,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       if (demand.identity !== null) {
         const refusal = await resendRefusal(c, options);
-        if (refusal !== null) return loadVerify(c, options, { error: refusal, status: 422 });
+        if (refusal !== null) return loadVerify(c, options, refusal);
         await services.signin.requestStepUp(demand.identity.userId, demand.factor, at, await authFactorCaller(session));
         return createAuthRedirect(c, resent);
       }
@@ -416,7 +447,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const pending = resolveAuthSigninPending(session);
       if (pending === null) return createAuthRedirect(c, options.paths.auth.signin());
       const refusal = await resendRefusal(c, options);
-      if (refusal !== null) return loadVerify(c, options, { email: pending, error: refusal, status: 422 });
+      if (refusal !== null) return loadVerify(c, options, { email: pending, ...refusal });
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
       services.signin.request(pending, at, await authFactorCaller(session));
@@ -431,7 +462,7 @@ const AUTH_SIGNOUT_CLEAR_SITE_DATA = '"cache"';
 
 const AUTH_SITE_DATA_CLEAR = '"storage"';
 
-/** The POST that ends a session, rotating its id on the way out, and the one that clears the storage a sign-out owes. @public */
+/** The POST that ends a session, destroying it on the way out, and the one that clears the storage a sign-out owes. @public */
 export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly signout: RequestHandler;
   readonly signoutSiteData: RequestHandler;
@@ -441,33 +472,31 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
       const c = getAppContext<Bindings>(context);
       const session = sessionCtx.get(c, NO_SESSION);
       const services = await authServices(c, options);
-      const cleared = await clearAuthSession(session, services.sessions);
+      const cleared = await clearAuthSession(session, services.sessions, options.signOut);
       if (!cleared.ok) return unavailable();
       const response = createAuthRedirect(c, options.paths.auth.signin());
-      if (options.signoutClearsSiteData === true) {
-        session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
-        response.headers.set("Clear-Site-Data", AUTH_SIGNOUT_CLEAR_SITE_DATA);
-      }
+      if (options.signoutClearsSiteData !== true) return response;
+      if (session.destroyed) await markSiteDataOwedCookie(c);
+      else session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
+      response.headers.set("Clear-Site-Data", AUTH_SIGNOUT_CLEAR_SITE_DATA);
       return response;
     },
-    signoutSiteData: (context) => {
-      const session = sessionCtx.get(getAppContext<Bindings>(context), NO_SESSION);
-      if (session.get(AUTH_SITE_DATA_OWED_SESSION_KEY) !== true) return new Response(null, { status: 204 });
-      session.unset(AUTH_SITE_DATA_OWED_SESSION_KEY);
+    signoutSiteData: async (context) => {
+      const c = getAppContext<Bindings>(context);
+      const session = sessionCtx.get(c, NO_SESSION);
+      const owedBySession = session.get(AUTH_SITE_DATA_OWED_SESSION_KEY) === true;
+      const owedByCookie = await hasSiteDataOwedCookie(c);
+      if (!owedBySession && !owedByCookie) return new Response(null, { status: 204 });
+      if (owedBySession) session.unset(AUTH_SITE_DATA_OWED_SESSION_KEY);
+      if (owedByCookie) await clearSiteDataOwedCookie(c);
       return new Response(null, { status: 204, headers: { "Clear-Site-Data": AUTH_SITE_DATA_CLEAR } });
     },
   };
 }
 
-/** The `csrfProtection` refusal that sends a refused sign-out to its confirm page and answers every other refusal 403. @public */
-// oxlint-disable-next-line typescript/no-explicit-any -- the guard hands its own context shape through
-export function authCsrfRefusal(paths: AuthEntryPaths): (context: RequestContext<any, any>, reason: CsrfRefusal) => Response {
-  const signoutPath = paths.signout();
-  const confirmPath = paths.signoutConfirm();
-  return (context, reason) =>
-    reason !== "unbound-subject" && context.method.toUpperCase() === "POST" && context.url.pathname === signoutPath
-      ? createAuthRedirect(context, confirmPath)
-      : new Response("Forbidden", { status: 403 });
+/** The refusal hook that sends a CSRF-refused sign-out to its confirm page and declines every other refusal, so the next hook out answers it. @public */
+export function authCsrfRefusal<Bindings = Record<string, unknown>>(paths: AuthEntryPaths): RefuseHook<Bindings> {
+  return signoutCsrfRecovery<Bindings>(paths.signout(), paths.signoutConfirm());
 }
 
 // The challenge is bound to the session's own `userId`, which `createPasskeyFactor.verifyChallenge`
@@ -600,7 +629,7 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       if (id === undefined) return notFound();
 
       const parsed = await readAuthSubmission(c, authPasskeyLabelSchema());
-      if (!parsed.ok) return loadPasskeyEdit(c, options, { fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok) return loadPasskeyEdit(c, options, { fieldError: parsed.error.message, status: parsed.error.status });
 
       const relabelled = await services.credentials.relabel(id, identity.userId, parsed.data.label, authNow(options));
       if (!relabelled.ok) return unavailable();
@@ -650,7 +679,7 @@ async function confirmTotp<Bindings>(
   if (service === undefined || service.enrolment !== "explicit") return err(notFound());
 
   const parsed = await readAuthSubmission(c, authTotpEnrolSchema());
-  if (!parsed.ok) return err(await reload(c, options, { fieldError: parsed.error.message, status: 422 }));
+  if (!parsed.ok) return err(await reload(c, options, { fieldError: parsed.error.message, status: parsed.error.status }));
 
   const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
   const at = authNow(options);
@@ -726,7 +755,7 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
       if (!replaceable.ok) return replaceable.error;
 
       const parsed = await readAuthSubmission(c, authTotpEnrolSchema());
-      if (!parsed.ok) return loadTotpReplace(c, options, { fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok) return loadTotpReplace(c, options, { fieldError: parsed.error.message, status: parsed.error.status });
       const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
       const at = authNow(options);
       const replaced = await replaceable.data.completeReplacement(identity.userId, parsed.data.code, at, caller);
@@ -786,7 +815,10 @@ export function createRecoveryCodeActions<Bindings>(options: AuthWebOptions<Bind
       if (!holder.ok) return holder.error;
 
       const parsed = await readAuthSubmission(c, authVerifySchema("recovery-code"));
-      if (!parsed.ok) return loadRecoveryCodes(c, options, { fieldError: RECOVERY_CODE_REFUSAL, status: 422 });
+      if (!parsed.ok) {
+        const fieldError = parsed.error.cause === "too-large" ? parsed.error.message : RECOVERY_CODE_REFUSAL;
+        return loadRecoveryCodes(c, options, { fieldError, status: parsed.error.status });
+      }
       const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
       const at = authNow(options);
       const confirmed = await holder.data.service.completeEnrolment(holder.data.identity.userId, parsed.data.code, at, caller);
@@ -811,7 +843,7 @@ export function createSessionActions<Bindings>(options: AuthWebOptions<Bindings>
       if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
 
       const parsed = await readAuthSubmission(c, authSessionRevokeSchema());
-      if (!parsed.ok) return loadAccountSessions(c, options, { status: 422 });
+      if (!parsed.ok) return loadAccountSessions(c, options, { status: parsed.error.status });
 
       const origin = await authWriteOrigin(sessionCtx.get(c, NO_SESSION));
       const revoked = await services.sessions.revoke(identity.userId, parsed.data.session, authNow(options), origin);
@@ -843,7 +875,8 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
       if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
 
       const parsed = await readAuthSubmission(c, authEmailChangeSchema());
-      if (!parsed.ok) return loadEmailChange(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok)
+        return loadEmailChange(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: parsed.error.status });
 
       const requested = await services.emailChange.request(identity.userId, parsed.data.email, authNow(options));
       if (!requested.ok) {
@@ -883,7 +916,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       if (!viewer.isAdmin) return forbidden(c);
 
       const parsed = await readAuthSubmission(c, authAdminUserSchema());
-      if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: 422 });
+      if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: parsed.error.status });
 
       const found = await services.admin.view(id);
       if (!found.ok) return unavailable();
@@ -987,7 +1020,7 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
 
       const parsed = await readAuthSubmission(c, authAdminElevateSchema());
-      if (!parsed.ok) return loadAdminElevate(c, options, { status: 422 });
+      if (!parsed.ok) return loadAdminElevate(c, options, { status: parsed.error.status });
 
       const minted = await mintAuthSessionRotation(sessionCtx.get(c, NO_SESSION));
       if (minted === null) return createAuthRedirect(c, options.paths.auth.signin());

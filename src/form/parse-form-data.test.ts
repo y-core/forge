@@ -168,7 +168,7 @@ describe("parseFormData — byte limits", () => {
     expect((thrown as { status?: number }).status).toBeUndefined();
     expect((thrown as Error).message).toContain("4 bytes");
     expect((thrown as Error).message).toContain("1000-byte");
-    expect((thrown as Error).message).toContain("csrfProtection");
+    expect((thrown as Error).message).toContain("the CSRF policy's");
   });
 
   // The regression the design nearly caused: comparing caps alone would turn every raised-cap route

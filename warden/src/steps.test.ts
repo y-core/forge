@@ -5,7 +5,17 @@ import { isCheckStep } from "../../src/tooling/gate/steps";
 import { declaredSteps, mergeTiers, resolveTiers } from "../../src/tooling/gate/tiers";
 import { libraryDocsDir } from "./corpus/dependency";
 import { GOLDEN, NEGATIVE } from "./gate/golden";
-import { canonCitableDirs, changelogStep, designStep, docsStep, duplicatesStep, wardenAppSteps, wardenQueriesStep, wardenStep } from "./steps";
+import {
+  canonCitableDirs,
+  changelogStep,
+  designStep,
+  docFencesStep,
+  docsStep,
+  duplicatesStep,
+  wardenAppSteps,
+  wardenQueriesStep,
+  wardenStep,
+} from "./steps";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 
@@ -13,11 +23,12 @@ const STEPS = [
   docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }),
   changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }),
   designStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, designDir: "design", cssDir: "css" }),
+  docFencesStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, fencedDocs: ["README.md"] }),
 ];
 
 describe("warden steps", () => {
   it("gives every step the label that is its `--only` token", () => {
-    expect(STEPS.map((step) => step.label)).toEqual(["validate-docs", "validate-changelog", "validate-design"]);
+    expect(STEPS.map((step) => step.label)).toEqual(["validate-docs", "validate-changelog", "validate-design", "validate-doc-fences"]);
   });
 
   it("builds check steps, never command steps", () => {
@@ -54,6 +65,7 @@ describe("warden steps — watches", () => {
     const rows = [
       docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }),
       designStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, designDir: "design", cssDir: "css" }),
+      docFencesStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, fencedDocs: ["README.md"] }),
       wardenStep(scope),
       wardenQueriesStep(scope),
       duplicatesStep(scope),

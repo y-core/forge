@@ -3,8 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../app/forge-app";
+import { applyMiddlewareChain } from "../app/middleware-chain";
 import { importKeyRing } from "../crypto/keyring/ring";
-import { csrfProtection, mintCsrf } from "../form/csrf";
+import { mintCsrf } from "../form/csrf";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
 import { createSignedCookie } from "./cookie";
@@ -41,12 +42,15 @@ function carry(res: Response, name = "__session"): string {
   return header.split(";")[0] ?? "";
 }
 
-describe("sessionMiddleware composed with csrfProtection", () => {
+describe("sessionMiddleware composed with a CSRF mint stage", () => {
   it("lets an anonymous visitor complete a POST with no pre-seeded session", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: sessionMiddleware(createCookieSessionStorage(), sessionCookie),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signup", async (c) => new Response(await mintCsrf(c, "/signup")));
     mapHandler(app, "POST", "/signup", () => new Response("created"));
 
@@ -63,8 +67,11 @@ describe("sessionMiddleware composed with csrfProtection", () => {
   it("mints the same subject on two successive GETs once the cookie is carried", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: sessionMiddleware(createCookieSessionStorage(), sessionCookie),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signup", (c) => new Response(sessionCtx.get(c).id));
 
     const first = await app.request("/signup");
@@ -77,8 +84,11 @@ describe("sessionMiddleware composed with csrfProtection", () => {
   it("emits a Set-Cookie on a GET whose handler mints a token, so the POST is not cookie-less", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: sessionMiddleware(createCookieSessionStorage(), sessionCookie),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signup", async (c) => new Response(await mintCsrf(c, "/signup")));
 
     const res = await app.request("/signup");
@@ -88,27 +98,15 @@ describe("sessionMiddleware composed with csrfProtection", () => {
   it("emits no Set-Cookie on a GET whose handler mints nothing", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: sessionMiddleware(createCookieSessionStorage(), sessionCookie),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signup", () => new Response("ok"));
 
     const res = await app.request("/signup");
     expect(res.headers.getSetCookie().some((c) => c.startsWith("__session="))).toBe(false);
-  });
-
-  it("refuses the POST when csrfProtection is registered before the session middleware", async () => {
-    const ring = await importKeyRing([HEX_SECRET]);
-    const app = new Forge();
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    mapHandler(app, "GET", "/signup", async (c) => new Response(await mintCsrf(c, "/signup")));
-    mapHandler(app, "POST", "/signup", () => new Response("created"));
-
-    const page = await app.request("/signup");
-    const token = await page.text();
-
-    const res = await app.request("/signup", { method: "POST", headers: { "X-CSRF-Token": token } });
-    expect(res.status).toBe(403);
   });
 
   // The signature is upgraded under the visitor, so the id the token is bound to must not move.
@@ -121,8 +119,11 @@ describe("sessionMiddleware composed with csrfProtection", () => {
     const build = async (secrets: [string, ...string[]]) => {
       const app = new Forge();
       const cookie = createSignedCookie("__session", { path: "/", ring: await importKeyRing(secrets) });
-      app.use("*", sessionMiddleware(storage, cookie, { rotating: secrets.length > 1 }));
-      app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+      applyMiddlewareChain(app, {
+        securityHeaders: {},
+        session: sessionMiddleware(storage, cookie, { rotating: secrets.length > 1 }),
+        csrf: { ring: () => ring, subject: "session" },
+      });
       mapHandler(app, "GET", "/id", (c) => new Response(sessionCtx.get(c).id));
       mapHandler(app, "GET", "/signup", async (c) => new Response(await mintCsrf(c, "/signup")));
       mapHandler(app, "POST", "/signup", () => new Response("created"));
@@ -153,8 +154,11 @@ describe("sessionMiddleware composed with csrfProtection", () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const env: Env = { KV: fakeSessionKV().kv };
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ ring: () => sessionRing, kv: (c) => c.env.KV }));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: createAnonymousSession<Env>({ ring: () => sessionRing, kv: (bindings) => bindings.KV }),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signup", async (c) => new Response(await mintCsrf(c, "/signup")));
     mapHandler(app, "POST", "/signup", () => new Response("created"));
 
@@ -167,7 +171,7 @@ describe("sessionMiddleware composed with csrfProtection", () => {
   });
 });
 
-describe("a KV-backed anonymous session under csrfProtection", () => {
+describe("a KV-backed anonymous session under a CSRF mint stage", () => {
   type Env = { KV: SessionKVBinding };
 
   async function build() {
@@ -175,8 +179,11 @@ describe("a KV-backed anonymous session under csrfProtection", () => {
     const { kv, puts, deletes } = fakeSessionKV();
     const env: Env = { KV: kv };
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ ring: () => sessionRing, kv: (c) => c.env.KV, prefix: "visitor" }));
-    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => sessionCtx.getOptional(c)?.id }));
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: createAnonymousSession<Env>({ ring: () => sessionRing, kv: (bindings) => bindings.KV, prefix: "visitor" }),
+      csrf: { ring: () => ring, subject: "session" },
+    });
     mapHandler(app, "GET", "/signin", async (c) => new Response(await mintCsrf(c, "/signin")));
     mapHandler(app, "GET", "/remember", async (c) => new Response(await mintCsrf(c, "/remember")));
     mapHandler(app, "GET", "/about", () => new Response("about"));

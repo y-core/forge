@@ -1,11 +1,13 @@
 import type { AssetsFetcher } from "../app/types";
+import type { CacheLike, CacheStorageLike } from "../assets/client/types";
 import { bytesToHex } from "../crypto/primitives/mod";
 import { ROWS_WRITTEN_GUARD } from "../storage/db/sql";
 import type { D1DatabaseLike, D1DatabaseSession, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
+import { CONTENT_TYPE_DEFAULT, extensionContentType } from "../storage/r2/content-type";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import type { R2BucketLike, R2ListLike, R2ObjectBodyLike, R2ObjectLike, R2PutLike } from "../storage/r2/types";
-import type { FakeD1Options, FakeKVOptions } from "./types";
+import type { FakeCacheStorageOptions, FakeD1Options, FakeKVOptions } from "./types";
 
 /** The floor a real KV binding enforces on `expirationTtl` (STORAGE_BINDINGS §2c). */
 const KV_EXPIRATION_TTL_MIN = 60;
@@ -95,14 +97,63 @@ export function fakeKV(seed?: Record<string, string>, { now }: FakeKVOptions = {
   return impl as unknown as KVNamespace;
 }
 
-/** `AssetsFetcher` fake serving from an in-memory path→body map, `404` for anything else. @public */
-export function fakeAssetsFetcher(files: Record<string, string>): AssetsFetcher {
+type FakeAsset = string | Uint8Array | { body: string | Uint8Array; type?: string };
+
+/** `AssetsFetcher` fake serving an in-memory path→asset map with a content type, `404` for anything else, recording each path on `requests`. @public */
+export function fakeAssetsFetcher(files: Record<string, FakeAsset>): AssetsFetcher & { requests: readonly string[] } {
+  const requests: string[] = [];
   return {
-    fetch: async (req: Request): Promise<Response> => {
-      const path = new URL(req.url).pathname;
-      const body = files[path];
-      return body !== undefined ? new Response(body, { status: 200 }) : new Response("Not Found", { status: 404 });
+    requests,
+    fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = input instanceof Request ? input : undefined;
+      const path = new URL(request ? request.url : String(input)).pathname;
+      const method = init?.method ?? request?.method ?? "GET";
+      requests.push(path);
+      const asset = files[path];
+      if (asset === undefined) return new Response("Not Found", { status: 404 });
+      const { body, type } = typeof asset === "string" || asset instanceof Uint8Array ? { body: asset, type: undefined } : asset;
+      const headers = { "content-type": type ?? extensionContentType(path) ?? CONTENT_TYPE_DEFAULT };
+      if (method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
+      return new Response(typeof body === "string" ? body : new Uint8Array(body), { status: 200, headers });
     },
+  };
+}
+
+/** In-memory `CacheStorage` fake for `attachPrecache`, whose `addAll` fetches through `fetch` and stores nothing unless every response is ok. @public */
+export function fakeCacheStorage({ fetch, baseUrl = "http://test" }: FakeCacheStorageOptions = {}): CacheStorageLike {
+  const caches = new Map<string, Map<string, Response>>();
+  const network =
+    fetch ??
+    (async (): Promise<Response> => {
+      throw new TypeError("Failed to fetch");
+    });
+  const toHref = (request: Request | string): string => new URL(typeof request === "string" ? request : request.url, baseUrl).href;
+
+  function cache(entries: Map<string, Response>): CacheLike {
+    return {
+      addAll: async (requests: readonly (Request | string)[]): Promise<void> => {
+        const fetched = requests.map((request) => (typeof request === "string" ? new Request(toHref(request)) : request));
+        const hrefs = fetched.map((request) => request.url);
+        const responses = await Promise.all(fetched.map((request) => network(request)));
+        const failed = responses.find((response) => !response.ok);
+        if (failed !== undefined) throw new TypeError(`Cache.addAll: a request answered ${failed.status}`);
+        hrefs.forEach((href, index) => entries.set(href, responses[index] as Response));
+      },
+      match: async (request: Request | string): Promise<Response | undefined> => {
+        if (typeof request !== "string" && request.method !== "GET") return undefined;
+        return entries.get(toHref(request))?.clone();
+      },
+    };
+  }
+
+  return {
+    open: async (cacheName: string): Promise<CacheLike> => {
+      const entries = caches.get(cacheName) ?? new Map<string, Response>();
+      caches.set(cacheName, entries);
+      return cache(entries);
+    },
+    keys: async (): Promise<string[]> => [...caches.keys()],
+    delete: async (cacheName: string): Promise<boolean> => caches.delete(cacheName),
   };
 }
 

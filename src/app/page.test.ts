@@ -3,17 +3,21 @@ import { describe, expect, it, mock } from "bun:test";
 import { requireFreshStepUp } from "../auth/web/guards";
 import { importKeyRing } from "../crypto/keyring/ring";
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
-import { createCsrfToken, csrfProtection } from "../form/csrf";
+import { createCsrfToken, csrfMintStage } from "../form/csrf";
 import { escapeHtml } from "../html/escape";
+import { requestLog } from "../logging/request-logger";
 import { ok } from "../result/result";
 import { get, post, put, Route } from "../router/mod";
-import { originProtection } from "../security/cop";
+import { rateLimit } from "../security/rate-limit";
+import type { RateLimit } from "../security/types";
 import { mockExecutionContext } from "../testing/context";
+import { captureLogs } from "../testing/logs";
 import { mapHandler } from "../testing/route";
-import type { TestAction } from "../testing/types";
+import type { CapturedLogs, TestAction } from "../testing/types";
 import { v } from "../validation/validation";
 import { Forge } from "./forge-app";
 import { createHandlerFactory } from "./handler-factory";
+import { buildGuardChain } from "./middleware-chain";
 import type { BotRejection } from "./types";
 
 const { definePage, defineAction } = createHandlerFactory();
@@ -21,8 +25,19 @@ const PAGE_ROUTE = get("/test");
 const ACTION_ROUTE = post("/action");
 const ANY_PAGE_ROUTE = new Route("ANY", "/test");
 
-function makeApp(handler: TestAction<"/test">) {
-  const app = new Forge();
+function capturedForge(capture?: CapturedLogs): Forge {
+  const app = new Forge(capture?.logger);
+  if (capture) {
+    app.use("*", (context, next) => {
+      requestLog.set(context, capture.logger);
+      return next();
+    });
+  }
+  return app;
+}
+
+function makeApp(handler: TestAction<"/test">, capture?: CapturedLogs) {
+  const app = capturedForge(capture);
   mapHandler(app, "GET", "/test", handler);
   return app;
 }
@@ -41,25 +56,13 @@ const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Nam
 
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
-  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5">${items}</ul></div>`;
+  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5">${items}</ul></div>`;
 }
 
 const APP_BOUNDARY_500 = "<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>An unexpected error occurred.</p></body></html>";
 
 const ACTION_500_FRAGMENT =
-  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>';
-
-async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
-  const lines: string[] = [];
-  const originalLog = console.log;
-  console.log = (msg: string) => lines.push(msg);
-  try {
-    await run();
-  } finally {
-    console.log = originalLog;
-  }
-  return lines;
-}
+  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>';
 
 describe("definePage", () => {
   it("renders the view with loader data", async () => {
@@ -147,6 +150,12 @@ describe("definePage", () => {
     );
     expect(() => definePage(PAGE_ROUTE, { turnstile: TURNSTILE_OPTIONS, maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
       "definePage: `turnstile`, `maxBytes` require `schema` — submission-pipeline options without a schema are ignored.",
+    );
+  });
+
+  it("refuses a rate limit stated without a schema, naming it", () => {
+    expect(() => definePage(PAGE_ROUTE, { rateLimit: { binding: "LIMITER", key: () => "k" }, view: () => new Response("ok") } as never)).toThrow(
+      "definePage: `rateLimit` requires `schema` — a submission-pipeline option without a schema is ignored.",
     );
   });
 
@@ -393,7 +402,7 @@ describe("definePage", () => {
 describe("definePage — the schema pipeline", () => {
   it("renders exactly this refusal, which is the literal every other case here is asserted against", () => {
     expect(refusal("name")).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
     );
   });
 
@@ -584,7 +593,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="The submitted form is too large. Please reduce its size and try again."><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-page")).toBe("value");
@@ -601,7 +610,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
     expect(res.status).toBe(400);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Unable to process the form data. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Unable to process the form data. Please try again."><p>Unable to process the form data. Please try again.</p></div>',
     );
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-page")).toBe("value");
@@ -736,7 +745,7 @@ describe("definePage — the submission sequence's options are the page's own", 
     const res = await submit(app, `name=${"x".repeat(2000)}`);
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="The submitted form is too large. Please reduce its size and try again."><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
     expect(calls).toEqual([]);
   });
@@ -757,7 +766,8 @@ describe("definePage — the CSRF field the guard consumed", () => {
   it("drops the token field on the page path, so a v.strictObject that never declares it passes", async () => {
     const ring = await importKeyRing([SECRET]);
     const app = new Forge();
-    mapHandler(app, "POST", "/guarded", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: keysPage() });
+    app.use("/guarded", csrfMintStage({ ring: () => ring, subject: false }));
+    mapHandler(app, "POST", "/guarded", keysPage());
     const token = await createCsrfToken(ring, "/guarded");
 
     const res = await submit(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
@@ -782,10 +792,13 @@ describe("definePage — a safe method behind the mutation guards", () => {
     const ring = await importKeyRing([SECRET]);
     const action = mock(() => "mutated");
     const app = new Forge();
+    app.use(
+      "/guarded",
+      csrfMintStage({ ring: () => ring, subject: false }),
+      ...buildGuardChain({ paths: ["/guarded"], origin: { allowedOrigins: ["http://localhost"] } }),
+    );
     mapHandler(app, "ANY", "/guarded", {
       middleware: [
-        originProtection({ allowedOrigins: ["http://localhost"] }),
-        csrfProtection({ ring: () => ring, subject: false }),
         requireFreshStepUp({
           factors: () => ({ resolve: () => Promise.resolve(ok({ status: "satisfied" as const })) }),
           enrolmentPaths: { kinds: {} },
@@ -814,8 +827,8 @@ describe("definePage — a throwing schema", () => {
     ),
   });
 
-  function throwingPage(calls: string[], onError?: () => Response) {
-    const app = new Forge();
+  function throwingPage(calls: string[], onError?: () => Response, capture?: CapturedLogs) {
+    const app = capturedForge(capture);
     mapHandler(
       app,
       "POST",
@@ -876,12 +889,13 @@ describe("definePage — a throwing schema", () => {
 
   it("leaves the record to the boundary and never logs it as an action's", async () => {
     const calls: string[] = [];
-    const app = throwingPage(calls);
-    const logs = await captureLogs(() => submit(app, "name=Jane"));
+    const capture = captureLogs();
+    await submit(throwingPage(calls, undefined, capture), "name=Jane");
 
-    expect(logs.some((line) => line.includes("Unhandled error"))).toBe(true);
-    expect(logs.some((line) => line.includes("Page handler threw"))).toBe(false);
-    expect(logs.some((line) => line.includes("Action threw"))).toBe(false);
+    const messages = capture.records.map((record) => record.message);
+    expect(messages).toContain("Unhandled error");
+    expect(messages).not.toContain("Page handler threw");
+    expect(messages).not.toContain("Action threw");
   });
 
   it("answers one and the same throwing schema differently on each builder, on purpose", async () => {
@@ -905,24 +919,320 @@ describe("definePage — a throwing schema", () => {
   });
 });
 
-describe("definePage — error reporting", () => {
-  const parse = (lines: string[]): Record<string, unknown>[] => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+describe("definePage — the query schema", () => {
+  const PageQuery = v.strictObject({ page: v.pipe(v.string(), v.digits(), v.transform(Number)) });
 
+  it("hands the loader the parsed query, typed as the schema's output", async () => {
+    const seen: number[] = [];
+    const app = makeApp(
+      definePage(PAGE_ROUTE, {
+        query: PageQuery,
+        loader: (_c, _config, query) => {
+          const page: number = query.page;
+          seen.push(page);
+          return { page };
+        },
+        view: (_c, _config, state) => new Response(String(state.data.page + 1)),
+      }),
+    );
+
+    const res = await app.request("/test?page=2");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("3");
+    expect(seen).toEqual([2]);
+  });
+
+  it("answers 400 naming the field, under the page's headers, and runs neither loader nor view", async () => {
+    const loader = mock(() => ({}));
+    const view = mock(() => new Response("view"));
+    const app = makeApp(definePage(PAGE_ROUTE, { query: PageQuery, cache: "no-store", headers: { "x-page": "1" }, loader, view }));
+
+    const res = await app.request("/test?page=two");
+    expect(res.status).toBe(400);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-page")).toBe("1");
+    expect(await res.text()).toBe(refusal("page"));
+    expect(loader).not.toHaveBeenCalled();
+    expect(view).not.toHaveBeenCalled();
+  });
+
+  it("renders onQueryError's refusal in place of the default, handed the issues", async () => {
+    const app = makeApp(
+      definePage(PAGE_ROUTE, {
+        query: PageQuery,
+        onQueryError: (issues) => new Response(`refused ${issues.length}`, { status: 400 }),
+        view: () => new Response("view"),
+      }),
+    );
+
+    const res = await app.request("/test?page=2&extra=1");
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe("refused 1");
+  });
+
+  it("refuses a bad query before the action runs on a submission", async () => {
+    const action = mock(() => ({}));
+    const app = capturedForge();
+    mapHandler(app, "POST", "/test", definePage(post("/test"), { query: PageQuery, action, view: () => new Response("view") }));
+
+    const res = await submit(app, "", "/test?page=two");
+    expect(res.status).toBe(400);
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it("infers the query's output type with no type arguments, and still accepts a two-argument loader", () => {
+    definePage(PAGE_ROUTE, {
+      query: PageQuery,
+      loader: (_c, _config, query) => {
+        // @ts-expect-error -- `page` is the transform's number, not the raw string
+        const raw: string = query.page;
+        return { raw };
+      },
+      view: () => new Response("ok"),
+    });
+    definePage(PAGE_ROUTE, { query: PageQuery, loader: (_c, config) => ({ config }), view: () => new Response("ok") });
+    definePage(PAGE_ROUTE, {
+      loader: (_c, _config, query) => {
+        // @ts-expect-error -- with no `query` schema the third argument is `unknown`
+        return { page: query.page };
+      },
+      view: () => new Response("ok"),
+    });
+  });
+
+  it("hands a page with no query schema an undefined third argument and leaves the query string unparsed", async () => {
+    const loader = mock((..._args: unknown[]) => ({}));
+    const app = makeApp(definePage(PAGE_ROUTE, { loader, view: () => new Response("view") }));
+
+    const res = await app.request("/test?page=two&__proto__=x");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("view");
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader.mock.calls[0]?.length).toBe(3);
+    expect(loader.mock.calls[0]?.[2]).toBeUndefined();
+  });
+
+  describe("reads the query string with formToObject's semantics", () => {
+    const TagsQuery = v.strictObject({ tag: v.array(v.string()) });
+
+    const cases = [
+      { search: "?tag=a&tag=b", expected: { status: 200, body: '["a","b"]' } },
+      { search: "?tag=a&tag=b&tag=c", expected: { status: 200, body: '["a","b","c"]' } },
+      { search: "?tag=a", expected: { status: 400, body: refusal("tag") } },
+    ];
+
+    for (const { search, expected } of cases) {
+      it(`answers ${search} with ${expected.status}`, async () => {
+        const app = makeApp(
+          definePage(PAGE_ROUTE, {
+            query: TagsQuery,
+            loader: (_c, _config, query) => query.tag,
+            view: (_c, _config, state) => new Response(JSON.stringify(state.data)),
+          }),
+        );
+
+        const res = await app.request(`/test${search}`);
+        expect({ status: res.status, body: await res.text() }).toEqual(expected);
+      });
+    }
+  });
+
+  it("passes an absent optional parameter as absent, and an absent defaulted one as its transformed default", async () => {
+    const seen: unknown[] = [];
+    const app = makeApp(
+      definePage(PAGE_ROUTE, {
+        query: v.strictObject({ q: v.optional(v.string()), page: v.pipe(v.optional(v.string(), "1"), v.digits(), v.transform(Number)) }),
+        loader: (_c, _config, query) => {
+          seen.push(query);
+          return {};
+        },
+        view: () => new Response("view"),
+      }),
+    );
+
+    const res = await app.request("/test");
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([{ page: 1 }]);
+    expect(Object.hasOwn(seen[0] as object, "q")).toBe(false);
+  });
+
+  it("refuses with one item when several parameters fail", async () => {
+    const TwoDigits = v.strictObject({ a: v.pipe(v.string(), v.digits()), b: v.pipe(v.string(), v.digits()) });
+    const app = makeApp(definePage(PAGE_ROUTE, { query: TwoDigits, view: () => new Response("view") }));
+
+    const res = await app.request("/test?a=x&b=y");
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe(refusal("a"));
+  });
+
+  describe("a throwing query transform", () => {
+    const ThrowingQuery = v.strictObject({
+      page: v.pipe(
+        v.string(),
+        v.transform(() => {
+          throw new Error("transform exploded");
+        }),
+      ),
+    });
+
+    it("reaches the app boundary as a 500, not a 400, and never runs the loader", async () => {
+      const loader = mock(() => ({}));
+      const app = makeApp(definePage(PAGE_ROUTE, { query: ThrowingQuery, loader, view: () => new Response("view") }));
+
+      const res = await app.request("/test?page=1");
+      expect(res.status).toBe(500);
+      expect(await res.text()).toBe(APP_BOUNDARY_500);
+      expect(loader).not.toHaveBeenCalled();
+    });
+
+    it("hands the transform's own error to def.onError", async () => {
+      let captured: Error | undefined;
+      const onQueryError = mock(() => new Response("refused", { status: 400 }));
+      const app = makeApp(
+        definePage(PAGE_ROUTE, {
+          query: ThrowingQuery,
+          onQueryError,
+          view: () => new Response("view"),
+          onError: (error) => {
+            captured = error;
+            return new Response("page error", { status: 503 });
+          },
+        }),
+      );
+
+      const res = await app.request("/test?page=1");
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe("page error");
+      expect(captured?.message).toBe("transform exploded");
+      expect(onQueryError).not.toHaveBeenCalled();
+    });
+  });
+
+  it("answers a submission's bad query with the query refusal, reading no body and running neither action nor loader", async () => {
+    const action = mock(() => ({}));
+    const loader = mock(() => ({}));
+    const app = capturedForge();
+    mapHandler(
+      app,
+      "POST",
+      "/test",
+      definePage(post("/test"), { query: PageQuery, schema: NameSchema, action, loader, view: () => new Response("view") }),
+    );
+
+    const res = await submit(app, "name=", "/test?page=two");
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe(refusal("page"));
+    expect(action).not.toHaveBeenCalled();
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it("hands the action a good query's page and the loader its parsed query on a submission", async () => {
+    const calls: unknown[] = [];
+    const app = capturedForge();
+    mapHandler(
+      app,
+      "POST",
+      "/test",
+      definePage(post("/test"), {
+        query: PageQuery,
+        action: () => {
+          calls.push("action");
+          return "done";
+        },
+        loader: (_c, _config, query) => {
+          calls.push(query);
+          return {};
+        },
+        view: () => new Response("view"),
+      }),
+    );
+
+    const res = await submit(app, "", "/test?page=7");
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["action", { page: 7 }]);
+  });
+
+  it("answers HEAD with a bad query as the bodiless 400 its GET would be, without running the loader", async () => {
+    const loader = mock(() => ({}));
+    const app = makeApp(definePage(PAGE_ROUTE, { query: PageQuery, headers: { "x-page": "1" }, loader, view: () => new Response("view") }));
+
+    const res = await app.request("/test?page=two", { method: "HEAD" });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("x-page")).toBe("1");
+    expect(await res.text()).toBe("");
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it("answers OPTIONS with a bad query as 405, never consulting the query schema", async () => {
+    const onQueryError = mock(() => new Response("refused", { status: 400 }));
+    const app = new Forge();
+    mapHandler(app, "ANY", "/test", definePage(ANY_PAGE_ROUTE, { query: PageQuery, onQueryError, view: () => new Response("view") }));
+
+    const res = await app.request("/test?page=two", { method: "OPTIONS" });
+    expect(res.status).toBe(405);
+    expect(await res.text()).toBe("Method Not Allowed");
+    expect(onQueryError).not.toHaveBeenCalled();
+  });
+
+  it("keeps onQueryError's own status and applies the page's cache and headers to it", async () => {
+    let search: string | undefined;
+    const app = makeApp(
+      definePage(PAGE_ROUTE, {
+        query: PageQuery,
+        cache: { maxAge: 30 },
+        headers: { "x-page": "1" },
+        onQueryError: async (_issues, c) => {
+          search = c.url.search;
+          return new Response("not here", { status: 404 });
+        },
+        view: () => new Response("view"),
+      }),
+    );
+
+    const res = await app.request("/test?page=two");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("not here");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=30");
+    expect(res.headers.get("x-page")).toBe("1");
+    expect(search).toBe("?page=two");
+  });
+
+  it("hands onQueryError the issue for the field that failed", async () => {
+    const seen: unknown[] = [];
+    const app = makeApp(
+      definePage(PAGE_ROUTE, {
+        query: PageQuery,
+        onQueryError: (issues) => {
+          seen.push(issues.map((issue) => ({ type: issue.type, input: issue.input, key: issue.path?.[0]?.key })));
+          return new Response("refused", { status: 400 });
+        },
+        view: () => new Response("view"),
+      }),
+    );
+
+    await app.request("/test?page=two");
+    expect(seen).toEqual([[{ type: "digits", input: "two", key: "page" }]]);
+  });
+});
+
+describe("definePage — error reporting", () => {
   it("leaves the record to the boundary when no onError is supplied", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("view exploded");
         },
       }),
+      capture,
     );
 
-    const records = parse(await captureLogs(() => app.request("/test")));
-    expect(records.map((r) => r.prefix)).toEqual(["app"]);
-    expect(records[0]!.message).toBe("Unhandled error");
+    await app.request("/test");
+    expect(capture.records.map((r) => r.message)).toEqual(["Unhandled error"]);
   });
 
-  it("logs exactly once, in the serialized shape, when onError recovers", async () => {
+  it("logs exactly once, to the context's request logger as the page, when onError recovers", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       definePage(PAGE_ROUTE, {
         view: () => {
@@ -930,21 +1240,23 @@ describe("definePage — error reporting", () => {
         },
         onError: () => new Response("page error", { status: 500 }),
       }),
+      capture,
     );
 
-    const records = parse(await captureLogs(() => app.request("/test")));
-    expect(records.length).toBe(1);
-    const record = records[0]!;
-    expect(record.prefix).toBe("page");
+    await app.request("/test");
+    expect(capture.records.length).toBe(1);
+    const record = capture.records[0]!;
+    expect(record.data?.source).toBe("page");
     expect(record.level).toBe("error");
     expect(record.message).toBe("Page handler threw");
-    const error = record.error as { type: string; detail: string; stack?: string };
+    const error = record.data?.error as { type: string; detail: string; stack?: string };
     expect(error.type).toBe("Error");
     expect(error.detail).toBe("view exploded");
     expect(typeof error.stack).toBe("string");
   });
 
   it("attributes a throwing onError to the hook and lets the boundary render the original", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       definePage(PAGE_ROUTE, {
         view: () => {
@@ -954,23 +1266,23 @@ describe("definePage — error reporting", () => {
           throw new Error("hook exploded");
         },
       }),
+      capture,
     );
 
     const res = await app.request("/test");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(APP_BOUNDARY_500);
 
-    const records = parse(await captureLogs(() => app.request("/test")));
-    const attribution = records.find((r) => r.message === "definePage onError threw")!;
+    const attribution = capture.records.find((r) => r.message === "definePage onError threw")!;
     expect(attribution.level).toBe("error");
-    expect((attribution.error as { detail: string }).detail).toBe("hook exploded");
-    expect((attribution.original as { detail: string }).detail).toBe("view exploded");
-    expect(records.some((r) => r.message === "Unhandled error")).toBe(true);
+    expect(attribution.data).toMatchObject({ error: { detail: "hook exploded" }, original: { detail: "view exploded" } });
+    expect(capture.records.some((r) => r.message === "Unhandled error")).toBe(true);
   });
 });
 
 describe("definePage — a client that disconnects", () => {
   it("renders no onError page and logs nothing, leaving the boundary its 499", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       definePage(PAGE_ROUTE, {
         view: () => {
@@ -978,14 +1290,98 @@ describe("definePage — a client that disconnects", () => {
         },
         onError: () => new Response("page error", { status: 500 }),
       }),
+      capture,
     );
 
-    let res: Response | undefined;
-    const logs = await captureLogs(async () => {
-      res = await app.fetch(new Request("http://localhost/test", { signal: AbortSignal.abort() }), {}, mockExecutionContext());
-    });
+    const res = await app.fetch(new Request("http://localhost/test", { signal: AbortSignal.abort() }), {}, mockExecutionContext());
 
-    expect(res!.status).toBe(499);
-    expect(logs).toEqual([]);
+    expect(res.status).toBe(499);
+    expect(capture.records).toEqual([]);
+  });
+});
+
+describe("definePage — route rate limits", () => {
+  type LimitedEnv = { LIMITER?: RateLimit };
+
+  function admittingOnce(spent: string[]): RateLimit {
+    let used = 0;
+    return {
+      limit: async ({ key }) => {
+        spent.push(key);
+        used += 1;
+        return { success: used <= 1 };
+      },
+    };
+  }
+
+  function limitedPage(calls: string[]) {
+    const app = new Forge<LimitedEnv>();
+    mapHandler(
+      app,
+      "ANY",
+      "/test",
+      definePage(ANY_PAGE_ROUTE, {
+        headers: { "x-page": "value" },
+        schema: NameSchema,
+        rateLimit: { binding: "LIMITER", key: (c) => `notes:${c.url.pathname}` },
+        action: (_c, _config, data) => {
+          calls.push(`action:${data.name}`);
+          return "saved";
+        },
+        view: () => new Response("rendered"),
+      }),
+    );
+    return app;
+  }
+
+  it("spends the limit on a mutation, answering the over-limit one 429 with the page's headers and without the action", async () => {
+    const spent: string[] = [];
+    const calls: string[] = [];
+    const app = limitedPage(calls);
+    const env: LimitedEnv = { LIMITER: admittingOnce(spent) };
+    const init = { method: "POST", headers: FORM_HEADERS, body: "name=Jane" };
+
+    const admitted = await app.request("/test", init, env);
+    const refused = await app.request("/test", { ...init }, env);
+
+    expect({
+      admitted: [admitted.status, await admitted.text()],
+      refused: [refused.status, await refused.text(), refused.headers.get("x-page")],
+      spent,
+      calls,
+    }).toEqual({
+      admitted: [200, "rendered"],
+      refused: [429, "Too many requests. Please try again later.", "value"],
+      spent: ["notes:/test", "notes:/test"],
+      calls: ["action:Jane"],
+    });
+  });
+
+  it("renders a GET without spending the limit", async () => {
+    const spent: string[] = [];
+    const app = limitedPage([]);
+
+    const res = await app.request("/test", {}, { LIMITER: admittingOnce(spent) });
+
+    expect({ status: res.status, body: await res.text(), spent }).toEqual({ status: 200, body: "rendered", spent: [] });
+  });
+
+  it("limits a GET page through rateLimit in the route's own middleware", async () => {
+    const spent: string[] = [];
+    const app = new Forge<LimitedEnv>();
+    mapHandler(app, "GET", "/test", {
+      middleware: [rateLimit<LimitedEnv>({ binding: "LIMITER", key: () => "reader" })],
+      handler: definePage(PAGE_ROUTE, { view: () => new Response("rendered") }),
+    });
+    const env: LimitedEnv = { LIMITER: admittingOnce(spent) };
+
+    const admitted = await app.request("/test", {}, env);
+    const refused = await app.request("/test", {}, env);
+
+    expect({ admitted: [admitted.status, await admitted.text()], refused: [refused.status, await refused.text()], spent }).toEqual({
+      admitted: [200, "rendered"],
+      refused: [429, "Too many requests. Please try again later."],
+      spent: ["reader", "reader"],
+    });
   });
 });

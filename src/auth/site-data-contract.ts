@@ -7,5 +7,5 @@ export const SITE_DATA_PATH_ATTR = "data-site-data-path";
 /** CSRF token minted for `SITE_DATA_PATH_ATTR`, and valid at no other path. @public */
 export const SITE_DATA_TOKEN_ATTR = "data-site-data-token";
 
-/** Header the token is sent on, as the app's `csrfProtection` names it. @public */
+/** Header the token is sent on, as the app's CSRF policy names it. @public */
 export const SITE_DATA_CSRF_HEADER_ATTR = "data-site-data-csrf-header";

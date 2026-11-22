@@ -9,7 +9,7 @@ import { createUserStore } from "../../src/auth/stores/users";
 import type { AuthSessionStore } from "../../src/auth/types";
 import { createD1Client } from "../../src/storage/db/client";
 import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import type { TestD1 } from "../../src/testing/d1";
+import type { TestD1 } from "../../src/testing/d1/mod";
 import { insertSession, openAuthD1, securityEvents, sessionCount, signedUp, tokenHash } from "./auth-d1.fixture";
 
 const SIGNED_IN_AT = 1_000;

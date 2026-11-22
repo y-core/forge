@@ -36,6 +36,8 @@ interface FactorServiceBase<kind extends AuthFactorKind = AuthFactorKind> {
   /** How long one code stays current, in seconds, or `null` for a factor whose code is not on a clock. */
   readonly codePeriodSeconds: number | null;
   readonly reissueAfterMs: number | null;
+  /** The longest a spent attempt budget goes on refusing, in milliseconds; unset where the factor cannot bound it. */
+  readonly attemptWindowMs?: number;
   createChallenge(userId: string, at: number, caller: AuthFactorCaller): Promise<Result<AuthFactorChallenge, AuthFactorReason>>;
   verifyChallenge(userId: string, presented: string, at: number, caller: AuthFactorCaller): Promise<Result<AuthFactorVerified, AuthFactorReason>>;
   listEnrolments(userId: string): Promise<AuthStoreResult<readonly AuthFactor[]>>;

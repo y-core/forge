@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 
+import { RequestContext } from "@remix-run/fetch-router";
+
+import { validateEnv } from "../context/env-validation";
+import { EnvKey } from "../context/types";
 import { base64DecodeOrNull, base64Encode } from "../crypto/primitives/base64";
 import { randomBytes, utf8Encode } from "../crypto/primitives/bytes";
 import { importHmacKey } from "../crypto/primitives/hmac";
 import * as timing from "../crypto/primitives/timing";
+import { v } from "../validation/mod";
+import { parseWebhookSecrets, WebhookSecretSchema } from "./config";
 import type { WebhookSigningOptions } from "./types";
-import { computeWebhookSignature, createWebhookSigning } from "./webhook";
+import { computeWebhookSignature, createWebhookSigning, createWebhookSigningResolver } from "./webhook";
 
 const realTimingSafeEqualBytes = timing.timingSafeEqualBytes;
 const timingSafeEqualSpy = mock((a: Uint8Array, b: Uint8Array) => realTimingSafeEqualBytes(a, b));
@@ -421,5 +427,112 @@ describe("createWebhookSigning key import", () => {
     expect(imported).toEqual([]);
     expect((await webhooks.verify(accepted)).ok).toBe(true);
     expect(imported).toEqual([rawSecret(SECRET_OLD)]);
+  });
+});
+
+describe("createWebhookSigningResolver()", () => {
+  interface Env {
+    readonly WEBHOOK_SECRET: string;
+  }
+
+  function contextUnder(env: Env): RequestContext {
+    const context = new RequestContext(new Request("http://localhost/"));
+    context.set(EnvKey, env, { property: "env" });
+    return context;
+  }
+
+  it("builds the signer once per env and answers the same one after", async () => {
+    let calls = 0;
+    const resolveSigning = createWebhookSigningResolver<Env>((env) => {
+      calls++;
+      return { secrets: [env.WEBHOOK_SECRET], now };
+    });
+    const env = { WEBHOOK_SECRET: SECRET_OLD };
+    const first = await resolveSigning(contextUnder(env));
+    const second = await resolveSigning(contextUnder(env));
+    expect({ same: first === second, calls }).toEqual({ same: true, calls: 1 });
+  });
+
+  it("builds a signer of its own for each env object", async () => {
+    const resolveSigning = createWebhookSigningResolver<Env>((env) => ({ secrets: [env.WEBHOOK_SECRET] }));
+    const first = await resolveSigning(contextUnder({ WEBHOOK_SECRET: SECRET_OLD }));
+    const second = await resolveSigning(contextUnder({ WEBHOOK_SECRET: SECRET_OLD }));
+    expect(first === second).toBe(false);
+  });
+
+  it("signs under the secret the env carries, so a signer over that secret verifies it", async () => {
+    const resolveSigning = createWebhookSigningResolver<Env>((env) => ({ secrets: [env.WEBHOOK_SECRET], now }));
+    const resolved = await resolveSigning(contextUnder({ WEBHOOK_SECRET: SECRET_NEXT }));
+    const headers = await resolved.sign({ id: "msg_1", body: "{}" });
+    const verified = await createWebhookSigning({ secrets: [SECRET_NEXT], now }).verify(
+      new Request(ENDPOINT, { method: "POST", headers, body: "{}" }),
+    );
+    expect(verified.ok).toBe(true);
+  });
+
+  it("rejects on a malformed secret and builds again on the next call", async () => {
+    const env: { WEBHOOK_SECRET: string } = { WEBHOOK_SECRET: "not-a-secret" };
+    const resolveSigning = createWebhookSigningResolver<Env>((bindings) => ({ secrets: [bindings.WEBHOOK_SECRET], now }));
+    await expect(resolveSigning(contextUnder(env))).rejects.toThrow("createWebhookSigning: a secret is not a whsec_-prefixed base64 string.");
+    env.WEBHOOK_SECRET = SECRET_OLD;
+    const recovered = await resolveSigning(contextUnder(env));
+    const headers = await recovered.sign({ id: "msg_1", body: "{}" });
+    expect((await signing({ secrets: [SECRET_OLD] }).verify(new Request(ENDPOINT, { method: "POST", headers, body: "{}" }))).ok).toBe(true);
+  });
+
+  it("builds once for concurrent first calls under one env, answering one signer to both", async () => {
+    let calls = 0;
+    const resolveSigning = createWebhookSigningResolver<Env>((env) => {
+      calls++;
+      return { secrets: [env.WEBHOOK_SECRET], now };
+    });
+    const env = { WEBHOOK_SECRET: SECRET_OLD };
+    const [first, second] = await Promise.all([resolveSigning(contextUnder(env)), resolveSigning(contextUnder(env))]);
+    expect({ same: first === second, calls }).toEqual({ same: true, calls: 1 });
+  });
+
+  it("answers a rejection rather than throwing when resolve itself throws, and calls resolve again next time", async () => {
+    const env: { WEBHOOK_SECRETS: string } = { WEBHOOK_SECRETS: "" };
+    let calls = 0;
+    const resolveSigning = createWebhookSigningResolver<{ WEBHOOK_SECRETS: string }>((bindings) => {
+      calls++;
+      return { secrets: parseWebhookSecrets(bindings.WEBHOOK_SECRETS), now };
+    });
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = resolveSigning(contextUnder(env as unknown as Env));
+    }).not.toThrow();
+    await expect(pending).rejects.toThrow("parseWebhookSecrets: the webhook-secret value is empty");
+    env.WEBHOOK_SECRETS = SECRET_NEXT;
+    const headers = await (await resolveSigning(contextUnder(env as unknown as Env))).sign({ id: "msg_1", body: "{}" });
+    const verified = await signing({ secrets: [SECRET_NEXT] }).verify(new Request(ENDPOINT, { method: "POST", headers, body: "{}" }));
+    expect({ ok: verified.ok, calls }).toEqual({ ok: true, calls: 2 });
+  });
+
+  it("keeps each env's signer on that env's secret, so one env's webhook fails under the other's", async () => {
+    const resolveSigning = createWebhookSigningResolver<Env>((env) => ({ secrets: [env.WEBHOOK_SECRET], now }));
+    const oldEnv = contextUnder({ WEBHOOK_SECRET: SECRET_OLD });
+    const nextEnv = contextUnder({ WEBHOOK_SECRET: SECRET_NEXT });
+    const headers = await (await resolveSigning(oldEnv)).sign({ id: "msg_1", body: "{}" });
+    const request = () => new Request(ENDPOINT, { method: "POST", headers, body: "{}" });
+    expect({
+      own: (await (await resolveSigning(oldEnv)).verify(request())).ok,
+      other: await (await resolveSigning(nextEnv)).verify(request()),
+    }).toEqual({ own: true, other: { ok: false, error: "signature-mismatch" } });
+  });
+
+  it("runs the security README sample: a schema-validated rotation variable resolves a signer that verifies the older secret", async () => {
+    interface SampleEnv {
+      readonly WEBHOOK_SECRETS: string;
+    }
+    const env = validateEnv({ WEBHOOK_SECRETS: ` ${SECRET_NEXT},${SECRET_OLD} ` }, v.object({ WEBHOOK_SECRETS: WebhookSecretSchema }));
+    const resolveWebhooks = createWebhookSigningResolver<SampleEnv>((bindings) => ({
+      secrets: parseWebhookSecrets(bindings.WEBHOOK_SECRETS),
+      now,
+    }));
+    const context = new RequestContext(new Request(ENDPOINT));
+    context.set(EnvKey, env, { property: "env" });
+    const webhooks = await resolveWebhooks(context);
+    expect((await webhooks.verify(await signedRequest("{}", { secrets: [SECRET_OLD] }))).ok).toBe(true);
   });
 });

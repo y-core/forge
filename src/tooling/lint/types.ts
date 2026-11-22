@@ -86,6 +86,8 @@ export interface RuleScope {
 
 /** What a rule is handed for the file under lint. */
 export interface RuleContext {
+  /** The options the config gave the rule, validated against its `meta.schema`. */
+  options?: readonly unknown[];
   report: (diagnostic: { message: string; node?: unknown; loc?: SourceLocation }) => void;
   sourceCode: {
     getDisableDirectives: () => { directives: readonly DisableDirective[] };
@@ -99,7 +101,7 @@ export type Visitor = Record<string, (node: AstNode) => void>;
 
 /** A rule as oxlint loads it. */
 export interface LintRule {
-  meta?: { type?: "problem" | "suggestion" | "layout"; docs?: { description?: string } };
+  meta?: { type?: "problem" | "suggestion" | "layout"; docs?: { description?: string }; schema?: readonly object[] };
   create: (context: RuleContext) => Visitor;
 }
 

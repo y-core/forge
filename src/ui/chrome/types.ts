@@ -36,21 +36,21 @@ export interface DockProps<G extends string = string> extends Omit<JSX.Intrinsic
 
 /** A leaf link. `href` is a route-map key resolved through {@link NavRenderCtx.resolveHref} — never used raw. @public */
 export interface NavLink {
-  label: string;
+  readonly label: string;
   /** Route-map key (NOT a URL) — passed to `resolveHref` to produce the final `href`. */
-  href: string;
+  readonly href: string;
   /** Marks the destination the reader is on: `aria-current="page"` plus `data-selected`. */
-  current?: boolean | undefined;
+  readonly current?: boolean | undefined;
   /** Presentational visibility tokens, not access control: the item is shown only when one is in the active set, but its markup is sent to every viewer. */
-  filters?: string[] | undefined;
+  readonly filters?: readonly string[] | undefined;
 }
 
 /** A branch: a menu over child items (recurses for nested submenus). @public */
 export interface NavMenu {
-  label: string;
-  items: NavItem[];
+  readonly label: string;
+  readonly items: readonly NavItem[];
   /** Presentational visibility tokens, not access control: the menu is shown only when one is in the active set, but its markup is sent to every viewer. */
-  filters?: string[] | undefined;
+  readonly filters?: readonly string[] | undefined;
 }
 
 /** Slot content that renders differently inside a menu, where a row needs the `menuitem` role, than at bar level. @public */
@@ -58,21 +58,21 @@ export type NavSlotRender = (place: { inMenu: boolean }) => JSXNode;
 
 /** A slot: an inline JSX node, OR a string key resolved from {@link NavRenderCtx.slots}. @public */
 export interface NavSlot {
-  slot: JSXNode | NavSlotRender | string;
-  label?: string | undefined;
+  readonly slot: JSXNode | NavSlotRender | string;
+  readonly label?: string | undefined;
   /** Presentational visibility tokens, not access control: the slot is shown only when one is in the active set, but its markup is sent to every viewer. */
-  filters?: string[] | undefined;
+  readonly filters?: readonly string[] | undefined;
 }
 
 /** A megamenu: a wide panel of link columns, one per group, opened from a bar trigger. @public */
 export interface NavMegaMenu {
-  label: string;
+  readonly label: string;
   /** The columns, at most four across; each renders as a headed `NavGroup`. */
-  groups: NavGroup[];
+  readonly groups: readonly NavGroup[];
   /** Which edge of the trigger the panel aligns to; `end` keeps a wide panel on the last bar item inside the viewport. */
-  align?: Align | undefined;
+  readonly align?: Align | undefined;
   /** Presentational visibility tokens, not access control: the megamenu is shown only when one is in the active set, but its markup is sent to every viewer. */
-  filters?: string[] | undefined;
+  readonly filters?: readonly string[] | undefined;
 }
 
 /** One navbar entry — a link, a nested menu, a megamenu, or a slot. Discriminated by property presence. @public */
@@ -80,11 +80,11 @@ export type NavItem = NavLink | NavMenu | NavSlot | NavMegaMenu;
 
 /** A heading over a list of visible child items; legal at section level and as a megamenu column. @public */
 export interface NavGroup {
-  heading: string;
+  readonly heading: string;
   /** Renders as visible bar links. */
-  group: (NavLink | NavSlot)[];
+  readonly group: readonly (NavLink | NavSlot)[];
   /** Presentational visibility tokens, not access control: the group is shown only when one is in the active set, but its markup is sent to every viewer. */
-  filters?: string[] | undefined;
+  readonly filters?: readonly string[] | undefined;
 }
 
 /** What a section may hold: any nav item, plus a group. @public */
@@ -92,30 +92,39 @@ export type NavSectionItem = NavItem | NavGroup;
 
 /** A group of items; sibling sections spread across the bar via `justify-between`. @public */
 export interface NavSection {
-  items: NavSectionItem[];
+  readonly items: readonly NavSectionItem[];
 }
 
 /** The full navbar configuration the app feeds to `Navbar`. @public */
 export interface NavDefinition {
-  sections: NavSection[];
+  readonly sections: readonly NavSection[];
 }
 
-type ReadonlyNavFilters<T extends { filters?: string[] | undefined }> = Omit<T, "filters"> & { filters?: readonly string[] | undefined };
-type KeyedNavLink<K extends string> = Omit<ReadonlyNavFilters<NavLink>, "href"> & { href: K };
-type KeyedNavSlot = ReadonlyNavFilters<NavSlot>;
-type KeyedNavGroup<K extends string> = Omit<ReadonlyNavFilters<NavGroup>, "group"> & { group: readonly (KeyedNavLink<K> | KeyedNavSlot)[] };
-type KeyedNavItem<K extends string> =
+type KeyedNavLink<K extends string> = Omit<NavLink, "href"> & { readonly href: K };
+type KeyedNavGroup<K extends string> = Omit<NavGroup, "group"> & { readonly group: readonly (KeyedNavLink<K> | NavSlot)[] };
+type KeyedNavMenu<K extends string> = Omit<NavMenu, "items"> & { readonly items: readonly KeyedNavItem<K>[] };
+type KeyedNavMegaMenu<K extends string> = Omit<NavMegaMenu, "groups"> & { readonly groups: readonly KeyedNavGroup<K>[] };
+type KeyedNavItem<K extends string> = KeyedNavLink<K> | NavSlot | KeyedNavMenu<K> | KeyedNavMegaMenu<K>;
+type MergeKey = { readonly key: string };
+type KeyedNavSectionItem<K extends string> =
   | KeyedNavLink<K>
-  | KeyedNavSlot
-  | (Omit<ReadonlyNavFilters<NavMenu>, "items"> & { items: readonly KeyedNavItem<K>[] })
-  | (Omit<ReadonlyNavFilters<NavMegaMenu>, "groups"> & { groups: readonly KeyedNavGroup<K>[] });
-type KeyedNavSectionItem<K extends string> = KeyedNavItem<K> | KeyedNavGroup<K>;
+  | NavSlot
+  | (KeyedNavMenu<K> & MergeKey)
+  | (KeyedNavMegaMenu<K> & MergeKey)
+  | KeyedNavGroup<K>;
 
 /** Resolves what one contribution's entries show this request's viewer. @public */
 export type NavStateResolver<C, S> = (c: C) => Promise<S>;
 
-/** One feature's bar entries, the URL each key they name renders as, its footer links and its viewer state. @public */
+/** The viewer state a `Navbar` takes: the filter tokens held and the content each string-keyed slot renders. @public */
+export interface NavState {
+  readonly activeFilters: string[];
+  readonly slots: Record<string, JSXNode | NavSlotRender>;
+}
+
+/** One slice's bar entries, the URL each key they name renders as, its footer links and its viewer state. @public */
 export interface NavContribution<K extends string, C, S> {
+  /** A bar-level menu or megamenu carries a `key`; menus sharing one merge into the first, and must share its label. */
   items: readonly KeyedNavSectionItem<K>[];
   /** The URL each key renders as; the keys are what this contribution's links and footer name. */
   hrefs: Readonly<Record<K, string>>;
@@ -123,9 +132,8 @@ export interface NavContribution<K extends string, C, S> {
   state?: NavStateResolver<C, S> | undefined;
 }
 
-/** One app's primary navbar, composed in registration order from every contribution. @public */
-export interface PrimaryNav<K extends string, C, S> {
-  contribute: <L extends K>(contribution: NavContribution<L, C, S>) => void;
+/** One app's primary navbar, frozen and composed in array order from every contribution. @public */
+export interface PrimaryNav<C, S> {
   definition: () => NavDefinition;
   footer: () => readonly Pick<NavLink, "label" | "href">[];
   resolveHref: (key: string) => string;

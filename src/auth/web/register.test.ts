@@ -5,7 +5,7 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
-import { csrfMinterCtx, csrfProtection } from "../../form/csrf";
+import { csrfMintStage, csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
@@ -55,9 +55,9 @@ interface AppSeed {
   readonly pendingEmail?: string;
   /** Every token written under the signed-in session key, in order. */
   readonly identityWrites?: string[];
-  /** Mint deterministic tokens instead of `csrfProtection`'s, so two renders can be compared byte for byte. */
+  /** Mint deterministic tokens instead of the CSRF policy's, so two renders can be compared byte for byte. */
   readonly fixedCsrf?: boolean;
-  /** The header `csrfProtection` checks the token on, when the app renames it. */
+  /** The header the app's CSRF policy checks the token on, when the app renames it. */
   readonly csrfHeaderName?: string;
 }
 
@@ -102,7 +102,7 @@ function authApp(seed: AppSeed = {}): Forge {
     const ring = importKeyRing([CSRF_SECRET]);
     app.use(
       "*",
-      csrfProtection({ ring: () => ring, subject: false, ...(seed.csrfHeaderName === undefined ? {} : { headerName: seed.csrfHeaderName }) }),
+      csrfMintStage({ ring: () => ring, subject: false, ...(seed.csrfHeaderName === undefined ? {} : { headerName: seed.csrfHeaderName }) }),
     );
   }
   return app;
@@ -191,7 +191,7 @@ describe("register* independence", () => {
   });
 });
 
-describe("csrfProtection over the registered routes", () => {
+describe("the CSRF policy over the registered routes", () => {
   it("refuses a submission carrying no token with the exact refusal", async () => {
     const options = fakeAuthWebOptions();
     const app = authApp();
@@ -218,7 +218,7 @@ describe("csrfProtection over the registered routes", () => {
 
 // The assertion that would have caught the original defect: a page-level token was minted for the
 // first row, so every other Remove button posted a token bound to another row's path and got a 403.
-describe("csrfProtection over a passkey list of more than one row", () => {
+describe("the CSRF policy over a passkey list of more than one row", () => {
   it("accepts the second row's own token on the second row's remove path", async () => {
     const services = fakeAuthServices({
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u1" }), fakeAuthCredential({ id: "c2", userId: "u1" })]),
@@ -303,7 +303,7 @@ describe("the session identity a verification writes", () => {
   });
 });
 
-// The defect this covers: the controller sent `csrfProtection`'s default header against an app that
+// The defect this covers: the controller sent the CSRF policy's default header against an app that
 // had renamed it, so both halves of every ceremony 403-ed with nothing on the page to explain it.
 describe("the CSRF header name a renamed deployment stamps on the passkey scope", () => {
   const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
@@ -350,7 +350,7 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
     expect(res.status).toBe(200);
   });
 
-  it("still refuses that same token on the default header name", async () => {
+  it("still refuses that same token on the default header name, falling back to a JSON body it cannot read as a form", async () => {
     const app = authApp({ userId: "u9", csrfHeaderName: HEADER });
     registerAuth(app, authRoutes("/auth"), passkeyOptions());
 
@@ -362,6 +362,6 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
       body: "{}",
     });
 
-    expect(res.status).toBe(403);
+    expect([res.status, await res.text()]).toEqual([400, "Bad Request"]);
   });
 });

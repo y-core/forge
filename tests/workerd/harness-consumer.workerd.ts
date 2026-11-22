@@ -8,12 +8,13 @@ import { expect, test } from "./harness.fixture";
 
 const FORGE = fileURLToPath(new URL("../../", import.meta.url));
 const CONFIG = fileURLToPath(new URL("../fixtures/workers-form/wrangler.jsonc", import.meta.url));
+const NODE_DB_CONSUMER = fileURLToPath(new URL("../fixtures/node-db-consumer/", import.meta.url));
 const CSRF_SECRET = /"CSRF_SECRET": "([0-9a-f]+)"/.exec(readFileSync(CONFIG, "utf-8"))?.[1] ?? "";
 
 const MANIFEST = JSON.parse(readFileSync(join(FORGE, "package.json"), "utf-8")) as {
   dependencies: Record<string, string>;
   peerDependencies: Record<string, string>;
-  exports: Record<string, { import: string }>;
+  exports: Record<string, { import: string; node?: string }>;
   forge: { node: readonly string[] };
 };
 const NODE_SUBPATHS = MANIFEST.forge.node.map((subpath) => `@y-core/forge${subpath.slice(1)}`);
@@ -37,7 +38,8 @@ function bareImports(source: string): Set<string> {
 }
 
 const BUNDLE_IMPORTS = MANIFEST.forge.node.map((subpath) => {
-  const bundle = MANIFEST.exports[subpath]?.import ?? "";
+  const target = MANIFEST.exports[subpath];
+  const bundle = target?.node ?? target?.import ?? "";
   return { bundle, packages: bareImports(readFileSync(join(FORGE, bundle), "utf-8")) };
 });
 
@@ -65,7 +67,7 @@ import { rateLimit } from "@y-core/forge/security";
 import { mapHandler } from "@y-core/forge/testing";
 
 const app = createApp({
-  middleware: (forge) => forge.use("*", rateLimit({ limiter: () => undefined })),
+  middleware: (forge) => forge.use("*", rateLimit({ binding: "LIMITER" })),
   routes: (forge) => mapHandler(forge, "ANY", "/", () => new Response("ok")),
 });
 
@@ -106,12 +108,11 @@ try {
 `;
 
 const EXPLAINED = `
-const { explainPlan, openTestD1, scansTable, sql, usesIndex } = await import("@y-core/forge/testing/d1");
+const { explainPlan, openTestD1, scansTable, usesIndex } = await import("@y-core/forge/testing/d1");
 const db = await openTestD1();
 try {
-  const fragment = sql\`SELECT id FROM posts WHERE user_id = \${1}\`;
-  const plan = await explainPlan(db, fragment);
-  console.log(JSON.stringify({ fragment: { text: fragment.text, params: fragment.params }, indexed: usesIndex(plan, "posts_user"), scanned: scansTable(plan, "posts") }));
+  const plan = await explainPlan(db, "SELECT id FROM posts WHERE user_id = ?", [1]);
+  console.log(JSON.stringify({ indexed: usesIndex(plan, "posts_user"), scanned: scansTable(plan, "posts") }));
 } finally {
   await db.dispose();
 }
@@ -177,6 +178,70 @@ test.describe("forge installed from its packed tarball", () => {
     });
   }
 
+  test("cuts one element out of a page with testing/markup's elementOf under node", async () => {
+    const page = '<main><p class="lead">Save &amp; Exit</p><p data-ref="outcome">Done</p></main>';
+    const run = await runNode(
+      root,
+      `const { elementOf } = await import("@y-core/forge/testing/markup"); console.log(JSON.stringify(elementOf(${JSON.stringify(page)}, "p", 'data-ref="outcome"')));`,
+    );
+
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toBe('<p data-ref="outcome">Done</p>');
+  });
+
+  test("reads every matching element out of a page with testing/markup's elementsOf under node", async () => {
+    const page = '<ul><li data-ref="a">One</li><li data-ref="b">Two</li></ul>';
+    const run = await runNode(
+      root,
+      `const { elementsOf } = await import("@y-core/forge/testing/markup"); console.log(JSON.stringify(elementsOf(${JSON.stringify(page)}, "li", "data-ref")));`,
+    );
+
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual(['<li data-ref="a">One</li>', '<li data-ref="b">Two</li>']);
+  });
+
+  test("runs a service returning result's ok, err and captured throws under node", async () => {
+    const run = await runNode(
+      root,
+      `const { err, ok, result } = await import("@y-core/forge/result");
+const find = (id) => (id === 1 ? ok({ id }) : err("not-found"));
+const thrown = result(() => { throw new Error("disk full"); });
+const rejected = await result(Promise.reject("offline"));
+console.log(JSON.stringify({ found: find(1), missing: find(2), done: ok(), thrown: [thrown.ok, thrown.error.message], rejected: [rejected.ok, rejected.error instanceof Error, rejected.error.message] }));`,
+    );
+
+    expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+    expect(run.code, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
+      found: { ok: true, data: { id: 1 } },
+      missing: { ok: false, error: "not-found" },
+      done: { ok: true },
+      thrown: [false, "disk full"],
+      rejected: [false, true, "offline"],
+    });
+  });
+
+  test("parses a form with validation's field schemas and names a refused field's path under node", async () => {
+    const run = await runNode(
+      root,
+      `const { describeValidationIssue, formDigits, formMultilineText, formText, safeCheck, v } = await import("@y-core/forge/validation");
+const schema = v.object({
+  contact: v.object({ name: formText(), phone: formDigits(), email: v.pipe(formText(), safeCheck((value) => value.includes("@"), "Enter an email address.")) }),
+  message: formMultilineText(),
+});
+const accepted = v.safeParse(schema, { contact: { name: "  Jane  ", phone: "(555) 010-2030", email: "jane@example.com" }, message: " Hi\\r\\nthere " });
+const refused = v.safeParse(schema, { contact: { name: "Jane", phone: "1", email: "jane" }, message: "Hi" });
+console.log(JSON.stringify({ accepted: accepted.output, refused: refused.issues.map((issue) => [describeValidationIssue(issue), issue.message]) }));`,
+    );
+
+    expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+    expect(run.code, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
+      accepted: { contact: { name: "Jane", phone: "5550102030", email: "jane@example.com" }, message: "Hi\nthere" },
+      refused: [["contact.email", "Enter an email address."]],
+    });
+  });
+
   test("submits a form through a Worker served by testing/harness with a token minted by testing/form", async () => {
     const run = await runNode(root, ROUND_TRIP);
 
@@ -209,14 +274,26 @@ test.describe("forge installed from its packed tarball", () => {
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual([{ name: "posts" }]);
     });
 
-    test("builds a fragment with testing/d1's sql and explains it, importing nothing node cannot load", async () => {
+    test("explains a query with testing/d1, importing nothing node cannot load", async () => {
       const run = await runNode(root, EXPLAINED);
 
       expect(run.code).toBe(0);
+      expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ indexed: true, scanned: false });
+    });
+
+    test("runs an app service built on storage/db under node, against openTestD1's binding", async () => {
+      for (const file of ["posts-service.ts", "explain-posts.ts"]) writeFileSync(join(root, file), readFileSync(join(NODE_DB_CONSUMER, file)));
+      const run = await collect("node", ["explain-posts.ts"], root, { timeoutMs: 120_000 });
+
+      expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+      expect(run.code, run.stderr).toBe(0);
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
-        fragment: { text: "SELECT id FROM posts WHERE user_id = ?", params: [1] },
         indexed: true,
-        scanned: false,
+        byUser: [
+          { id: 1, user_id: 7 },
+          { id: 2, user_id: 7 },
+        ],
+        post: { id: 3, user_id: 8 },
       });
     });
   });

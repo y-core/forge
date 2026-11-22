@@ -6,6 +6,9 @@ import { setPendingHeader } from "../context/pending-headers";
 /** Typed accessor for the request ID variable set by `requestId` middleware. @public */
 export const requestIdCtx = contextVar<string>("requestId");
 
+/** Whether the chain declared the request transited Cloudflare, published for every rate limit's default key to read. @internal */
+export const cfHeadersTrustedCtx = contextVar<boolean>("cfHeadersTrusted");
+
 /** Middleware that assigns a request ID and echoes it into the `x-request-id` response header. @public */
 export function requestId(options?: { trustCfHeaders?: boolean }): Middleware {
   const trustCfHeaders = options?.trustCfHeaders === true;

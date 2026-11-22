@@ -89,7 +89,7 @@ describe("checkStubGlobals", () => {
     const outcome = checkStubGlobals({
       root: process.cwd(),
       stubs: [".types"],
-      shared: ["Bun", "Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
+      shared: ["Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
       sources: ["src", "warden/src", "!src/tooling/dev"],
     });
     expect(outcome.findings).toEqual([]);

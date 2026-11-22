@@ -1,5 +1,3 @@
-import type { getPlatformProxy } from "wrangler";
-
 import type { BackupBucket } from "../../storage/backup/types";
 import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
@@ -80,8 +78,16 @@ export interface DbIo {
   log(line: string): void;
 }
 
+/** Wrangler's `getPlatformProxy`, narrowed to the options a local D1 handle passes and the handle it reads. @internal */
+export type PlatformProxyOpener = <Env>(options: {
+  configPath: string;
+  persist: { path: string };
+  remoteBindings: boolean;
+  envFiles: string[];
+}) => Promise<{ readonly env: Env; dispose(): Promise<void> }>;
+
 /** The wrangler export a local D1 handle opens through, absent from a wrangler too old to carry it. @internal */
-export type WranglerD1Module = { readonly getPlatformProxy?: typeof getPlatformProxy };
+export type WranglerD1Module = { readonly getPlatformProxy?: PlatformProxyOpener };
 
 /** A database home: where its config is, and where wrangler keeps its local state. @public */
 export interface Home {
@@ -292,6 +298,8 @@ export interface StandbyResetOptions {
   /** Seed just this directory, instead of every one `config/db.config.ts` names. */
   readonly dir?: string | undefined;
   readonly seed: boolean;
+  /** Stop after clearing the state, with no migration and no seed, so the database is one `forge db restore` accepts. */
+  readonly empty?: boolean | undefined;
 }
 
 /** What one `forge db standby reset` run rebuilt, by migration and seed name. @public */
@@ -441,6 +449,14 @@ export interface FakeD1Call {
   readonly source: string | null;
 }
 
+/** One `bucket` or `database` call, and the home whose config it opened the binding through. @internal */
+export interface FakeBindingCall {
+  readonly kind: "bucket" | "database";
+  readonly binding: string;
+  readonly home: string;
+  readonly configPath: string;
+}
+
 /** One canned answer to an in-process statement, matched against its text and the home it was put to. @internal */
 export interface FakeD1Rule {
   match: (statement: string, home: Home) => boolean;
@@ -473,6 +489,7 @@ export interface FakeDbIo extends DbIo {
   readonly buckets: Map<string, BackupBucket>;
   /** The local D1 bindings `database` answers, by binding. */
   readonly databases: Map<string, BackupDatabase>;
+  bindingCalls: FakeBindingCall[];
   restCalls: FakeRestCall[];
   /** Persist paths in close order, which is what pins the obligation to close before a delete. */
   closed: string[];

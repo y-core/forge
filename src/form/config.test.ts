@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { AUTH_SESSION_IDLE_MS } from "../auth/config";
 import { v } from "../validation/mod";
-import { CsrfConfigSchema, TurnstileConfigSchema } from "./config";
+import { CSRF_MAX_AGE_MS_DEFAULT, CsrfConfigSchema, TurnstileConfigSchema } from "./config";
 
 const VALID_SECRET = "de7bf4aef360e3a4c3254c9cec7e45d0f1fd98cc2219c62b5b07e826ba1bcc6e";
 const OLDER_SECRET = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
@@ -85,5 +86,15 @@ describe("TurnstileConfigSchema", () => {
   it("rejects when siteKey is missing", () => {
     const result = v.safeParse(TurnstileConfigSchema, { secretKey: "secret" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("CSRF_MAX_AGE_MS_DEFAULT", () => {
+  it("is 24 hours, past the 20 hours WCAG 2.2.1 exempts", () => {
+    expect(CSRF_MAX_AGE_MS_DEFAULT).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("equals the auth session's idle bound, so a form open in a live session is not refused for its age", () => {
+    expect(CSRF_MAX_AGE_MS_DEFAULT).toBe(AUTH_SESSION_IDLE_MS);
   });
 });

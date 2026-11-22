@@ -23,6 +23,7 @@ export function applyMapping(source: Record<string, unknown>, map: EnvMapping): 
   if ("__env" in map) return source[(map as EnvRef).__env];
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(map)) {
+    if (value === undefined) continue;
     result[key] = applyMapping(source, value);
   }
   return result;

@@ -9,6 +9,10 @@ import type { AuthFactorCaller } from "../factors/types";
 import type { AuthFactorKind, AuthSessionRotation, AuthSessionStepUp, AuthSessionStore, AuthStoreResult, AuthWriteOrigin } from "../types";
 import type { ApprovalMark, AuthIdentity } from "./types";
 
+/** What auth/web throws on a request no session middleware ran on. @internal */
+export const NO_SESSION =
+  "auth/web: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) ahead of the auth routes and guards, or what they write and check is held nowhere.";
+
 const AUTH_SESSION_TOKEN_BYTES = 32;
 
 const AUTH_SESSION_TOKEN_LENGTH = Math.ceil((AUTH_SESSION_TOKEN_BYTES * 4) / 3);
@@ -194,12 +198,20 @@ export function resolveApprovalMark(session: Session): ApprovalMark | null {
   return presentedAt === null || typeof digest !== "string" || digest.length === 0 ? null : { presentedAt, digest };
 }
 
-/** Deletes the row `session` names, then drops its token, pending sign-in, code binding and approval and rotates the session id. @public */
-export async function clearAuthSession(session: Session, sessions: Pick<AuthSessionStore, "remove">): Promise<AuthStoreResult<void>> {
+/** Deletes the row `session` names, then destroys the session — or, with `keepVisitorData`, drops only its token, pending sign-in, code binding and approval and rotates its id. @public */
+export async function clearAuthSession(
+  session: Session,
+  sessions: Pick<AuthSessionStore, "remove">,
+  signOut?: { readonly keepVisitorData?: true | undefined },
+): Promise<AuthStoreResult<void>> {
   const token = readToken(session);
   if (token !== null) {
     const removed = await sessions.remove(await tokenHash(token));
     if (!removed.ok) return err(removed.error);
+  }
+  if (signOut?.keepVisitorData !== true) {
+    session.destroy();
+    return ok();
   }
   session.unset(AUTH_SESSION_TOKEN_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);

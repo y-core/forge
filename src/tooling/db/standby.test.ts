@@ -101,6 +101,41 @@ describe("runStandbyReset()", () => {
     expect(outcome.seeded).toEqual([]);
   });
 
+  describe("empty: true", () => {
+    const EMPTIED = { database: "app-db-standby", applied: [], seeded: [], excluded: [] };
+
+    for (const seed of [true, false]) {
+      it(`wipes the state and stops, staging no migration and no seed, under seed: ${seed}`, async () => {
+        const { run, io } = context();
+        wire(io);
+
+        const outcome = await runStandbyReset(run, { seed, empty: true });
+
+        expect([io.exists(STATE), io.closed, io.d1Calls, outcome]).toEqual([
+          false,
+          ["/app/.forge/standby/app-db-standby/.wrangler/state/v3"],
+          [],
+          EMPTIED,
+        ]);
+      });
+    }
+
+    it("needs no seed to be found, since it applies none", async () => {
+      const { run, io } = context();
+      wire(io);
+      run.host = { seeds: ["nowhere"] };
+
+      expect([await runStandbyReset(run, { ...OPTIONS, empty: true }), io.exists(STATE)]).toEqual([EMPTIED, false]);
+    });
+
+    it("still refuses a target that is not standby, before anything is removed", async () => {
+      const { run, io } = context("local");
+
+      await expect(runStandbyReset(run, { seed: false, empty: true })).rejects.toThrow("--target names local");
+      expect([io.exists(STATE), io.closed]).toEqual([true, []]);
+    });
+  });
+
   it("refuses before anything is removed when no seed is found, naming --no-seed", async () => {
     const { run, io } = context();
     wire(io);

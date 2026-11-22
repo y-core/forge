@@ -4,7 +4,7 @@ import type { CliContext, CommandBase, ResolvedFlags } from "../../cli/types";
 import { sharedDbFlags, withDbRun } from "../context";
 import type { DbContextOverrides, SharedDbFlags } from "../types";
 import { checkSchema, formatSchemaCheck } from "./check";
-import { formatRowTypes, generateRowTypes } from "./row-types";
+import { formatRowTypes, generateRowTypes } from "./row-types-file";
 
 const cacheFlag = { "no-cache": { type: "boolean" as const, description: "Replay into the scratch database even when a cached model matches" } };
 

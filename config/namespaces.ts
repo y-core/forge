@@ -6,6 +6,7 @@ export const PRIMITIVES: readonly string[] = ["context", "crypto/primitives", "r
 /** Namespaces declared to have zero cross-namespace edges beyond the primitives above. */
 export const LEAF: readonly string[] = [
   "assets",
+  "assets/client",
   "config",
   "context",
   "crypto/keyring",
@@ -36,8 +37,10 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "render/jsx": "value",
     router: "type",
     security: "value",
+    session: "value",
+    "ui/contracts": "value",
   },
-  auth: { "crypto/keyring": "value", logging: "value", "storage/db": "value" },
+  auth: { "crypto/keyring": "value", logging: "value", session: "value", "storage/db": "value" },
   "auth/client": { auth: "value", http: "value", "ui/client": "value", "ui/core": "value" },
   "auth/web": {
     app: "value",
@@ -48,7 +51,10 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     logging: "value",
     "render/htmx": "value",
     "render/jsx": "value",
+    security: "value",
     session: "value",
+    "storage/db": "type",
+    "ui/chrome": "type",
     "ui/core": "value",
   },
   form: { "crypto/keyring": "value", relax: "value" },
@@ -63,7 +69,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "ui/contracts": "value",
     "ui/core": "value",
   },
-  "render/htmx": { html: "value" },
+  "render/htmx": { html: "value", "ui/contracts": "value" },
   "render/jsx": { html: "value", http: "value" },
   "render/markdown/editor/client": { "render/markdown": "value" },
   "render/markdown/editor/textarea/client": { "render/markdown": "value", "ui/client": "value" },
@@ -75,9 +81,10 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   session: { "crypto/keyring": "value", http: "value" },
   "storage/db": { http: "value", logging: "value" },
   "storage/kv": { logging: "value" },
-  "storage/r2": { "crypto/keyring": "value", http: "value" },
+  "storage/r2": { "crypto/keyring": "value", http: "value", logging: "value" },
   testing: {
     app: "type",
+    "assets/client": "type",
     "crypto/keyring": "value",
     form: "value",
     logging: "value",
@@ -87,8 +94,8 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "storage/kv": "type",
     "storage/r2": "value",
     "tooling/cf": "value",
-    "tooling/db": "value",
   },
+  "testing/d1": { "storage/db": "value", "tooling/db": "value" },
   "testing/coverage": { "ui/chrome": "value", "ui/controls": "value", "ui/core": "value", "ui/server": "value" },
   "tooling/assets": { assets: "type", http: "value", security: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
   "tooling/cf": { "tooling/cli": "value", "tooling/term": "value", site: "value" },
@@ -112,7 +119,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "ui/controls": { "render/jsx": "type", "ui/core": "value", "ui/server": "value" },
   "ui/core": { form: "value", "render/jsx": "value", "ui/client": "value", "ui/contracts": "value" },
   "ui/server": {
-    "crypto/keyring": "type",
+    "crypto/keyring": "value",
     "render/htmx": "value",
     "render/jsx": "type",
     session: "value",
@@ -123,6 +130,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
 
 /** Declared edges narrowed to the only files of their target the source may import. */
 export const EDGE_MODULES: Record<string, Record<string, readonly string[]>> = {
+  auth: { session: ["src/session/kv-storage.ts"] },
   "render/markdown/editor/client": { "render/markdown": ["src/render/markdown/editing.ts", "src/render/markdown/trusted-types.ts"] },
   "render/markdown/editor/textarea/client": { "render/markdown": ["src/render/markdown/editing.ts"], "ui/client": ["src/ui/client/dom.ts"] },
 };

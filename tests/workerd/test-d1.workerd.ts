@@ -11,7 +11,7 @@ import { createRowLoader } from "../../src/storage/db/loader";
 import { incomingBookmark } from "../../src/storage/db/session";
 import { sql } from "../../src/storage/db/sql";
 import { uuidFromBytes, uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import { explainPlan, openTestD1, scansTable, type TestD1, usesIndex } from "../../src/testing/d1";
+import { explainPlan, openTestD1, scansTable, type TestD1, usesIndex } from "../../src/testing/d1/mod";
 
 let root: string;
 let db: TestD1;
@@ -92,14 +92,14 @@ test("gives two handles over the same migrations two databases", async () => {
 });
 
 test("explains a query's plan, telling an indexed read from a full scan", async () => {
-  const indexed = await explainPlan(db, sql`SELECT id FROM posts WHERE user_id = ${1}`);
-  const scanned = await explainPlan(db, sql`SELECT id FROM users WHERE email LIKE ${"%@example.com"}`);
+  const indexed = await explainPlan(db, "SELECT id FROM posts WHERE user_id = ?", [1]);
+  const scanned = await explainPlan(db, "SELECT id FROM users WHERE email LIKE ?", ["%@example.com"]);
   expect([usesIndex(indexed, "posts_user"), scansTable(indexed, "posts")]).toEqual([true, false]);
   expect([usesIndex(scanned, "posts_user"), scansTable(scanned, "users")]).toEqual([false, true]);
 });
 
 test("reports a full scan of an aliased table by the alias, which is the name D1's plan gives it", async () => {
-  const plan = await explainPlan(db, sql`SELECT u.id FROM users AS u WHERE u.email LIKE ${"%@example.com"}`);
+  const plan = await explainPlan(db, "SELECT u.id FROM users AS u WHERE u.email LIKE ?", ["%@example.com"]);
   expect([plan.map((step) => step.detail), scansTable(plan, "u")]).toEqual([["SCAN u"], true]);
 });
 
@@ -112,7 +112,7 @@ test("reads 150 integer ids through one json_each parameter, by the primary key"
 
   const read = await createD1Client(db.binding).query<{ id: number }>(fragment);
   expect([fragment.params.length, read.ok ? read.data.map((row) => row.id) : read.error.message]).toEqual([1, wanted]);
-  expect(scansTable(await explainPlan(db, fragment), "users")).toBe(false);
+  expect(scansTable(await explainPlan(db, fragment.text, fragment.params), "users")).toBe(false);
 });
 
 test("reads BLOB uuid keys from their strings through unhex(value, '-'), by the key's index", async () => {
@@ -123,7 +123,7 @@ test("reads BLOB uuid keys from their strings through unhex(value, '-'), by the 
   const fragment = sql`SELECT id FROM keyed WHERE id IN (SELECT unhex(value, '-') FROM json_each(${JSON.stringify(wanted)})) ORDER BY id`;
 
   const read = await createD1Client(db.binding).query<{ id: number[] }>(fragment);
-  const plan = await explainPlan(db, fragment);
+  const plan = await explainPlan(db, fragment.text, fragment.params);
   expect(read.ok ? read.data.map((row) => uuidFromBytes(new Uint8Array(row.id))) : read.error.message).toEqual([...wanted].sort());
   expect([usesIndex(plan, "sqlite_autoindex_keyed_1"), scansTable(plan, "keyed")]).toEqual([true, false]);
 });
@@ -162,7 +162,8 @@ test("createRowLoader answers many emails from one json_each statement that reac
 
   const answers = await Promise.all(["u3@example.com", "u30@example.com", "none@example.com"].map((email) => loader.load(email)));
   expect(answers.map((answer) => (answer.ok ? (answer.data?.id ?? null) : answer.error.message))).toEqual([3, 30, null]);
-  expect(usesIndex(await explainPlan(db, select('["u3@example.com"]')), "sqlite_autoindex_users_1")).toBe(true);
+  const probe = select('["u3@example.com"]');
+  expect(usesIndex(await explainPlan(db, probe.text, probe.params), "sqlite_autoindex_users_1")).toBe(true);
 });
 
 test("matches no row for an empty json_each list, without a syntax error", async () => {

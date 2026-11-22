@@ -7,6 +7,7 @@ export {
   assetManifestStep,
   assetRootStep,
   browserStep,
+  bundleShadowStep,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -15,6 +16,7 @@ export {
   commentBudgetStep,
   compatibilityStep,
   configFileStep,
+  consumerCssSourcesStep,
   contrastStep,
   crossEngineStep,
   crossEngineTagsStep,
@@ -38,6 +40,7 @@ export {
   modernCssStep,
   namespaceGraphStep,
   packagingStep,
+  serviceWorkerStep,
   ssrBoundaryStep,
   stubGlobalsStep,
   testStep,
@@ -58,8 +61,12 @@ export {
 } from "./checks/barrel-parse";
 export type { AssetManifestCheckConfig } from "./checks/types";
 export { checkAssetManifest } from "./checks/asset-manifest";
+export type { ServiceWorkerCheckConfig } from "./checks/types";
+export { checkServiceWorker } from "./checks/service-worker";
 export type { AssetRootCheckConfig } from "./checks/types";
 export { checkAssetRoot } from "./checks/asset-root";
+export type { ConsumerCssSourcesCheckConfig } from "./checks/types";
+export { checkConsumerCssSources } from "./checks/consumer-css-sources";
 export { hasWorkerd } from "./checks/workerd";
 export type { ImportBoundaryCheckConfig } from "./checks/types";
 export { checkImportBoundary, guardedSubpaths, isGuarded } from "./checks/import-boundary";
@@ -146,6 +153,8 @@ export type { StubGlobalsCheckConfig } from "./checks/types";
 export { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./checks/stub-globals";
 export type { BundleCheckConfig, IccProfileCheckConfig, NodeBundle, NodeExportsCheckConfig, NodeManifest } from "./checks/types";
 export { bundleSource, checkBundle, checkNodeExports, hasEsbuild, nodeBundles, writeBundle } from "./checks/bundle";
+export type { BundleShadowCheckConfig } from "./checks/types";
+export { checkBundleShadows, validateBundleShadows } from "./checks/bundle-shadow";
 export { checkIccProfile, renderIccModule } from "./checks/icc-profile";
 export type { MarkdownCheckConfig } from "./checks/types";
 export { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./checks/markdown";

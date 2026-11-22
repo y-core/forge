@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
+import { createConfig } from "../../config/config";
 import { derivePseudonym } from "../../crypto/keyring/pseudonym";
+import { createKeyRingResolver } from "../../crypto/keyring/resolver";
 import { importKeyRing, lookupKeyRingKey } from "../../crypto/keyring/ring";
 import { openAtRest, sealAtRest } from "../../crypto/keyring/seal";
-import type { KeyRing } from "../../crypto/keyring/types";
+import type { KeyRing, KeyRingResolver } from "../../crypto/keyring/types";
 import { hexToBytes } from "../../crypto/primitives/bytes";
 import { createTestContext } from "../../testing/context";
 import { buildRequest } from "../../testing/request";
+import { v } from "../../validation/validation";
 import { importAuthKeyRing, resolveAuthServices } from "./ring";
+import type { AuthOptions } from "./types";
 
 const KEY_1 = hexToBytes("0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9");
 const KEY_2 = hexToBytes("8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d");
@@ -245,5 +249,119 @@ describe("resolveAuthServices — with Ed25519 import unavailable", () => {
   it("resolves normally when -8 is not configured", async () => {
     const services = await resolveAuthServices(contextFor({}), { ring: () => ring() });
     expect(services.algorithms).toEqual([-7, -257]);
+  });
+});
+
+describe("resolveAuthServices — a ring wrapped in createKeyRingResolver", () => {
+  interface AppEnv {
+    readonly AUTH_SECRET: string;
+  }
+  const UNWRAP = "resolveAuthServices: pass the `(env) => importKeyRing(…)` function itself, not `createKeyRingResolver(…)`";
+
+  it("is refused at bun check whatever Bindings it was made under, and rejects on first resolve", async () => {
+    const inferred: AuthOptions = {
+      // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+      ring: createKeyRingResolver(() => ring()),
+    };
+    const typed: AuthOptions = {
+      // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+      ring: createKeyRingResolver<AppEnv>((env) => importAuthKeyRing([env.AUTH_SECRET])),
+    };
+    await expect(resolveAuthServices(contextFor({}), inferred)).rejects.toThrow(new Error(UNWRAP));
+    await expect(resolveAuthServices(contextFor({}), typed)).rejects.toThrow(new Error(UNWRAP));
+  });
+
+  it("cast past the type, rejects naming resolveAuthServices and the fix rather than handing the wrapper the env", async () => {
+    let resolved = 0;
+    const wrapped = createKeyRingResolver(() => {
+      resolved++;
+      return ring();
+    }) as unknown as KeyRingResolver;
+    await expect(resolveAuthServices(contextFor({}), { ring: wrapped })).rejects.toThrow(new Error(UNWRAP));
+    expect(resolved).toBe(0);
+  });
+
+  it("leaves a plain env resolver accepted and handed the env", async () => {
+    const secret = "0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9";
+    const options: AuthOptions<AppEnv> = { ring: (env) => importAuthKeyRing([env.AUTH_SECRET]) };
+    const services = await resolveAuthServices(contextFor({ AUTH_SECRET: secret }), options);
+    expect(services.keys.activeKeyId).toBe((await importAuthKeyRing([secret])).activeKeyId);
+  });
+});
+
+describe("resolveAuthServices — a ring still written against the request context", () => {
+  const HANDED_ENV = "this resolver is handed `env`, not the request context — rewrite `(c) => c.env.X` as `(env) => env.X`";
+  const SECRET = "0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9";
+  const unconverted: { name: string; options: AuthOptions }[] = [
+    {
+      name: "(c) => importAuthKeyRing([c.env.AUTH_SECRET])",
+      // @ts-expect-error — under the default bindings `c.env` is `unknown`, so a stale ring fails `bun check` before it reaches the proxy
+      options: { ring: (c) => importAuthKeyRing([c.env.AUTH_SECRET]) },
+    },
+    {
+      name: "(c) => importAuthKeyRing([c.get(…)])",
+      // @ts-expect-error — under the default bindings `c.get` is `unknown`, so a stale ring fails `bun check` before it reaches the proxy
+      options: { ring: (c) => importAuthKeyRing([c.get("AUTH_SECRET")]) },
+    },
+  ];
+
+  for (const { name, options } of unconverted) {
+    it(`rejects ${name} on the first resolve, naming the rewrite`, async () => {
+      await expect(resolveAuthServices(contextFor({ AUTH_SECRET: SECRET }), options)).rejects.toThrow(new Error(HANDED_ENV));
+    });
+  }
+
+  it("lets a real binding named get through to the ring", async () => {
+    const services = await resolveAuthServices(contextFor({ get: SECRET }), { ring: (env: { get: string }) => importAuthKeyRing([env.get]) });
+    expect(services.keys.activeKeyId).toBe((await importAuthKeyRing([SECRET])).activeKeyId);
+  });
+});
+
+describe("AuthOptions — a ring under the default bindings", () => {
+  const configStore = createConfig({ secret: { __env: "AUTH_SECRET" } }, v.object({ secret: v.string() }));
+
+  it("refuses a 0.7.7 ring reading a config store off `c.env` at bun check, and takes one reading it off `env`", () => {
+    // @ts-expect-error — `c.env` is `unknown` under the default bindings, and `Config.get` takes an object
+    const stale: AuthOptions = { ring: (c) => importAuthKeyRing([configStore.get(c.env).secret]) };
+    const current: AuthOptions = { ring: (env) => importAuthKeyRing([configStore.get(env).secret]) };
+    void [stale, current];
+  });
+
+  it("reads any binding as unknown, so importAuthKeyRing refuses it unnarrowed at bun check and keys the ring once it is narrowed", async () => {
+    const secret = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
+    // @ts-expect-error — `env.AUTH_SECRET` is `unknown` under the default bindings, and importAuthKeyRing takes strings
+    const unnarrowed: AuthOptions = { ring: (env) => importAuthKeyRing([env.AUTH_SECRET]) };
+    const narrowed: AuthOptions = { ring: (env) => importAuthKeyRing([String(env.AUTH_SECRET)]) };
+    void unnarrowed;
+    const services = await resolveAuthServices(contextFor({ AUTH_SECRET: secret }), narrowed);
+    expect(services.keys.activeKeyId).toBe((await importAuthKeyRing([secret])).activeKeyId);
+  });
+});
+
+describe("resolveAuthServices — a ring over the app's Bindings", () => {
+  interface Env {
+    readonly AUTH_SECRET: string;
+  }
+
+  it("refuses a binding Env does not declare at bun check, and takes one it does", () => {
+    const missing = () =>
+      resolveAuthServices<Env>(contextFor({}), {
+        // @ts-expect-error — `AUTH_SECRETS` is not a binding of Env
+        ring: (env) => importAuthKeyRing([env.AUTH_SECRETS]),
+      });
+    const declared = () => resolveAuthServices<Env>(contextFor({}), { ring: (env) => importAuthKeyRing([env.AUTH_SECRET]) });
+    void [missing, declared];
+  });
+
+  it("takes a ring answered synchronously or as a promise, and refuses one answering anything else at bun check", async () => {
+    const held = ring();
+    const sync: AuthOptions<Env> = { ring: () => held };
+    const promised: AuthOptions<Env> = { ring: async () => held };
+    // @ts-expect-error — a promise of the secret is not a promise of a key ring
+    const secretOnly: AuthOptions<Env> = { ring: async (env) => env.AUTH_SECRET };
+    void secretOnly;
+    const ids: string[] = [];
+    for (const options of [sync, promised]) ids.push((await resolveAuthServices(contextFor({}), options)).keys.activeKeyId);
+    expect(ids).toEqual([held.activeKeyId, held.activeKeyId]);
   });
 });

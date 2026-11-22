@@ -15,7 +15,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
   const prefix = options?.prefix;
   const codec: KvCodec<T> = (options?.codec ?? jsonCodec()) as KvCodec<T>;
   const defaultTtl = options?.defaultTtl;
-  const logger = options?.logger ?? createLogger("storage/kv", { channels: [] });
+  const logger = options?.logger ?? createLogger("storage/kv", { minLevel: "warn" });
 
   function validateKey(key: string): void {
     if (key.includes("||")) throw new Error(`KV key must not contain "||": ${key}`);

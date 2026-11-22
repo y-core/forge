@@ -1,23 +1,24 @@
 import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
-import { createKeyRingResolver } from "../crypto/keyring/resolver";
+import type { Refusal } from "../context/types";
+import { assertUnwrappedKeyRing, createKeyRingResolver } from "../crypto/keyring/resolver";
 import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
 import type { KeyRing } from "../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode, bytesToHex, randomBytes, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
 import { err, ok } from "../result/result";
+import { CSRF_MAX_AGE_MS_DEFAULT } from "./config";
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { isFormCapConflict, parseFormData } from "./parse-form-data";
-import type { CsrfMinterOptions, CsrfProtectionOptions, CsrfResult, CsrfTokenOptions, CsrfVerifyOptions, ParseFormDataOptions } from "./types";
+import type { CsrfPolicyOptions, CsrfResult, CsrfTokenOptions, CsrfVerifyOptions, ParseFormDataOptions } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 const CSRF_PURPOSE = "csrf";
-const refuseForbidden = (): Response => new Response("Forbidden", { status: 403 });
 
 const CSRF_MINTER_KEY = "csrf";
 
-/** Typed accessor for the per-request CSRF minter function set by `csrfProtection`. @public */
+/** Typed accessor for the per-request CSRF minter function `csrfMintStage` sets. @public */
 export const csrfMinterCtx = contextVar<(path: string) => Promise<string>>(CSRF_MINTER_KEY);
 
 /** Creates a signed CSRF token embedding the ring's active kid, path, optional subject, timestamp, and 16 random bytes. @public */
@@ -37,7 +38,7 @@ export async function createCsrfToken(ring: KeyRing, path: string, options: Csrf
 
 /** Verifies a CSRF token. @public */
 export async function verifyCsrfToken(ring: KeyRing, token: string, path: string, options: CsrfVerifyOptions = {}): Promise<CsrfResult> {
-  const maxAgeMs = options.maxAgeMs ?? 3_600_000;
+  const maxAgeMs = options.maxAgeMs ?? CSRF_MAX_AGE_MS_DEFAULT;
 
   if (!token) return err("missing-token");
 
@@ -83,57 +84,81 @@ export async function verifyCsrfToken(ring: KeyRing, token: string, path: string
   return ok();
 }
 
-/** Mints a CSRF token bound to `path` using the minter set by `csrfProtection`. @public */
+/** Mints a CSRF token bound to `path` using the minter the app's CSRF policy set. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for csrf minting
 export async function mintCsrf(context: RequestContext<any, any>, path?: string): Promise<string> {
   if (!path) {
     throw new Error("mintCsrf: a non-empty action path is required to mint a CSRF token");
   }
-  const mint = csrfMinterCtx.get(context, "mintCsrf: no CSRF minter on context — mount csrfProtection on this route");
+  const mint = csrfMinterCtx.get(
+    context,
+    "mintCsrf: no CSRF minter on context — cover this route with the chain's `csrf` policy (its `paths`, outside its `exclude`), or mount csrfMintStage on it",
+  );
   return mint(path);
 }
 
-/** Mints a token for a path this request is not on, under the subject policy that path's guard verifies with. @public */
-// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext<any, any>, path: string) => Promise<string> {
-  const resolveRing = createKeyRingResolver(options.ring);
-  const resolveSubject = options.subject === false ? null : options.subject;
-  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  return async (context: RequestContext<any, any>, path: string): Promise<string> => {
-    if (!path) throw new Error("csrfMinter: a non-empty action path is required to mint a CSRF token");
-    const ring = await resolveRing(context);
-    const subject = resolveSubject ? resolveSubject(context) : undefined;
-    if (resolveSubject && subject === undefined) {
-      throw new Error(
-        "csrfMinter: the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE the mint — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
-      );
-    }
-    return createCsrfToken(ring, path, subject !== undefined ? { subject } : {});
-  };
+/** Throws unless `maxAgeMs` is a whole number of at least one millisecond, naming `operation` as the function the consumer called. @internal */
+export function assertCsrfMaxAge(operation: string, maxAgeMs: number | undefined): void {
+  if (maxAgeMs === undefined) return;
+  if (!Number.isInteger(maxAgeMs)) throw new Error(`${operation}: maxAgeMs is ${maxAgeMs}, which is not a whole number.`);
+  if (maxAgeMs < 1) {
+    throw new Error(`${operation}: maxAgeMs is ${maxAgeMs}, below the 1-millisecond floor — a token that never verifies refuses every mutation.`);
+  }
 }
 
-/** Middleware that publishes a CSRF minter on every request and verifies the token on mutations. @public */
-export function csrfProtection(options: CsrfProtectionOptions): Middleware {
+/** Throws when a CSRF policy's `ring` is `createKeyRingResolver`'s wrapper, naming `operation` as the function the consumer called. @internal */
+export function assertCsrfRing<Bindings>(operation: string, ring: CsrfPolicyOptions<Bindings>["ring"] | undefined): void {
+  if (ring !== undefined) assertUnwrappedKeyRing(operation, ring);
+}
+
+/** One request's CSRF work under one policy: publishing the minter, and verifying a mutation's token. */
+interface CsrfRequest {
+  publish(): void;
+  verify(): Promise<CsrfPolicyRefusal | null>;
+}
+
+type CsrfPolicyRefusal = Extract<Refusal, { guard: "csrf" }>;
+
+const csrfArmedCtx = contextVar<(() => Promise<CsrfPolicyRefusal | null>) | null>("csrfArmed");
+
+// Narrower than RFC 9110's safe set (`isSafeHttpMethod`): an app can route OPTIONS or TRACE to a handler of its own, so only GET,
+// HEAD and a CORS preflight, which a browser sends without a token, skip the verify; any other OPTIONS is held to one.
+const CSRF_EXEMPT_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
+const isCorsPreflight = (method: string, headers: Headers): boolean =>
+  method === "OPTIONS" && headers.has("Origin") && headers.has("Access-Control-Request-Method");
+const isCsrfExempt = (method: string, headers: Headers): boolean => {
+  const upper = method.toUpperCase();
+  return CSRF_EXEMPT_METHODS.has(upper) || isCorsPreflight(upper, headers);
+};
+
+function csrfRequests<Bindings>(
+  options: CsrfPolicyOptions<Bindings>,
+  isUnbound: (target: URL) => boolean,
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+): (context: RequestContext<any, any>) => CsrfRequest {
   const { tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
+  assertUnwrappedKeyRing("csrfMintStage", options.ring);
   const resolveRing = createKeyRingResolver(options.ring);
 
+  if (options.subject === "session") {
+    throw new Error(
+      'csrfMintStage: subject "session" is resolved by applyMiddlewareChain\'s `csrf` policy; mounted by hand, pass a resolver reading the session.',
+    );
+  }
   const resolveSubject = options.subject === false ? null : options.subject;
-  const onForbidden = options.onForbidden ?? refuseForbidden;
 
   let unboundWarned = false;
   const warnUnbound = () => {
     if (unboundWarned) return;
     unboundWarned = true;
     console.warn(
-      "[csrf] the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE csrfProtection — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
+      "[csrf] the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE the CSRF mint stage (the chain's `csrf` policy does) — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
     );
   };
 
-  return async (context, next) => {
-    const method = context.method.toUpperCase();
-    const ring = await resolveRing(context);
+  return (context) => {
     let resolved: { subject: string | undefined } | undefined;
     const subjectOf = (): string | undefined => {
       if (resolved === undefined) {
@@ -143,42 +168,73 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
       return resolved.subject;
     };
 
-    csrfMinterCtx.set(context, (path: string) => {
-      const subject = subjectOf();
-      return createCsrfToken(ring, path, subject !== undefined ? { subject } : {});
-    });
-    csrfFieldCtx.set(context, tokenField);
-    csrfHeaderCtx.set(context, headerName);
-
-    if (method === "GET" || method === "HEAD") {
-      return next();
-    }
-
-    const subject = subjectOf();
-    if (resolveSubject && subject === undefined) {
-      return onForbidden(context, "unbound-subject");
-    }
-
-    const headerToken = context.request.headers.get(headerName);
-    let token: string | undefined = headerToken ?? undefined;
-
-    if (!token) {
-      try {
-        const formData = await parseFormData(context, parseOptions);
-        token = formData.get(tokenField)?.toString() ?? undefined;
-      } catch (error) {
-        if (isFormCapConflict(error)) throw error;
-        if ((error as { status?: number }).status === 413) {
-          return new Response("Payload Too Large", { status: 413 });
+    return {
+      publish() {
+        csrfMinterCtx.set(context, async (path: string) => {
+          const ring = await resolveRing(context);
+          const subject = isUnbound(new URL(path, context.url)) ? undefined : subjectOf();
+          return createCsrfToken(ring, path, subject !== undefined ? { subject } : {});
+        });
+        csrfFieldCtx.set(context, tokenField);
+        csrfHeaderCtx.set(context, headerName);
+      },
+      async verify() {
+        const unbound = isUnbound(context.url);
+        const subject = unbound ? undefined : subjectOf();
+        if (!unbound && resolveSubject && subject === undefined) {
+          return { guard: "csrf", status: 403, reason: "unbound-subject" };
         }
-      }
-    }
 
-    const result = await verifyCsrfToken(ring, token ?? "", context.url.pathname, { ...(subject !== undefined ? { subject } : {}) });
-    if (!result.ok) {
-      return onForbidden(context, result.error);
-    }
+        const headerToken = context.request.headers.get(headerName);
+        let token: string | undefined = headerToken ?? undefined;
 
+        if (!token && context.request.body !== null) {
+          try {
+            const formData = await parseFormData(context, parseOptions);
+            token = formData.get(tokenField)?.toString() ?? undefined;
+          } catch (error) {
+            if (isFormCapConflict(error)) throw error;
+            if ((error as { status?: number }).status === 413) return { guard: "csrf", status: 413, reason: "too-large" };
+            return { guard: "csrf", status: 400, reason: "unreadable-body" };
+          }
+        }
+
+        const ring = await resolveRing(context);
+        const result = await verifyCsrfToken(ring, token ?? "", context.url.pathname, {
+          ...(subject !== undefined ? { subject } : {}),
+          ...(options.maxAgeMs !== undefined ? { maxAgeMs: options.maxAgeMs } : {}),
+        });
+        return result.ok ? null : { guard: "csrf", status: 403, reason: result.error };
+      },
+    };
+  };
+}
+
+/** Publishes the minter, field and header, and on a mutation arms this policy's verification for `csrfVerifyStage` to run; a token whose target `isUnbound` answers true is path-only. @public */
+export function csrfMintStage<Bindings = Record<string, unknown>>(
+  options: CsrfPolicyOptions<Bindings>,
+  isUnbound: (target: URL) => boolean = () => false,
+): Middleware {
+  assertCsrfMaxAge("csrfMintStage", options.maxAgeMs);
+  const requestFor = csrfRequests(options, isUnbound);
+  return (context, next) => {
+    const request = requestFor(context);
+    request.publish();
+    if (!isCsrfExempt(context.method, context.request.headers)) csrfArmedCtx.set(context, () => request.verify());
     return next();
+  };
+}
+
+/** Runs the verification a `csrfMintStage` armed on this request, at most once, answering a refusal with `answer`; a no-op when nothing is armed. @internal */
+export function csrfVerifyStage(
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+  answer: (context: RequestContext<any, any>, refusal: Refusal) => Response | Promise<Response>,
+): Middleware {
+  return async (context, next) => {
+    const armed = csrfArmedCtx.getOptional(context);
+    if (!armed) return next();
+    csrfArmedCtx.set(context, null);
+    const refusal = await armed();
+    return refusal === null ? next() : answer(context, refusal);
   };
 }

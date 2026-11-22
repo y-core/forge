@@ -4,18 +4,23 @@ import type { Session, SessionStorage } from "@remix-run/session";
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { trackSessionId } from "./tracked";
-import type { SessionCookieOptions, SignedCookie } from "./types";
+import type { SessionCookieOptions, SessionMiddleware, SignedCookie } from "./types";
 
 /** Typed accessor for the session variable set by `sessionMiddleware`. @public */
 export const sessionCtx = contextVar<Session>("session");
 
+/** Types `middleware` as the chain's session slot, carrying its cookie's `maxAge`. @internal */
+export function brandSessionMiddleware(middleware: Middleware, maxAge: number | undefined): SessionMiddleware {
+  return Object.assign(middleware, { maxAge }) as SessionMiddleware;
+}
+
 /** Reads the session cookie on the way in and persists it on the way out only when the cookie would differ from the one the client holds, re-issuing under `rotating` so a retired signature is upgraded; throws if a session is already set or was swapped. @public */
-export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie, options?: SessionCookieOptions): Middleware {
+export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie, options?: SessionCookieOptions): SessionMiddleware {
   const reissue = options?.reissue ?? false;
   // The cookie already knows whether a rotation is in flight, so the default is right without being
   // remembered; the option survives as an override, for a retired key kept on the ring long-term.
   const rotating = options?.rotating ?? cookie.rotating;
-  return async (context, next) => {
+  return brandSessionMiddleware(async (context, next) => {
     if (sessionCtx.getOptional(context) !== undefined) {
       throw new Error(
         "sessionMiddleware: a session is already set on this request — a second sessionMiddleware or createAnonymousSession whose path also matches would replace it, so mount one per request.",
@@ -49,5 +54,5 @@ export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie,
     // by cookie name, so a second site would double-emit under `reissue`.
     setPendingHeader(context, "set-cookie", await cookie.serialize(value, value === "" ? { maxAge: 0 } : undefined), { append: true });
     return res;
-  };
+  }, cookie.maxAge);
 }

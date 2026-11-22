@@ -1,3 +1,6 @@
+import type { RequestContext } from "@remix-run/fetch-router";
+
+import { memoizePerEnv } from "../context/env-memo";
 import { base64DecodeOrNull, base64Encode } from "../crypto/primitives/base64";
 import { concatBytes, utf8Encode } from "../crypto/primitives/bytes";
 import { hmacSign, importHmacKey } from "../crypto/primitives/hmac";
@@ -5,9 +8,9 @@ import { assertSecretStrength } from "../crypto/primitives/strength";
 import { timingSafeEqualBytes } from "../crypto/primitives/timing";
 import { err, ok } from "../result/result";
 import type { Result } from "../result/types";
+import { WEBHOOK_SECRET_PREFIX } from "./config";
 import type { VerifiedWebhook, WebhookRefusal, WebhookSignatureHeaders, WebhookSigning, WebhookSigningOptions, WebhookSignOptions } from "./types";
 
-const WEBHOOK_SECRET_PREFIX = "whsec_";
 const WEBHOOK_TOLERANCE_SECONDS_DEFAULT = 300;
 const WEBHOOK_MAX_BYTES_DEFAULT = 1_048_576;
 const SIGNATURE_BYTES = 32;
@@ -175,4 +178,12 @@ export function createWebhookSigning(options: WebhookSigningOptions): WebhookSig
       return readVerifiedWebhook(request, loadKeys, limits);
     },
   };
+}
+
+/** Wraps `resolve` so its signer is built once per `env` object, retrying after a rejection. @public */
+export function createWebhookSigningResolver<Bindings>(
+  resolve: (env: Bindings) => WebhookSigningOptions,
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings vary per consumer
+): (c: RequestContext<any, any>) => Promise<WebhookSigning> {
+  return memoizePerEnv((env: Bindings) => createWebhookSigning(resolve(env)));
 }

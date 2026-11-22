@@ -22,7 +22,7 @@ function fragment(body: string, open: string, close: string): string {
   return end < 0 ? "" : body.slice(start, end + close.length);
 }
 
-const banner = (body: string): string => fragment(body, `<div class="${ERROR_CLASSES}">`, "</div>");
+const banner = (body: string): string => fragment(body, `<div class="${ERROR_CLASSES}"`, "</div>");
 
 describe("createErrorPage — debug gate", () => {
   it("hides the real error message by default, in a build not armed for development", async () => {
@@ -30,28 +30,34 @@ describe("createErrorPage — debug gate", () => {
     const res = page(new Error("secret db string"), createTestContext(new Request("http://test/")));
     expect(res.status).toBe(500);
     const body = await res.text();
-    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);
+    expect(banner(body)).toBe(
+      `<div class="${ERROR_CLASSES}" data-announce-failure="An unexpected error occurred."><p>An unexpected error occurred.</p></div>`,
+    );
     expect(body).not.toContain("secret db string");
   });
 
   it("shows the real error message under a relaxation that discloses it", async () => {
     const c = createTestContext(new Request("http://test/"));
     const body = await createErrorPageWith({}, discloseThrownMessage)(new Error("database timeout"), c).text();
-    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>database timeout</p></div>`);
+    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}" data-announce-failure="database timeout"><p>database timeout</p></div>`);
     expect(body).not.toContain("An unexpected error occurred.");
   });
 
   it("HTML-escapes the disclosed error message", async () => {
     const c = createTestContext(new Request("http://test/"));
     const body = await createErrorPageWith({}, discloseThrownMessage)(new Error("<script>alert(1)</script>"), c).text();
-    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>&lt;script&gt;alert(1)&lt;/script&gt;</p></div>`);
+    expect(banner(body)).toBe(
+      `<div class="${ERROR_CLASSES}" data-announce-failure="&lt;script&gt;alert(1)&lt;/script&gt;"><p>&lt;script&gt;alert(1)&lt;/script&gt;</p></div>`,
+    );
     expect(body).not.toContain("<script>alert(1)</script>");
   });
 
   it("ignores a disclosure smuggled in as an option, a development build being the only path", async () => {
     const page = createErrorPage({ dev: discloseThrownMessage } as ErrorPageOptions);
     const body = await page(new Error("smuggled detail"), createTestContext(new Request("http://test/"))).text();
-    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);
+    expect(banner(body)).toBe(
+      `<div class="${ERROR_CLASSES}" data-announce-failure="An unexpected error occurred."><p>An unexpected error occurred.</p></div>`,
+    );
     expect(body).not.toContain("smuggled detail");
   });
 });
@@ -133,7 +139,9 @@ describe("createErrorPage — integration via createApp onError", () => {
     expect(res.status).toBe(500);
     const body = await res.text();
     expect(fragment(body, "<title>", "</title>")).toBe("<title>App Error</title>");
-    expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);
+    expect(banner(body)).toBe(
+      `<div class="${ERROR_CLASSES}" data-announce-failure="An unexpected error occurred."><p>An unexpected error occurred.</p></div>`,
+    );
     expect(body).not.toContain("kaboom");
   });
 });

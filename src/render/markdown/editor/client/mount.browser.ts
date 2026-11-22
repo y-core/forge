@@ -8,6 +8,7 @@ declare global {
   interface Window {
     forgeViewport: typeof import("./mount");
     forgeViewportDialect: typeof import("./dialect.fixture");
+    codemirrorView: typeof import("@codemirror/view");
     viewport: ViewportController;
     changes: number;
     htmlCalls: boolean[];
@@ -174,6 +175,31 @@ test("draws the injected dialect when styled: a chip for a link it resolves, its
   await expect(page.locator("#host .cm-md-tag")).toHaveText("#tag");
   await expect(page.locator("#host .cm-md-callout-note")).toHaveCount(2);
   await expect(page.locator("#host input.cm-md-task")).toBeDisabled();
+});
+
+test("colours a callout with the dialect's theme over the viewport's base callout style", { tag: "@cross-engine" }, async ({ page }) => {
+  await mount(page, FIXTURE, { expose: { ...EXPOSE, codemirrorView: "@codemirror/view" } });
+
+  const color = await page.evaluate(() => {
+    const host = document.getElementById("host") as HTMLElement;
+    window.forgeViewport.mountMarkdownViewport(host, {
+      markdown: "> [!note] Heads up\n> body\n",
+      mode: "view",
+      rendering: "styled",
+      label: "Body",
+      scroller: document.getElementById("scroller") as HTMLElement,
+      onChange: () => {},
+      dialect: {
+        calloutKinds: ["note"],
+        spans: () => [],
+        theme: window.codemirrorView.EditorView.theme({ ".cm-md-callout-note": { borderInlineStartColor: "rgb(1, 2, 3)" } }),
+      },
+    });
+    const line = host.shadowRoot?.querySelector<HTMLElement>(".cm-md-callout-note");
+    return line === null || line === undefined ? null : getComputedStyle(line).borderInlineStartColor;
+  });
+
+  expect(color).toBe("rgb(1, 2, 3)");
 });
 
 test("shows the raw text with no dialect drawn when raw", async ({ page }) => {

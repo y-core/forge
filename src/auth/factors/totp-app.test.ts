@@ -406,6 +406,23 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     expect((await service.verifyChallenge(USER_ID, code, later, fakeFactorCaller())).ok).toBe(true);
   });
 
+  it("states its configured lockout as the attempt window, the span past the last counted guess that a spent budget refuses", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    const service = build(spy, 1, 90_000);
+    await service.verifyChallenge(USER_ID, await wrongCode(secret), AT, fakeFactorCaller());
+
+    const stated = service.attemptWindowMs ?? 0;
+    const codeAt = async (at: number) => hotpCode(secret, totpCounter(Math.floor(at / 1000), { period: PERIOD }));
+    const before = await service.verifyChallenge(USER_ID, await codeAt(AT + stated - 1), AT + stated - 1, fakeFactorCaller());
+    const lapsed = await service.verifyChallenge(USER_ID, await codeAt(AT + stated), AT + stated, fakeFactorCaller());
+    expect({ stated, before, lapsed: lapsed.ok }).toEqual({ stated: 90_000, before: { ok: false, error: "too-many-attempts" }, lapsed: true });
+  });
+
+  it("states TOTP's fifteen-minute lockout as the attempt window when none is configured", () => {
+    expect(build(fakeFactors()).attemptWindowMs).toBe(900_000);
+  });
+
   it("holds the ceiling against the enrolment ceremony too, since that is a code the same secret answers", async () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);

@@ -56,9 +56,9 @@ rather than keeping its own.
 
 ### 1a. createD1Client Factory
 
-`createD1Client` wraps a raw `D1Database` with a typed client, taking the binding directly from `c.env`. Query logging is opt-in and off by default.
-With a `logger`, each call writes one `d1.query` record: the operation, the SQL text, the attempts, a failure's kind, and the cost and placement D1
-reported. It is at `debug`, or at `warn` once D1's duration passes `slowQueryMs`.
+`createD1Client` wraps a raw `D1Database` with a typed client, taking the binding directly from `c.env`. Given no `logger`, it writes `warn` and
+above to a console logger. Each call writes one `d1.query` record: the operation, the SQL text, the attempts, a failure's kind, and the cost and
+placement D1 reported. It is at `debug`, or at `warn` once D1's duration passes `slowQueryMs`.
 
 **A bound value never reaches the record, and that is the PII rule for SQL text.** The `sql` tag keeps every value a parameter, so the text holds
 only `?`. D1's own query insights keep that text as well — a value spliced into it would sit in Cloudflare's dashboard — so a value belongs in a
@@ -101,6 +101,10 @@ const order = ORDER[input] ?? ORDER.name;
 never threaded through the call graph.
 
 **It throws when the binding is absent** (§4a); pass `required: false` to receive `null`.
+
+**Given no `client.logger`, the client it builds writes to the request logger**, at `warn` and above, with `data.source` `"storage/db"`, so its
+`d1.query` and `d1.request.budget` records carry the request's bindings and reach the app's channels. Without a request logger it falls back to the
+console, at the same floor.
 
 ### 1d. validateD1Binding — Binding Validation Middleware
 
@@ -178,6 +182,18 @@ These surfaces build on the read:
 - `defineD1Binding({ name })` assembles both, with the binding check and a client, for one database bound under `name`. Its health checks are
   `<name>` (the binding is present) and `<name>:schema`. Its monitor and its `<name>:schema` check share one read per binding: the monitor reuses
   any verdict for `recheckMs`, and the check reuses only a healthy one, so it reads again on the next poll after a `mismatch`.
+  **Declared with no `logger`, its monitor and client write to the request logger** of the request they run in (the client as §1c says), so a
+  binding declared once at module scope needs no logger for its records to reach the channels the composition root takes. A `logger` given at
+  definition takes both instead, and `client.logger` takes the client's.
+
+**Schema health is whole-schema only; no check scoped to a table or a feature slice is offered.** The value a check compares against is the one
+fingerprint `forge db migrate` certifies over the whole schema ([`DATABASE_MANAGEMENT.md`][dm-4a] §4a), and a fingerprint over a subset of tables
+can never match it. A scoped check would need a scoped recorded value: either per-table fingerprints in `_forge_migrations`, which changes forge's
+companion table and needs a migration of its own, or an expected schema the app ships, a second judge of one schema that §4a refuses. Neither is
+worth it. `<name>:schema` already fails on drift in any table, a slice's included, and a curated copy re-certifies its fingerprint when it
+migrates, so the one check stays correct whichever slices a copy keeps. An app adds no second whole-schema check for a slice: it would fail on
+every other slice's drift too. `forge db migrate status` reports the same mismatch on the CLI; neither it nor the check names which object
+drifted.
 
 ### 1g. Transactions — batch() Is the Boundary
 
@@ -491,6 +507,11 @@ from the same entry, so the two forms cannot diverge, and an app validates its w
 with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit` under `forge cf dev` and the optional resolvers
 already do at runtime (§5a). A security-critical binding is never declared optional (§5b).
 
+**A rate-limit binding is named in `bindings` like any other, and its window comes from the generated `RATELIMITS` table.** `forge cf gen env`
+emits `RATELIMITS`, `{ NAME: { limit, period } }`, from `wrangler.jsonc`'s `ratelimits` beside the env schema, and a guard group's `rateLimit`
+names a binding the chain finds both here and there. Declaring it required or optional is what decides between a deploy failure and a per-path
+`503` ([`SECURITY_HARDENING.md`][sh-4e] §4e).
+
 ---
 
 ### 4c. Structural Contracts — Cast-Free Platform Bindings
@@ -537,7 +558,8 @@ middleware demanding a binding the code is written to survive without.
 ### 5b. Never Degrade Security
 
 **Graceful degradation is acceptable only for features that are non-critical to correctness and security:** structured logging (drop the KV
-channel), rate limiting (no-op), analytics (skip the write).
+channel), rate limiting (a missing limiter answers `503` on every request it guards, never admits it, and is skipped only under `forge cf dev`;
+[`SECURITY_HARDENING.md`][sh-4b] §4b), analytics (skip the write).
 
 **A security-critical binding fails closed when it is missing** — a CSRF token store, an auth session store, or the database backing user data
 **throws** rather than serving ([`BOUNDARIES.md`][boundaries-5a] §5a owns the posture). Use `validateBindings` (§4b) to guarantee those bindings
@@ -556,5 +578,6 @@ exist before the worker reaches a serving state.
 [lint-readme]: ../src/tooling/lint/README.md
 [sh-2f]: ./SECURITY_HARDENING.md#2f-createroutesecurityheaders-and-the-handler-set-csp
 [sh-4b]: ./SECURITY_HARDENING.md#4b-a-missing-binding-under-forge-cf-dev
+[sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
 [sl]: ./STRUCTURED_LOGGING.md
 [sl-2d]: ./STRUCTURED_LOGGING.md#2d-channel-selection-by-environment

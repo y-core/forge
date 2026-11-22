@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import {
   browserStep,
+  bundleShadowStep,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -41,11 +42,12 @@ import {
   workerdStep,
 } from "../src/tooling/gate/builders";
 import { FORGE_STATE_RECIPES } from "../src/tooling/gate/checks/class-groups";
+import { resolveSources } from "../src/tooling/gate/checks/source-scan";
 import type { ExportsMap } from "../src/tooling/gate/checks/types";
 import { defineSteps, tier } from "../src/tooling/gate/tiers";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
-import { changelogStep, designStep, docsStep, duplicatesStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import { changelogStep, designStep, docFencesStep, docsStep, duplicatesStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
 import { BUNDLE_FIXER, BUNDLES } from "./bundles";
 import {
   BROWSER_ONLY,
@@ -65,6 +67,37 @@ const EXPORTS = pkg.exports as ExportsMap;
 const CORPUS_WATCHES = ["**/*.md", "warden/**"];
 
 const STYLESHEET = `${CSS_DIR}/tailwind.css`;
+
+const CONSUMER_TSCONFIG = "tests/fixtures/workers-consumer/tsconfig.json";
+
+// `validate-design` owns `src/ui/README.md`, whose `ts` fences the design corpus keeps uncompiled (UI_DESIGN_GUIDANCE.md §4c).
+const README_FENCES_OWNED_ELSEWHERE = ["src/ui/README.md"];
+
+// Each reaches a forge source that does not compile under the Workers consumer's options: a Node or Bun module, or `render/markdown`'s parser.
+const README_FENCES_BLOCKED = [
+  "src/config/README.md",
+  "src/render/markdown",
+  "src/testing/README.md",
+  "src/tooling/assets/README.md",
+  "src/tooling/cf/README.md",
+  "src/tooling/cli/README.md",
+  "src/tooling/curate/README.md",
+  "src/tooling/db/README.md",
+  "src/tooling/gate/README.md",
+  "src/tooling/lint/README.md",
+  "src/tooling/release/README.md",
+  "src/tooling/term/README.md",
+];
+
+// These are Worker imports as well as node imports, so their fences stay typed.
+const WORKER_NODE_SUBPATHS = new Set(["./result", "./storage/db", "./validation"]);
+const NODE_ONLY_SUBPATHS = pkg.forge.node.filter((subpath) => !WORKER_NODE_SUBPATHS.has(subpath));
+
+const README_FENCES = resolveSources(
+  ROOT,
+  ["README.md", "src", ...[...README_FENCES_OWNED_ELSEWHERE, ...README_FENCES_BLOCKED].map((path) => `!${path}`)],
+  (name) => name === "README.md",
+);
 
 const GRAPH = { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES, modules: EDGE_MODULES };
 
@@ -140,8 +173,14 @@ export default defineSteps({
       }),
       ssrBoundaryStep({
         root: ROOT,
-        clientDirs: ["src/ui/client", "src/auth/client", "src/render/markdown/editor/client", "src/render/markdown/editor/textarea/client"],
-        sources: ["src/ui", "src/auth", "src/render/markdown"],
+        clientDirs: [
+          "src/ui/client",
+          "src/auth/client",
+          "src/render/markdown/editor/client",
+          "src/render/markdown/editor/textarea/client",
+          "src/assets/client",
+        ],
+        sources: ["src/ui", "src/auth", "src/render/markdown", "src/assets"],
         entryPoints: ["client.ts"],
         packageName: pkg.name,
         exports: EXPORTS,
@@ -158,7 +197,7 @@ export default defineSteps({
       stubGlobalsStep({
         root: ROOT,
         stubs: [".types"],
-        shared: ["Bun", "Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
+        shared: ["Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
         sources: ["src", "warden/src", "!src/tooling/dev"],
       }),
       {
@@ -194,6 +233,14 @@ export default defineSteps({
         documentedNonExports: ["./crypto/primitives"],
         unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
       }),
+      docFencesStep({
+        root: ROOT,
+        packageName: pkg.name,
+        exports: EXPORTS,
+        fencedDocs: README_FENCES,
+        tsconfig: CONSUMER_TSCONFIG,
+        untypedSubpaths: NODE_ONLY_SUBPATHS,
+      }),
       changelogStep({ root: ROOT, packageVersion: pkg.version }),
       designStep({
         root: ROOT,
@@ -203,7 +250,7 @@ export default defineSteps({
         cssDir: CSS_DIR,
         oxlintConfig: ".oxlintrc.json",
         fencedDocs: ["src/ui/README.md"],
-        tsconfig: "tests/fixtures/workers-consumer/tsconfig.json",
+        tsconfig: CONSUMER_TSCONFIG,
       }),
       modernCssStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED] }),
       classOrderStep({ root: ROOT, sources: ["src", ...CN_FIXTURE_SPECS] }),
@@ -219,6 +266,7 @@ export default defineSteps({
       iccProfileStep({ root: ROOT, profile: "src/render/pdf/sRGB2014.icc", module: "src/render/pdf/icc.ts" }),
       nodeExportsStep({ exports: EXPORTS, node: pkg.forge.node, fixer: BUNDLE_FIXER }),
       ...BUNDLES.map(({ label, entry, bundle, watches }) => bundleStep(label, { root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }, { watches })),
+      bundleShadowStep({ root: ROOT, sources: ["src"] }),
       contrastStep(
         {
           root: ROOT,

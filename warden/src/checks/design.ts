@@ -22,7 +22,17 @@ import plugin from "../../../src/tooling/lint/plugin";
 import type { RuleId } from "../../../src/tooling/lint/types";
 import { findCodeFences } from "./docs";
 import { findSubpathCitations } from "./docs-parse";
-import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, unresolvedName } from "./fence-compile";
+import {
+  bareRelativeImports,
+  compileFences,
+  type FenceDiagnostic,
+  type FenceLang,
+  type FenceSource,
+  isParseDiagnostic,
+  missingRuntimeGlobal,
+  unresolvedModule,
+  unresolvedName,
+} from "./fence-compile";
 
 // Each states a rule a `docs/` doc owns rather than a corpus file, so neither register names
 // one and the round trip would otherwise read them as unrouted.
@@ -73,8 +83,24 @@ function readEnabledRules(path: string): Set<string> | undefined {
   return new Set(entries.filter(([, level]) => (Array.isArray(level) ? level[0] : level) !== "off").map(([rule]) => rule));
 }
 
-/** Every `tsx` fence compiled against the exports, as findings, and how many compiled clean. */
-function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, string>): { findings: Finding[]; clean: number } {
+/** What a fence check needs to know about the project. */
+type FenceCheckConfig = Pick<DesignCheckConfig, "root" | "packageName" | "exports" | "fencedDocs" | "tsconfig">;
+
+/** Which fences a fence check compiles. */
+interface FenceSelection {
+  langs: readonly FenceLang[];
+  /** Whether a fence flagged `nocheck` is skipped, and a module outside the package or a runtime global passes as app context. */
+  docs: boolean;
+  /** Subpaths, as `exports` keys, a fence imports as `any` rather than through their sources. */
+  untypedSubpaths?: readonly string[];
+}
+
+/** Every fence in `langs` compiled against the exports, as findings, and how many compiled clean or were skipped. */
+function checkFences(
+  config: FenceCheckConfig,
+  sources: ReadonlyMap<string, string>,
+  { langs, docs, untypedSubpaths = [] }: FenceSelection,
+): { findings: Finding[]; clean: number; skipped: number } {
   const { root, packageName } = config;
   const tsconfig = config.tsconfig ?? "tsconfig.json";
   const findings: Finding[] = [];
@@ -88,69 +114,107 @@ function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, str
     }
     documents.set(file, readFileSync(path, "utf-8"));
   }
-  const fences: FenceSource[] = [...documents].flatMap(([file, source]) =>
-    findCodeFences(source)
-      .filter(({ lang }) => lang === "tsx")
-      .map(({ line, body }) => ({ file, line, body })),
+  const isCompiled = (lang: string): lang is FenceLang => (langs as readonly string[]).includes(lang);
+  const selected = [...documents].flatMap(([file, source]) =>
+    findCodeFences(source).flatMap(({ lang, flags, line, body }) => (isCompiled(lang) ? [{ file, line, body, lang, flags }] : [])),
   );
-  if (fences.length === 0) return { findings, clean: 0 };
+  const fences: FenceSource[] = selected
+    .filter(({ flags }) => !(docs && flags.includes("nocheck")))
+    .map(({ file, line, body, lang }) => ({ file, line, body: docs ? bareRelativeImports(body) : body, lang }));
+  const skipped = selected.length - fences.length;
+  if (fences.length === 0) return { findings, clean: 0, skipped };
+  const named = langs.map((lang) => `\`${lang}\``).join(" or ");
 
+  const untyped = new Set(untypedSubpaths);
   const paths: Record<string, string[]> = {};
   const owners = new Map<string, string[]>();
   for (const [key, value] of Object.entries(config.exports)) {
-    const target = typeof value === "string" ? value : (value.import ?? value.types);
-    if (target === undefined || !/\.tsx?$/.test(target)) continue;
+    const target = (typeof value === "string" ? [value] : [value.import, value.types]).find((path) => path !== undefined && /\.tsx?$/.test(path));
+    if (target === undefined) continue;
     const specifier = `${packageName}${key.slice(1)}`;
-    paths[specifier] = [resolve(root, target)];
-    if (key.includes("*") || !existsSync(resolve(root, target))) continue;
+    if (!untyped.has(key)) paths[specifier] = [resolve(root, target)];
+    if (key.includes("*") || target.endsWith(".d.ts") || !existsSync(resolve(root, target))) continue;
     for (const name of parseConsumerExportNames(readFileSync(resolve(root, target), "utf-8"))) {
       owners.set(name, [...(owners.get(name) ?? []), specifier]);
     }
   }
   const project = { tsconfig: resolve(root, tsconfig), paths };
-  const describe = (diagnostic: FenceDiagnostic): string => {
+  const describe = (diagnostic: FenceDiagnostic, lang: FenceLang): string => {
     const name = unresolvedName(diagnostic);
     const subpaths = name === undefined ? undefined : owners.get(name);
     if (name !== undefined && subpaths !== undefined) {
       return `\`${name}\` is not imported — ${subpaths.map((subpath) => `\`${subpath}\``).join(" or ")} exports it`;
     }
-    return `\`tsx\` fence does not compile: ${diagnostic.message} (TS${diagnostic.code})`;
+    return `\`${lang}\` fence does not compile: ${diagnostic.message} (TS${diagnostic.code})`;
   };
-  const report = (diagnostic: FenceDiagnostic): void => {
-    findings.push(fail(describe(diagnostic), { file: diagnostic.file, line: diagnostic.line }));
+  const report = (diagnostic: FenceDiagnostic, compiled: readonly FenceSource[]): void => {
+    const lang = compiled[diagnostic.fence]?.lang ?? "tsx";
+    findings.push(fail(describe(diagnostic, lang), { file: diagnostic.file, line: diagnostic.line }));
   };
 
-  const notCompiled = (error: string): { findings: Finding[]; clean: number } => ({
-    findings: [...findings, fail(`no \`tsx\` fence was compiled — ${error}`, { file: tsconfig })],
+  const notCompiled = (error: string): { findings: Finding[]; clean: number; skipped: number } => ({
+    findings: [...findings, fail(`no ${named} fence was compiled — ${error}`, { file: tsconfig })],
     clean: 0,
+    skipped,
   });
 
+  const modules = new Set(untypedSubpaths.filter((key) => key in config.exports).map((key) => `${packageName}${key.slice(1)}`));
   let live = fences;
-  let run = compileFences(live, project);
+  let run = compileFences(live, project, new Map(), [...modules]);
   for (;;) {
     if (!run.ok) return notCompiled(run.error);
     const diagnostics = run.data;
     const broken = new Set(diagnostics.filter(({ code }) => isParseDiagnostic(code)).map(({ fence }) => fence));
     if (broken.size === 0) break;
-    for (const diagnostic of diagnostics) if (isParseDiagnostic(diagnostic.code)) report(diagnostic);
+    for (const diagnostic of diagnostics) if (isParseDiagnostic(diagnostic.code)) report(diagnostic, live);
     live = live.filter((_, index) => !broken.has(index));
-    if (live.length === 0) return { findings, clean: 0 };
-    run = compileFences(live, project);
+    if (live.length === 0) return { findings, clean: 0, skipped };
+    run = compileFences(live, project, new Map(), [...modules]);
   }
 
   const ambient = new Map<number, string[]>();
   for (const diagnostic of run.data) {
-    const name = unresolvedName(diagnostic);
+    const specifier = docs ? unresolvedModule(diagnostic) : undefined;
+    if (specifier !== undefined && specifier !== packageName && !specifier.startsWith(`${packageName}/`)) modules.add(specifier);
+    const name = unresolvedName(diagnostic) ?? (docs ? missingRuntimeGlobal(diagnostic) : undefined);
     if (name === undefined || owners.has(name)) continue;
     const names = ambient.get(diagnostic.fence) ?? [];
     if (!names.includes(name)) ambient.set(diagnostic.fence, [...names, name]);
   }
 
-  const final = compileFences(live, project, ambient);
+  const final = compileFences(live, project, ambient, [...modules]);
   if (!final.ok) return notCompiled(final.error);
   const failing = final.data;
-  for (const diagnostic of failing) report(diagnostic);
-  return { findings, clean: live.length - new Set(failing.map(({ fence }) => fence)).size };
+  for (const diagnostic of failing) report(diagnostic, live);
+  return { findings, clean: live.length - new Set(failing.map(({ fence }) => fence)).size, skipped };
+}
+
+/** What the documentation fence check needs to know about the project. @public */
+export interface DocFencesCheckConfig {
+  root: string;
+  /** The package name consumers import under. */
+  packageName: string;
+  /** The `exports` map, verbatim from `package.json`. */
+  exports: ExportsMap;
+  /** Markdown whose fences compile, relative to `root`. */
+  fencedDocs: readonly string[];
+  /** The compiler options a fence compiles under, relative to `root`. Defaults to `tsconfig.json`. */
+  tsconfig?: string;
+  /** The fence languages compiled. Defaults to `["ts"]`. */
+  langs?: readonly FenceLang[];
+  /** Subpaths, as `exports` keys, that are never Worker-reachable, so a fence imports them as `any` rather than compiling their sources. */
+  untypedSubpaths?: readonly string[];
+}
+
+/** Compiles every documentation fence against the exports, skipping one marked `nocheck` and passing app modules and runtime globals as app context. @public */
+export function checkDocFences(config: DocFencesCheckConfig): CheckResult {
+  const langs = config.langs ?? ["ts"];
+  if (config.fencedDocs.length === 0) return scannedNothing("`fencedDocs` names no markdown", "doc-fences");
+  const { findings, clean, skipped } = checkFences(config, new Map(), { langs, docs: true, untypedSubpaths: config.untypedSubpaths ?? [] });
+  return checkResult(
+    findings,
+    `${clean} ${langs.join("/")} fences in ${config.fencedDocs.length} documents compile; ${skipped} marked \`nocheck\` were skipped.`,
+  );
 }
 
 /** Run every check. @public */
@@ -270,7 +334,7 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     }
   }
 
-  const fenceCheck = checkFences(config, sources);
+  const fenceCheck = checkFences(config, sources, { langs: ["tsx"], docs: false });
   findings.push(...fenceCheck.findings);
 
   const registered = new Set(Object.keys(plugin.rules));

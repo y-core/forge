@@ -58,7 +58,7 @@ than resolved to the first. `standby` reads the two parts differently: `:databas
 Edit `schema.sql` — the desired state is the only SQL you author — then compose, check and apply:
 
 ```bash
-forge db migrate compose add_sessions   # writes config/db/migrations/0005_add_sessions.sql and config/db/schema.snapshot.json
+forge db migrate compose add_sessions   # writes config/db/migrations/0005_add_sessions.sql, the snapshot and config/db/tables.ts
 forge db lint                           # the stamp, the rules and every drop or rename, against the local database
 forge db migrate --dry-run              # the plan and the SQL, writing nothing
 forge db migrate                        # run it
@@ -185,6 +185,13 @@ forge db reset --expect my-app-db
 forge db restore --from <key> --into standby:<binding>
 ```
 
+Or restore into the standby database itself, which reads the dump from the app's own bucket:
+
+```bash
+forge db standby reset --empty --yes
+forge db restore --from <key> --target standby --into standby:DB
+```
+
 `bookmark` is refused for a local database, and `reset` for a deployed one.
 
 ---
@@ -279,6 +286,7 @@ one with `forge db backup`. `--dump` names which dump to rely on, and `--allow-u
 ```bash
 forge db standby reset             # empty it, apply every migration, then every seed
 forge db standby reset --no-seed   # stop after the migrations
+forge db standby reset --empty     # stop after emptying it, ready for a restore
 ```
 
 `--target` defaults to `standby` here and the verb refuses every other place. `--dir` seeds one directory. What the standby database is for, and

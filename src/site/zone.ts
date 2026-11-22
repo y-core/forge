@@ -33,7 +33,7 @@ export class ZonePatternError extends Error {
   }
 }
 
-type RouteToken = { text: string } | "*";
+type RouteToken = { text: string; escaped?: true } | "segment" | "splat";
 
 const STATIC_FIRST_SEGMENT = /^\/[^/]+\//;
 
@@ -46,21 +46,33 @@ function assertVerbatimPath(path: string): string {
 }
 
 /** @internal */
-function appendRouteToken(variant: readonly RouteToken[], token: RouteToken): RouteToken[] {
-  if (token === "*" && variant.at(-1) === "*") return [...variant];
-  return [...variant, token];
+function isWildcardToken(token: RouteToken | undefined): token is "segment" | "splat" {
+  return token === "segment" || token === "splat";
+}
+
+/** Mirrors remix route-pattern's `invalid param delimiter` rule: a `:param` ends the route or is followed by an unescaped `/`, a `*` or a `.`. @internal */
+function delimitsParam(token: RouteToken): boolean {
+  return token === "splat" || (typeof token === "object" && (token.text === "." || (token.text === "/" && token.escaped !== true)));
 }
 
 /** @internal */
-function joinRouteVariants(head: readonly RouteToken[], tail: readonly RouteToken[]): RouteToken[] {
-  return tail.reduce<RouteToken[]>(appendRouteToken, [...head]);
+function appendRouteToken(source: string, variant: readonly RouteToken[], token: RouteToken): RouteToken[] {
+  const last = variant.at(-1);
+  if (last === "segment" && !delimitsParam(token)) throw new ZonePatternError(source, "malformed");
+  if (!isWildcardToken(token) || !isWildcardToken(last)) return [...variant, token];
+  return [...variant.slice(0, -1), token === "splat" || last === "splat" ? "splat" : "segment"];
+}
+
+/** @internal */
+function joinRouteVariants(source: string, head: readonly RouteToken[], tail: readonly RouteToken[]): RouteToken[] {
+  return tail.reduce<RouteToken[]>((variant, token) => appendRouteToken(source, variant, token), [...head]);
 }
 
 /** Expands one route source, up to its closing `)` when nested, into every token sequence its optionals allow. @internal */
 function expandRouteSource(source: string, start: number, nested: boolean): { variants: RouteToken[][]; next: number } {
   let variants: RouteToken[][] = [[]];
   const append = (token: RouteToken): void => {
-    variants = variants.map((variant) => appendRouteToken(variant, token));
+    variants = variants.map((variant) => appendRouteToken(source, variant, token));
   };
 
   let i = start;
@@ -68,20 +80,20 @@ function expandRouteSource(source: string, start: number, nested: boolean): { va
     const char = source.charAt(i);
     if (char === "\\") {
       if (i + 1 >= source.length) throw new ZonePatternError(source, "malformed");
-      append({ text: source.charAt(i + 1) });
+      append({ text: source.charAt(i + 1), escaped: true });
       i += 2;
     } else if (char === ":") {
       const name = ROUTE_PARAM_NAME.exec(source.slice(i + 1));
       if (name === null) throw new ZonePatternError(source, "malformed");
-      append("*");
+      append("segment");
       i += 1 + name[0].length;
     } else if (char === "*") {
       const name = ROUTE_PARAM_NAME.exec(source.slice(i + 1));
-      append("*");
+      append("splat");
       i += 1 + (name?.[0].length ?? 0);
     } else if (char === "(") {
       const inner = expandRouteSource(source, i + 1, true);
-      variants = [...variants, ...variants.flatMap((variant) => inner.variants.map((tail) => joinRouteVariants(variant, tail)))];
+      variants = [...variants, ...variants.flatMap((variant) => inner.variants.map((tail) => joinRouteVariants(source, variant, tail)))];
       i = inner.next;
     } else if (char === ")") {
       if (!nested) throw new ZonePatternError(source, "malformed");
@@ -98,15 +110,30 @@ function expandRouteSource(source: string, start: number, nested: boolean): { va
 
 /** @internal */
 function routeLiteralText(variant: readonly RouteToken[]): string {
-  return variant.map((token) => (token === "*" ? "" : token.text)).join("");
+  return variant.map((token) => (isWildcardToken(token) ? "" : token.text)).join("");
 }
 
 /** @internal */
 function renderStrictWildcard(variant: readonly RouteToken[]): string {
-  return variant.map((token) => (token === "*" ? "*" : token.text.replace(/[\\*]/g, "\\$&"))).join("");
+  return variant.map((token) => (isWildcardToken(token) ? "*" : token.text.replace(/[\\*]/g, "\\$&"))).join("");
 }
 
-/** Splits a dynamic route source into the exact paths and `strict wildcard` patterns that match it. @internal */
+/** @internal */
+function endsWithWholeSegmentParam(variant: readonly RouteToken[]): boolean {
+  const before = variant.at(-2);
+  return variant.at(-1) === "segment" && typeof before === "object" && before.text === "/";
+}
+
+/** Matches the variant; without a splat, also refuses any path with more `/` than it, so each `*` stays within one segment, and an empty trailing param. @internal */
+function renderWildcardClause(variant: readonly RouteToken[]): string {
+  const clause = `http.request.uri.path strict wildcard ${quote(renderStrictWildcard(variant))}`;
+  if (variant.includes("splat")) return clause;
+  const slashes = routeLiteralText(variant).split("/").length - 1;
+  const bounded = `${clause} and not http.request.uri.path wildcard ${quote("/*".repeat(slashes + 1))}`;
+  return `(${endsWithWholeSegmentParam(variant) ? `${bounded} and not ends_with(http.request.uri.path, "/")` : bounded})`;
+}
+
+/** Splits a dynamic route source into the exact paths and the `strict wildcard` clauses that match it. @internal */
 function routeWildcards(source: string): { exact: string[]; wildcards: string[] } {
   if (source.includes("://")) throw new ZonePatternError(source, "host");
   if (source.includes("?")) throw new ZonePatternError(source, "search");
@@ -117,11 +144,12 @@ function routeWildcards(source: string): { exact: string[]; wildcards: string[] 
   for (const variant of expandRouteSource(source, 0, false).variants) {
     if (variant.length === 0) {
       exact.push("/");
-    } else if (!variant.includes("*")) {
+    } else if (!variant.some(isWildcardToken)) {
       exact.push(routeLiteralText(variant));
     } else {
-      if (!STATIC_FIRST_SEGMENT.test(routeLiteralText(variant.slice(0, variant.indexOf("*"))))) throw new ZonePatternError(source, "catch-all");
-      wildcards.push(renderStrictWildcard(variant));
+      if (!STATIC_FIRST_SEGMENT.test(routeLiteralText(variant.slice(0, variant.findIndex(isWildcardToken)))))
+        throw new ZonePatternError(source, "catch-all");
+      wildcards.push(renderWildcardClause(variant));
     }
   }
   return { exact, wildcards };
@@ -138,16 +166,26 @@ function unique(values: readonly string[]): string[] {
 }
 
 /** @internal */
-function assertWithinLimit(expression: string, what: string): void {
+function assertWithinLimit(
+  expression: string,
+  what: string,
+  advice = "Collapse exact paths into a prefix, or move the surface into a Cloudflare list.",
+): void {
   if (expression.length > EXPRESSION_MAX_CHARS) {
     throw new Error(
-      `${what}: expression is ${expression.length} characters, over Cloudflare's per-rule limit of ${EXPRESSION_MAX_CHARS}. ` +
-        `Collapse exact paths into a prefix, or move the surface into a Cloudflare list.`,
+      `${what}: expression is ${expression.length} characters, over Cloudflare's per-rule limit of ${EXPRESSION_MAX_CHARS}. ${advice}`,
     );
   }
 }
 
-/** Builds the predicate that is true for every request the served surface accounts for. @public */
+/** @internal */
+function allowLimitAdvice(surface: ZoneSurface): string {
+  const dynamicRoutes = surface.paths.filter(isDynamicRoute).length;
+  const split = "Collapse exact paths into a prefix, or split the surface across rules that each scope to one path prefix.";
+  return dynamicRoutes === 0 ? split : `It holds ${dynamicRoutes} dynamic routes, at about 110 to 160 characters each. ${split}`;
+}
+
+/** Builds the predicate true for every request the surface accounts for; a dynamic route costs about 110 to 160 characters, capping a zone near 25 to 35 of them. @public */
 export function buildAllowExpression(surface: ZoneSurface): string {
   const expanded = surface.paths.filter(isDynamicRoute).map(routeWildcards);
   const staticPaths = surface.paths.filter((path) => !isDynamicRoute(path));
@@ -161,18 +199,18 @@ export function buildAllowExpression(surface: ZoneSurface): string {
 
   const clauses: string[] = [];
   if (exact.length > 0) clauses.push(`http.request.uri.path in {${exact.map(quote).join(" ")}}`);
-  for (const wildcard of wildcards) clauses.push(`http.request.uri.path strict wildcard ${quote(wildcard)}`);
+  if (wildcards.length > 0) clauses.push(`(not http.request.uri.path contains "//" and (${wildcards.join(" or ")}))`);
   for (const prefix of prefixes) clauses.push(`starts_with(http.request.uri.path, ${quote(prefix)})`);
 
   const expression = clauses.join(" or ");
-  assertWithinLimit(expression, "buildAllowExpression");
+  assertWithinLimit(expression, "buildAllowExpression", allowLimitAdvice(surface));
   return expression;
 }
 
 /** Builds the WAF custom rule that actions everything the surface does *not* account for. @public */
 export function buildAllowRule(surface: ZoneSurface, options: AllowRuleOptions): ZoneRule {
   const expression = `(http.host eq ${quote(surface.apex)} and not (${buildAllowExpression(surface)}))`;
-  assertWithinLimit(expression, "buildAllowRule");
+  assertWithinLimit(expression, "buildAllowRule", allowLimitAdvice(surface));
   return { action: options.action, expression, description: options.description ?? `Allow-list: ${surface.apex} served surface`, enabled: true };
 }
 

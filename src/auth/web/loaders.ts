@@ -6,6 +6,7 @@ import { sessionCtx } from "../../session/session";
 import { AUTH_SITE_DATA_OWED_SESSION_KEY } from "./identity";
 import { renderAuthPage } from "./render";
 import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
+import { hasSiteDataOwedCookie } from "./site-data";
 import type { AuthPageState, AuthWebOptions } from "./types";
 import type { AuthViewName } from "./types";
 import type { AuthViewRequest } from "./types";
@@ -13,7 +14,8 @@ import type { AuthSiteDataProps } from "./views/types";
 
 /** The storage clear this session still owes, minted for its own route, or `undefined` when it owes none. */
 async function owedSiteData<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<AuthSiteDataProps | undefined> {
-  if (sessionCtx.getOptional(c)?.get(AUTH_SITE_DATA_OWED_SESSION_KEY) !== true) return undefined;
+  const owed = sessionCtx.getOptional(c)?.get(AUTH_SITE_DATA_OWED_SESSION_KEY) === true || (await hasSiteDataOwedCookie(c));
+  if (!owed) return undefined;
   const path = options.paths.auth.signoutSiteData();
   return { path, csrfToken: await mintCsrf(c, path), csrfHeader: csrfHeaderCtx.getOptional(c) ?? CSRF_HEADER_DEFAULT };
 }

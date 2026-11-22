@@ -3,13 +3,12 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "../../context/accessor";
 import { setPendingHeader } from "../../context/pending-headers";
 import { getAppContext } from "../../context/types";
+import { COOKIE_ATTRIBUTES_DEFAULT } from "../../http/cookie";
 import { Cookie, SetCookie } from "../../http/headers";
 import { isSafeHttpMethod } from "../../http/method";
 import type { D1DatabaseLike, D1DatabaseSession, D1PreparedStatement, D1Queryable, D1SessionsOptions } from "./types";
 
 const sessionsCtx = contextVar<Map<D1DatabaseLike, D1DatabaseSession>>("__d1Sessions");
-
-const BOOKMARK_COOKIE = { path: "/", httpOnly: true, secure: true, sameSite: "Lax" } as const;
 
 // D1's bookmark is four hex groups; local D1 writes the last as 32 digits and a Time Travel bookmark as 16.
 const BOOKMARK = /^[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16,64}$/i;
@@ -82,16 +81,19 @@ export function d1Sessions<Bindings = Record<string, unknown>>(options: D1Sessio
     if (carrier === undefined) return response;
     if (resumed?.refused() === true) {
       if ("cookie" in carrier)
-        setPendingHeader(context, "set-cookie", new SetCookie({ ...BOOKMARK_COOKIE, name: carrier.cookie, value: "", maxAge: 0 }).toString(), {
-          append: true,
-        });
+        setPendingHeader(
+          context,
+          "set-cookie",
+          new SetCookie({ ...COOKIE_ATTRIBUTES_DEFAULT, name: carrier.cookie, value: "", maxAge: 0 }).toString(),
+          { append: true },
+        );
       return response;
     }
     const bookmark = session.getBookmark();
     if (bookmark === null) return response;
     if ("header" in carrier) setPendingHeader(context, carrier.header, bookmark);
     else if (bookmark !== incoming)
-      setPendingHeader(context, "set-cookie", new SetCookie({ ...BOOKMARK_COOKIE, name: carrier.cookie, value: bookmark }).toString(), {
+      setPendingHeader(context, "set-cookie", new SetCookie({ ...COOKIE_ATTRIBUTES_DEFAULT, name: carrier.cookie, value: bookmark }).toString(), {
         append: true,
       });
     return response;

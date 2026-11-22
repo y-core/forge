@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
+import { createKeyRingResolver } from "../../crypto/keyring/resolver";
 import { importKeyRing } from "../../crypto/keyring/ring";
+import type { KeyRingResolver } from "../../crypto/keyring/types";
 import { mapHandler } from "../../testing/route";
 import { createFlash } from "./flash-cookie";
 import type { FlashMessage } from "./types";
@@ -31,8 +33,8 @@ describe("ring", () => {
   it("hands the resolver the request's context, env included", async () => {
     const seen: unknown[] = [];
     const flash = createFlash<{ FLASH_SECRET: string }>({
-      ring: (c) => {
-        seen.push(c.env.FLASH_SECRET);
+      ring: (env) => {
+        seen.push(env.FLASH_SECRET);
         return ring;
       },
     });
@@ -43,6 +45,33 @@ describe("ring", () => {
     });
     await app.request("/", {}, { FLASH_SECRET: "from-env" });
     expect(seen).toEqual(["from-env"]);
+  });
+
+  it("resolves its ring once across set and get requests sharing one env, and again for another env", async () => {
+    let calls = 0;
+    const flash = createFlash({
+      ring: () => {
+        calls++;
+        return ring;
+      },
+    });
+    const app = new Forge();
+    mapHandler(app, "GET", "/set", async (c) => {
+      await flash.info(c, "memo");
+      return new Response("ok");
+    });
+    mapHandler(app, "GET", "/get", async (c) => Response.json(await flash.get(c)));
+    const env = {};
+    const cookieValue = extractCookieValue((await app.request("/set", {}, env)).headers.get("Set-Cookie"));
+    const read = await (await app.request("/get", { headers: { Cookie: `flash=${cookieValue}` } }, env)).json();
+    await app.request("/set", {}, env);
+    const callsUnderOneEnv = calls;
+    await app.request("/set", {}, {});
+    expect({ read, callsUnderOneEnv, callsAfterSecondEnv: calls }).toEqual({
+      read: [{ type: "info", text: "memo" }],
+      callsUnderOneEnv: 1,
+      callsAfterSecondEnv: 2,
+    });
   });
 
   it("signs each request under the ring its resolver returns then", async () => {
@@ -186,6 +215,49 @@ describe("get", () => {
     mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const res = await app.request("/", { headers: { Cookie: "other=1" } });
     expect(res.headers.get("Set-Cookie")).toBeNull();
+  });
+});
+
+describe("shared cookie attributes", () => {
+  /** Sets one message under `flash`, then reads it back; answers the set's and the read's Set-Cookie. */
+  async function setThenRead(flash: ReturnType<typeof createFlash>): Promise<{ set: string; clear: string }> {
+    const setApp = new Forge();
+    mapHandler(setApp, "GET", "/", async (c) => {
+      await flash.set(c, [{ type: "info", text: "scoped" }]);
+      return new Response("ok");
+    });
+    const set = (await setApp.request("/")).headers.get("Set-Cookie") ?? "";
+    const getApp = new Forge();
+    mapHandler(getApp, "GET", "/", async (c) => {
+      await flash.get(c);
+      return new Response("ok");
+    });
+    const clear = (await getApp.request("/", { headers: { Cookie: `flash=${extractCookieValue(set)}` } })).headers.get("Set-Cookie") ?? "";
+    return { set, clear };
+  }
+
+  it("sets with exactly HttpOnly, Max-Age=60, Path=/, SameSite=Lax and Secure, and clears on Path=/", async () => {
+    const { set, clear } = await setThenRead(createFlash({ ring: () => ring }));
+    expect({ set: set.split("; ").slice(1), clear }).toEqual({
+      set: ["HttpOnly", "Max-Age=60", "Path=/", "SameSite=Lax", "Secure"],
+      clear: "flash=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure",
+    });
+  });
+
+  it("sets and clears on a custom path, keeping the shared attributes", async () => {
+    const { set, clear } = await setThenRead(createFlash({ ring: () => ring, path: "/app" }));
+    expect({ set: set.split("; ").slice(1), clear }).toEqual({
+      set: ["HttpOnly", "Max-Age=60", "Path=/app", "SameSite=Lax", "Secure"],
+      clear: "flash=; HttpOnly; Max-Age=0; Path=/app; SameSite=Lax; Secure",
+    });
+  });
+
+  it("sets and clears with a Strict sameSite override", async () => {
+    const { set, clear } = await setThenRead(createFlash({ ring: () => ring, sameSite: "Strict" }));
+    expect({ set: set.split("; ").slice(1), clear }).toEqual({
+      set: ["HttpOnly", "Max-Age=60", "Path=/", "SameSite=Strict", "Secure"],
+      clear: "flash=; HttpOnly; Max-Age=0; Path=/; SameSite=Strict; Secure",
+    });
   });
 });
 
@@ -418,4 +490,76 @@ describe("past 4096 bytes", () => {
     });
     expect((await app.request("/")).status).toBe(200);
   });
+});
+
+describe("ring — createKeyRingResolver's wrapper", () => {
+  interface AppEnv {
+    readonly FLASH_SECRET: string;
+  }
+  const UNWRAP = "createFlash: pass the `(env) => importKeyRing(…)` function itself, not `createKeyRingResolver(…)`";
+
+  it("is refused at bun check whatever Bindings it was made under, and throws at construction", () => {
+    const inferred = () =>
+      createFlash({
+        // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+        ring: createKeyRingResolver(() => ring),
+      });
+    const typed = () =>
+      createFlash<AppEnv>({
+        // @ts-expect-error — createKeyRingResolver's wrapper takes a request, not the env a ring option is handed
+        ring: createKeyRingResolver<AppEnv>((env) => importKeyRing([env.FLASH_SECRET])),
+      });
+    expect(inferred).toThrow(new Error(UNWRAP));
+    expect(typed).toThrow(new Error(UNWRAP));
+  });
+
+  it("cast past the type, throws at construction naming createFlash and the fix", () => {
+    const wrapped = createKeyRingResolver<AppEnv>(() => ring) as unknown as KeyRingResolver<AppEnv>;
+    expect(() => createFlash<AppEnv>({ ring: wrapped })).toThrow(new Error(UNWRAP));
+  });
+});
+
+describe("ring — over the app's Bindings", () => {
+  interface AppEnv {
+    readonly FLASH_SECRET: string;
+  }
+
+  it("refuses a binding AppEnv does not declare at bun check, and takes one it does", () => {
+    const missing = () =>
+      createFlash<AppEnv>({
+        // @ts-expect-error — `FLASH_SECRETS` is not a binding of AppEnv
+        ring: (env) => importKeyRing([env.FLASH_SECRETS]),
+      });
+    const declared = () => createFlash<AppEnv>({ ring: (env) => importKeyRing([env.FLASH_SECRET]) });
+    void [missing, declared];
+  });
+});
+
+describe("ring — cast past its type to read the request context", () => {
+  const HANDED_ENV = "this resolver is handed `env`, not the request context — rewrite `(c) => c.env.X` as `(env) => env.X`";
+  const SECRET = "df7bc215d10b817ca5757fe2b023738f06d7ccb1de2f33087c06428643c8ee3b";
+  // oxlint-disable-next-line typescript/no-explicit-any -- a 0.7.7 resolver typed against the context it is no longer handed
+  type ContextResolver = (c: any) => ReturnType<typeof importKeyRing>;
+  const unconverted: { name: string; resolve: ContextResolver }[] = [
+    { name: "c.env", resolve: (c) => importKeyRing([c.env.FLASH_SECRET]) },
+    { name: "c.get", resolve: (c) => importKeyRing([c.get("FLASH_SECRET")]) },
+  ];
+
+  for (const { name, resolve } of unconverted) {
+    it(`answers the first request that sets a flash with the rewrite, for a ring reading ${name}`, async () => {
+      const flash = createFlash({ ring: resolve as KeyRingResolver });
+      const app = new Forge<{ FLASH_SECRET: string }>();
+      app.setOnError((err) => new Response(err.message, { status: 500 }));
+      mapHandler(app, "GET", "/", async (c) => {
+        await flash.success(c, "saved");
+        return new Response("ok");
+      });
+      const res = await app.request("/", {}, { FLASH_SECRET: SECRET });
+      expect({ status: res.status, body: await res.text(), cookies: res.headers.getSetCookie() }).toEqual({
+        status: 500,
+        body: HANDED_ENV,
+        cookies: [],
+      });
+    });
+  }
 });

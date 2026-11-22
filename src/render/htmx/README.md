@@ -29,7 +29,7 @@ import { fragmentResponse, htmlResponse } from "@y-core/forge/http";
 export async function search(c) {
   const results = await runSearch(c);
 
-  if (!isPartial(c)) return htmlResponse(await renderPage(results));
+  if (!isPartial(c)) return htmlResponse(await renderResultsPage(results));
 
   return fragmentResponse(await renderResults(results), 200, hxHeaders({ pushUrl: c.request.url }));
 }
@@ -60,8 +60,13 @@ so `isHxRequest` alone would answer those with a fragment and htmx would put it 
 [`HTMX.md`][htmx-10] §10's.
 
 ```ts
-if (isPartial(c)) return fragmentResponse(await renderFragment(data));
-return htmlResponse(await renderPage(data));
+import { fragmentResponse, htmlResponse } from "@y-core/forge/http";
+import { isPartial } from "@y-core/forge/render/htmx";
+
+async function respond(c) {
+  if (isPartial(c)) return fragmentResponse(await renderFragment(data));
+  return htmlResponse(await renderFullPage(data));
+}
 ```
 
 The other two predicates answer narrower questions:
@@ -87,7 +92,9 @@ is [`HTMX.md`][htmx-7] §7's, and the guard order is under **Security** below.
 import { hxHeaders } from "@y-core/forge/render/htmx";
 import { fragmentResponse } from "@y-core/forge/http";
 
-return fragmentResponse(body, 200, hxHeaders({ pushUrl: "/results?q=hello", trigger: "resultsLoaded" }));
+function done(body: string) {
+  return fragmentResponse(body, 200, hxHeaders({ pushUrl: "/results?q=hello", trigger: "resultsLoaded" }));
+}
 ```
 
 The directives fall into these decisions:
@@ -142,8 +149,9 @@ passing the matching prop:
 - `infiniteScroll({ get, target })` — appends the next page when the element is revealed.
 - `paginatedTableLink({ get, target, page })` — a pagination link; builds `?page=N` onto the URL, keeping any query string it already has.
 - `dependentSelect({ get, target })` — a `<select>` that reloads another region when its value changes.
-- `asyncDialogTrigger({ get, target, dialogId })` — a control that loads dialog content, emitting the ARIA wiring the dialog needs alongside the
-  htmx attributes.
+- `asyncDialogTrigger({ get, target, dialogId })` — a button that opens a dialog and loads its content, emitting `command="show-modal"`,
+  `commandfor` and the ARIA wiring alongside the htmx attributes. **Spread it on a `<button type="button">`**: htmx cancels the click of an `<a>`
+  or of a typeless button inside a form, so the dialog never opens.
 
 ```tsx
 <form {...formSubmit({ post: "/api/contact", target: "#contact-result" })} />
@@ -190,6 +198,10 @@ async function updateProfile(context) {
 
 Every dynamic message is escaped on the way in, so the error strings can come straight from a validator.
 
+`renderError` and `renderValidationErrors` mark their banner with `data-announce-failure`, carrying the message (for the validation banner, "Please
+correct the following fields."), so `ui/client`'s htmx runtime announces that message on the `failure` channel when it is swapped in. Do not
+announce the failure again from app code ([`FORGE_ERRORS.md`][eh-2] §2).
+
 ### Choosing how the banners are styled
 
 `FragmentOptions` asks you one question: whose classes win. Leave `class` and `ulClass` alone and you get forge's status-token styling, which needs
@@ -216,11 +228,12 @@ option interpolated verbatim rather than escaped; keep it a literal you wrote, n
 ([`HTMX.md`][htmx-7] §7). A mutation route gets a real guard first, and the htmx predicate only afterwards:
 
 ```ts
+import { fragmentResponse, htmlResponse } from "@y-core/forge/http";
 import { isPartial } from "@y-core/forge/render/htmx";
 import { originProtection } from "@y-core/forge/security";
 
 app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins }));
-// plus csrfProtection from `@y-core/forge/form` on routes that accept a form body
+// plus the app's CSRF policy, the `csrf` slot of applyMiddlewareChain, on routes that accept a form body
 
 export const handler = (c) => (isPartial(c) ? fragmentResponse(fragment) : htmlResponse(page));
 ```

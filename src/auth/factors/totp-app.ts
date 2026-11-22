@@ -346,6 +346,7 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): TotpReplacea
     codeDigits: digits,
     codePeriodSeconds: period,
     reissueAfterMs: null,
+    attemptWindowMs: lockoutMs,
     createChallenge,
     verifyChallenge,
     beginEnrolment,

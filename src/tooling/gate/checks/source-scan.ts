@@ -16,9 +16,13 @@ export function isTestSource(path: string): boolean {
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
-/** The source file a module path names — itself with `.ts` or `.tsx`, or the `mod` barrel of the directory it names. @internal */
+/** The source file a module path names — itself with `.ts` or `.tsx`, else the `mod` barrel or the `index` of the directory it names. @internal */
 export function resolveModuleFile(root: string, modulePath: string): string | null {
-  const candidates = [...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`), ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`)];
+  const candidates = [
+    ...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`),
+    ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`),
+    ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/index${ext}`),
+  ];
   return candidates.find((candidate) => existsSync(resolve(root, candidate))) ?? null;
 }
 

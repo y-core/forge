@@ -2,7 +2,7 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import type { RequestHandler } from "@remix-run/fetch-router";
 import type { Route } from "@remix-run/fetch-router/routes";
 
-import type { Logger } from "../logging/types";
+import type { LogChannel, Logger, LogRecord } from "../logging/types";
 import type { RouteParams } from "../router/types";
 /** One enrolled factor on a `fakeAuthD1` user. @public */
 export interface FakeAuthFactor {
@@ -55,10 +55,26 @@ export interface CollectedExecutionContext {
   drain: () => Promise<void>;
 }
 
+/** A logger and the channel behind it, with every record either has written. @public */
+export interface CapturedLogs {
+  logger: Logger;
+  channel: LogChannel;
+  /** Each record as the channel received it, after redaction. */
+  records: readonly LogRecord[];
+}
+
 /** Options for `fakeKV`. @public */
 export interface FakeKVOptions {
   /** Millisecond clock the expiry of every write is resolved and judged against; defaults to `Date.now`. */
   now?: () => number;
+}
+
+/** Options for `fakeCacheStorage`. @public */
+export interface FakeCacheStorageOptions {
+  /** Answers every request `addAll` makes; omitted, the network is unreachable and `addAll` rejects. */
+  fetch?: (request: Request) => Promise<Response>;
+  /** Origin a relative cache URL resolves against; defaults to `http://test`, as `buildRequest` does. */
+  baseUrl?: string;
 }
 
 /** Options for `fakeD1`. @public */

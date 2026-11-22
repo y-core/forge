@@ -283,12 +283,38 @@ describe("createD1Client — batch with requireRowsWritten", () => {
 });
 
 describe("createD1Client() logging", () => {
-  it("writes nothing to the console when no logger is passed", async () => {
+  it("keeps the debug d1.query record off the console when no logger is passed", async () => {
     const written = spyOn(console, "log").mockImplementation(() => {});
     try {
       const { db } = makeD1Stub([{ id: 1 }]);
       await createD1Client(db).query(sql`SELECT 1`);
       expect(written).not.toHaveBeenCalled();
+    } finally {
+      written.mockRestore();
+    }
+  });
+
+  it("writes a query slower than slowQueryMs to the console at warn when no logger is passed, and one at the threshold not at all", async () => {
+    const written = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await createD1Client(makeD1Stub([], { duration: 250 }).db, { slowQueryMs: 250 }).query(sql`SELECT 1`);
+      await createD1Client(makeD1Stub([], { duration: 250.5 }).db, { slowQueryMs: 250 }).query(sql`SELECT 1`);
+      const lines = written.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+      expect(lines.map(({ level, prefix, message, op, sql: text, durationMs }) => ({ level, prefix, message, op, sql: text, durationMs }))).toEqual(
+        [{ level: "warn", prefix: "storage/db", message: "d1.query", op: "query", sql: "SELECT 1", durationMs: 250.5 }],
+      );
+    } finally {
+      written.mockRestore();
+    }
+  });
+
+  it("sends a slow query's warning to the logger passed, and nothing to the console", async () => {
+    const written = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const records: LogRecord[] = [];
+      const logger = createLogger("storage/db", { channels: [{ write: (record) => void records.push(record) }] });
+      await createD1Client(makeD1Stub([], { duration: 300 }).db, { logger, slowQueryMs: 250 }).query(sql`SELECT 1`);
+      expect([records.map((record) => [record.level, record.message]), written.mock.calls]).toEqual([[["warn", "d1.query"]], []]);
     } finally {
       written.mockRestore();
     }

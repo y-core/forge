@@ -5,6 +5,7 @@ import { importClosure } from "../assets/closure";
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
 import { checkBundle, checkNodeExports, hasEsbuild } from "./checks/bundle";
+import { checkBundleShadows } from "./checks/bundle-shadow";
 import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
 import { checkClassTokens } from "./checks/class-tokens";
@@ -12,6 +13,7 @@ import { checkCoLocation } from "./checks/co-location";
 import { checkCommentBudget } from "./checks/comment-budget";
 import { checkCompatibility } from "./checks/compatibility";
 import { checkConfigFiles } from "./checks/config-files";
+import { checkConsumerCssSources } from "./checks/consumer-css-sources";
 import { checkContrast } from "./checks/contrast";
 import { checkCrossEngineTags } from "./checks/cross-engine-tags";
 import { checkCssCoverage } from "./checks/css-coverage";
@@ -33,17 +35,20 @@ import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
 import { playwrightServerStatus } from "./checks/playwright-server";
+import { checkServiceWorker } from "./checks/service-worker";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
 import { checkStubGlobals } from "./checks/stub-globals";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
-import type { BundleCheckConfig, IccProfileCheckConfig, NodeExportsCheckConfig } from "./checks/types";
+import type { ServiceWorkerCheckConfig } from "./checks/types";
+import type { BundleCheckConfig, BundleShadowCheckConfig, IccProfileCheckConfig, NodeExportsCheckConfig } from "./checks/types";
 import type { ClassGroupsCheckConfig } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
 import type { CoLocationCheckConfig } from "./checks/types";
 import type { CommentBudgetCheckConfig } from "./checks/types";
 import type { ConfigFileCheckConfig } from "./checks/types";
+import type { ConsumerCssSourcesCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { CrossEngineTagsCheckConfig } from "./checks/types";
@@ -406,6 +411,16 @@ export function assetManifestStep(config: AssetManifestCheckConfig, options: Ste
   return checkStep("validate-asset-manifest", (gateTier) => checkAssetManifest(config, gateTier), options);
 }
 
+/** Checks the built service worker against the inputs its build recorded, so a worker behind its sources fails before a test reads it. @public */
+export function serviceWorkerStep(config: ServiceWorkerCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-service-worker", (gateTier) => checkServiceWorker(config, gateTier), options);
+}
+
+/** Checks every CSS entry of the assets config imports the `sources.css` of each library namespace the app's source imports. @public */
+export function consumerCssSourcesStep(config: ConsumerCssSourcesCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-consumer-css-sources", () => checkConsumerCssSources(config), options);
+}
+
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
 export function coLocationStep(config: CoLocationCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-co-location", () => checkCoLocation(config), options, { watches: sourceWatches(config.sources) });
@@ -530,6 +545,11 @@ export function bundleStep(label: string, config: BundleCheckConfig, options: St
 /** Checks every `forge.node` export points `import` at a generated `.mjs`, and every `.mjs` export is listed there. @public */
 export function nodeExportsStep(config: NodeExportsCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-node-exports", () => checkNodeExports(config), options, { watches: ["package.json"] });
+}
+
+/** Checks no extensionless relative import reaches a `.mjs`, which Bun would load in place of the `.ts` source. @public */
+export function bundleShadowStep(config: BundleShadowCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-bundle-shadows", () => checkBundleShadows(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */

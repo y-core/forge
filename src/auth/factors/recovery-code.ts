@@ -126,6 +126,7 @@ export function createRecoveryCodeFactor(options: RecoveryCodeFactorOptions): Re
     codeDigits: null,
     codePeriodSeconds: null,
     reissueAfterMs: null,
+    attemptWindowMs: lockoutMs,
     createChallenge,
     verifyChallenge,
     beginEnrolment,

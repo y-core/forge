@@ -1,9 +1,9 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { D1_LIMITS } from "../../../storage/db/limits";
 import { CliError } from "../../cli/errors";
 import { executeFile } from "../d1";
-import { declaredMigrations, declaredSchemas, NO_SCHEMAS, snapshotPath } from "../declared";
+import { declaredMigrations, declaredSchemas, NO_SCHEMAS, rowTypesPath, snapshotPath } from "../declared";
 import { sha256 } from "../digest";
 import { formatApprovalLine, migrationFindings } from "../migrate/analysis";
 import { migrationChecksum, migrationFileName, migrationsDigest, nextMigrationNumber, readMigrations } from "../migrate/files";
@@ -27,6 +27,7 @@ import { readSchemaModel } from "./introspect";
 import { declaredObjectNames } from "./normalize";
 import { assignOwnership, attributeDrops, declaredNamesBySource } from "./ownership";
 import { proveComposed } from "./proof";
+import { emitRowTypes } from "./row-types";
 import { cachedSchemaModel, forgeVersion, loadDesired, readScratchModel, replayBaseline, scratchModelKey } from "./scratch";
 import { buildSchemaSnapshot, readSchemaSnapshot, writeSchemaSnapshot } from "./snapshot";
 import type { ComposeOptions, ComposeOutcome, DesiredState, OwnershipClaim, SchemaInputs, SchemaModel, SchemaRename } from "./types";
@@ -135,6 +136,14 @@ function restampMigration(run: DbRunContext, inputs: SchemaInputs, name: string,
   return { path: target.path, snapshotPath: null, plan, warnings: [], causes: [], sql, dryRun: false };
 }
 
+/** Writes the row types `forge db types` would generate, so composing never leaves them behind the schemas; answers the path. */
+function writeRowTypes(run: DbRunContext, rowTypes: string): string {
+  const path = rowTypesPath(run);
+  run.io.mkdir(dirname(path));
+  run.io.writeText(path, rowTypes);
+  return path;
+}
+
 /** Answers an app declaring no schema with nothing to compose — unless a snapshot or a migration is history that composing nothing would drop. */
 function composeFromNoSchema(run: DbRunContext, inputs: SchemaInputs, dryRun: boolean): ComposeOutcome {
   const latest = inputs.migrations[inputs.migrations.length - 1]?.name;
@@ -149,6 +158,10 @@ function composeFromNoSchema(run: DbRunContext, inputs: SchemaInputs, dryRun: bo
     );
   }
   if (!run.json) run.print("config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose");
+  if (!dryRun) {
+    const typesPath = writeRowTypes(run, emitRowTypes({ tables: [], indexes: [], triggers: [], views: [] }));
+    if (!run.json) run.print(`wrote ${typesPath}`);
+  }
   return { path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun };
 }
 
@@ -223,8 +236,12 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
   const snapshotOf = (digest: string) => buildSchemaSnapshot({ desired: digests, declared, migrationsDigest: digest });
 
   if (schemaDiffIsEmpty(diff) && renames.length === 0) {
-    if (!options.dryRun) writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(inputs.migrations)));
     say(`no changes — ${migrationsDir} already produces every declared schema`);
+    if (!options.dryRun) {
+      const rowTypes = emitRowTypes(desired);
+      writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(inputs.migrations)));
+      say(`wrote ${writeRowTypes(run, rowTypes)}`);
+    }
     for (const line of warnings) warn(line);
     return {
       path: null,
@@ -286,6 +303,7 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
     return { path: null, snapshotPath: null, plan, warnings, causes, sql, dryRun: true };
   }
 
+  const rowTypes = emitRowTypes(desired);
   const proven = await proveComposed(run, inputs, { sql, baseline: baselineAll, desired, renames, steps: diff.dataDependent });
   const written = [...warnings, ...proven.warnings];
 
@@ -297,9 +315,11 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
     Promise.resolve(proven.model),
   );
   writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(next)));
+  const typesPath = writeRowTypes(run, rowTypes);
   say(`wrote ${path}`);
   for (const line of plan) say(`  ${line}`);
   for (const line of causes) say(line);
+  say(`wrote ${typesPath}`);
   for (const line of written) warn(line);
   return { path, snapshotPath: inputs.snapshotPath, plan, warnings: written, causes, sql, dryRun: false };
 }

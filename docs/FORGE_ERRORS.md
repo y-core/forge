@@ -30,6 +30,8 @@ audience: consumer
 - §3b html Tagged Template: `SafeHtml` from a raw string fragment
 - §3c escapeHtml: manual escaping outside the auto-escaping render paths
 - §3d Who Answers in What: guards in plain text, handlers in fragments or pages
+- §3e One Refusal Contract for Every Guard: the hook, where it is declared, the media, `Retry-After`, the log line, the fixed statuses, and the
+  alternatives rejected
 - §4 Fail-Closed Posture: missing security dependency means 503
 - §5 Error Taxonomy: expected, unexpected, and infrastructure failures
 - §5a Expected Errors: return a Result or a fragment, never throw
@@ -88,7 +90,14 @@ Each renders HTMX-compatible partial HTML — never a full `<html>` document —
 
 ### 2a. `renderError` — Error Fragment
 
-Use for single-message failures with no field attribution: rate-limit exceeded, service unavailable, generic handler errors.
+Use for single-message failures with no field attribution, such as a service-unavailable or a generic handler error. **It is not the rate-limit
+answer:** `rateLimit` refuses with a plain-text `429` unless the refusal hook answers otherwise, as every guard does (§3d, §3e).
+
+**The banner carries `ANNOUNCE_FAILURE_ATTR` holding the message**, as `refuseAsFragment`'s panel does (§3e), so forge's client runtime speaks it
+once, assertively, on the `failure` channel when it arrives. `defineAction`'s `413`, `400` and `500` fragments are this banner, so an app announces
+none of them itself ([`10-accessibility.md`][a11y-5a] §5a). **The `500` also carries `FAILURE_FRAGMENT_HEADER`**, the marker that makes forge's
+client runtime swap a 5xx, so it lands in the request's target like the 4xx fragments ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a). The error page's
+banner (§5b) is marked for the announcer too, so it is spoken when the page loads, but it carries no swap marker.
 
 ### 2b. `renderSuccess` — Success Fragment
 
@@ -97,6 +106,9 @@ Success uses the `fragmentResponse` default status `200` so HTMX swaps the targe
 ### 2c. `renderValidationErrors` — Validation Error Fragment
 
 Renders the flat message list as a `<ul>`. Pass the `error` list from a `ValidationResult` (§1c) directly.
+
+**The banner carries `ANNOUNCE_FAILURE_ATTR` holding its lead, "Please correct the following fields."**, not the list, so a failed submission is
+announced in one sentence rather than message by message. `defineAction`'s `422` is this banner (§5d).
 
 ### 2d. Fragment Options and Escaping
 
@@ -151,14 +163,129 @@ renderer (§2) for `defineAction`, a full page for `definePage` and the boundary
 **Why: a guard has no page context.** It runs before any handler, so it knows neither the shell nor the route's render mode, and it must be equally
 correct in front of an API route and an HTML one. Rendering a document there would be a guess.
 
-**The consequence to design for: an HTMX target will swap the raw text.** A `403 Forbidden` from a guard lands in the swap target as the literal
-word, not as a styled banner. Where that matters, give the guard its own answer — `rateLimit` takes `onLimit` — rather than expecting forge to guess
-a fragment.
+**The consequence to design for: a guard's plain text is not markup for a swap target.** forge's client runtime speaks it on the failure channel
+rather than swapping it ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a), and without that runtime htmx discards it. Where an app wants a fragment or a JSON
+body instead, it answers through the refusal hook (§3e) rather than expecting forge to guess one.
 
 **`auth/web`'s guards are the documented exception, and mostly are not refusals at all.** They route through `refuse()`, which redirects an HTML
-request to the remedy page and answers a JSON one with a JSON body. `requireAdmin` takes `onForbidden` for its 403, as `rateLimit` takes
-`onLimit`, and the admin pages and their actions take the same option on `AuthWebOptions`. The one plain-text answer left is the unknown-demand
-`Service Unavailable` (503), which cannot redirect because every remedy page asks the same unavailable store and the redirect would loop.
+request to the remedy page and answers a JSON one with a JSON body. `requireAdmin`'s 403 is a refusal like any other guard's and answers through
+the same hook (§3e). The one plain-text answer left is the unknown-demand `Service Unavailable` (503), which cannot redirect because every remedy
+page asks the same unavailable store and the redirect would loop.
+
+### 3e. One Refusal Contract for Every Guard
+
+**Every guard the chain places refuses through one hook, `onRefuse(c, refusal)`, declared once on the chain and overridable per guard group.
+forge's own answers stay plain text (§3d), every refusal is logged as `security.<guard>.refused`, and the statuses are fixed.**
+
+**A refusal is a value narrowed by `guard`.** The hook receives the app context and a `Refusal`:
+
+| `guard` | `status` | What else it carries | forge's default body |
+| --- | --- | --- | --- |
+| `csrf` | `403` | `reason`: the token failure, or `unbound-subject` | `Forbidden` |
+| `csrf` | `413` | `reason: "too-large"` | `Payload Too Large` |
+| `csrf` | `400` | `reason: "unreadable-body"` | `Bad Request` |
+| `origin` | `403` | `reason`: the `OriginRefusal` | `Forbidden` |
+| `rate-limit` | `429` | `retryAfter`, in seconds | `Too many requests. Please try again later.` |
+| `rate-limit` | `503` | `reason`: `binding-absent`, `key-failed` or `binding-failed` | `Service Unavailable` |
+| `admin` | `403` | nothing more | `Forbidden` |
+
+**The reason is for the hook and the log, never the client.** No default writes it into a body or a header, and a hook that echoes it breaks
+[`ERROR_HANDLING.md`][eh-3b] §3b.
+
+**Where the hook is declared.** `applyMiddlewareChain` takes `onRefuse` once, and a guard group may take its own, which answers for the stages that
+group expands: its origin check, its rate limit and its CSRF verify. A CSRF refusal at a group's verify stage is answered by the last-registered
+group that matches the request outside its `exclude`, carries a verify stage and declares a hook, whichever group's stage ran the check; with
+none, and at the router's final verify stage, the chain's answers. The chain publishes its hook on the request context, so a `rateLimit` or
+`originProtection` mounted on a route with no hook of its own answers through the chain's, and so does `requireAdmin` given none. Where no hook is
+declared anywhere, the guard answers with the default body above.
+
+**A hook may decline a refusal by returning `undefined`.** The refusal then falls through to the next hook out: a stage's own, then its
+group's, which on an `auth/web` HTML group is the `onRefuse` passed to `createAuthGuards`, then the chain's, and past the last to the default
+body above.
+`Retry-After` is set whichever of them answers. A hook that renders only the guards it owns declines the rest:
+
+```ts
+import { applyMiddlewareChain } from "@y-core/forge/app";
+import { htmlResponse } from "@y-core/forge/http";
+
+applyMiddlewareChain(app, {
+  // ...
+  onRefuse: (_c, refusal) =>
+    refusal.guard === "csrf" || refusal.guard === "origin" ? htmlResponse(refusedPage(refusal.status), refusal.status) : undefined,
+});
+```
+
+**A path whose CSRF refusal must be answered its own way needs a group that verifies it.** Only a group with an origin check, a rate limit or
+`guards[]` carries a verify stage ([`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f), so an override on a group with none never runs, and a path only the
+router's final stage verifies is answered by the chain's hook. Where two such groups cover a path, the later-registered answers, and a
+contribution's groups register after the root's. A staff-only sign-out redirect is a group override on the staff paths, and leaves every other
+path's refusal alone.
+
+**The hook picks the representation, never the outcome.** It has no `next`, so it cannot pass a refused request on; declining passes on the
+answer, never the request. It may answer with the
+refusal's status in another medium, or redirect to a remedy page, as the sign-out confirm does ([`AUTH_MOUNTING.md`][am-1] §1). It may branch on
+`isHxRequest` to choose between a fragment and a page, never to decide whether to refuse.
+
+**forge ships one answer per medium for an app to pass as its hook:**
+
+- **`refuseAsFragment({ target, render })`** answers `text/html` with the panel `render` returns, marked with `ANNOUNCE_FAILURE_ATTR` so the
+  announcer speaks it, and sets `HX-Retarget` to `target` and `HX-Reswap`. The retarget is needed because the request's own target is the form
+  it submitted. Every answer also carries `FAILURE_FRAGMENT_HEADER`, so forge's client runtime swaps the `503` panel as it swaps a 4xx one
+  ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a). An app without that runtime configures htmx to swap these statuses itself. The panel
+  adds no live region of its own ([`10-accessibility.md`][a11y-5a] §5a).
+- **`refuseAsProblem()`** answers RFC 9457 `application/problem+json`: `type` `about:blank`, the status phrase as `title`, the `status`, and no
+  `detail`. It carries no reason, for the reason above.
+
+**`auth/web`'s JSON groups answer in JSON.** The `ceremony` and `passkeyCeremony` groups answer a rate-limit or CSRF refusal with
+`refuseAsProblem`, and the passkey client reads that shape, so a JSON client never receives plain text it cannot parse.
+
+**A `429` carries `Retry-After`, and nothing else about the limit.** Its value is the binding's `period` in seconds, read from wrangler's
+`ratelimits` entry through the generated table ([`SECURITY_HARDENING.md`][sh-4e] §4e). forge sets it on whatever answers the `429`, unless the
+hook's response already carries one. The binding reports no remaining count and no reset time, so the period is an honest upper bound, and the
+`RateLimit` and `RateLimit-Policy` headers are not sent. A `rateLimit` on a request no chain published `rateLimits` for knows no period, so its
+refusal carries no `retryAfter` and its `429` no `Retry-After`, rather than a guessed one.
+
+**Every refusal is logged once, as `security.<guard>.refused`** — `security.csrf.refused`, `security.origin.refused`,
+`security.rate-limit.refused`, `security.admin.refused` — at `warn` for a 4xx and `error` for a 5xx
+([`STRUCTURED_LOGGING.md`][sl-4a] §4a). It records the guard, the status, the reason, the matched route pattern and the request id, and never a
+token, a session id, a client address or a rate-limit key. Identical `429` lines — the same guard, reason and route — collapse within a window,
+per guard instance and so per isolate: the first is written, and the count collapsed into it rides on the next one written. The `503` for an
+absent binding is logged like every other.
+
+**A CSRF body problem is not a token failure.** A body over the policy's `maxBytes` is refused `413` with reason `too-large`, and a body the
+policy cannot parse `400` with reason `unreadable-body`, each through the hook ([`INPUT_VALIDATION.md`][iv-3a] §3a).
+
+**"Rate limit" and "attempt budget" name different things.** A rate limit is the Workers binding `rateLimit` spends. An attempt budget is
+`auth`'s D1 counter on codes and passwords. A spent attempt budget the visitor is told about answers `429` with the same re-rendered page and
+its failure panel, and `Retry-After` where the window is known: the status is set on the response builder and the page stays usable
+([`ERROR_HANDLING.md`][eh-3a] §3a). Where the throttle is folded into "that did not match" to close the membership oracle — the primary sign-in
+path — its status folds with it, because a distinct status is the same oracle ([`AUTH_FLOWS.md`][af-2b] §2b). The known window is the factor's
+`attemptWindowMs` — an emailed code's `guessWindowMs`, an authenticator app's or a recovery code's `lockoutMs` — and a factor that reports none
+answers `429` with no `Retry-After`.
+
+**The statuses are fixed, so a client may branch on them:** `403` for origin and CSRF, `413` and `400` for a CSRF body, `429` for the limit,
+and `503` for an absent binding, a key that failed and a limiter that failed. Each `503` goes through the hook and never becomes a `500`. An
+origin mode for callers that are not browsers is [`SECURITY_HARDENING.md`][sh-3e] §3e's.
+
+These alternatives were rejected:
+
+- **A hook per guard, each with its own signature.** The CSRF hook received the bare request context and no status, the limiter's received no
+  reason, and the `413` bypassed the hook entirely, so a JSON client could not tell a size failure from a token failure and an app wrote its
+  answer once per guard.
+- **One app-wide hook with no group override.** It can answer a staff sign-out with a confirm redirect and a JSON API with problem+json only by
+  testing the path inside the hook — a second copy of the groups' paths, which drifts from them.
+- **The hook of the group whose verify stage ran the check.** The check runs in the first matching group that verifies, often a broad one
+  registered first, such as a root `/api/*` group. A slice's own group on a narrower path then answered its origin, `429` and `503` refusals but
+  never its CSRF refusal. Where the check runs stays first, for the order [`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f holds; only which hook
+  answers moved.
+- **Defaults that render a fragment or problem+json.** A guard has no page context (§3d), and a generic plain-text answer is correct in front of
+  every route. The media are helpers an app chooses.
+- **The `RateLimit` and `RateLimit-Policy` headers.** They are an IETF draft, not an RFC, and need a remaining count the binding cannot give.
+- **Keeping a reported spent attempt budget at `422`.** Where the visitor is told they are throttled, `422` tells them their input was wrong
+  instead. RFC 6585 defines `429` for exactly this case.
+- **Answering `429` on the folded primary sign-in path too.** A `429` there would tell an attacker the address has an account, where an
+  unknown address gets "that did not match". That is the membership oracle [`AUTH_FLOWS.md`][af-2b] §2b closes, so the folded throttle keeps
+  `422`.
 
 ---
 
@@ -207,7 +334,9 @@ The paths carry different header guarantees, and one entry below is not an error
 
 - **The `404` and, under `methodMismatch: "advertise"`, the `405`** are not errors, but they are forge-built responses carrying the baseline headers
   above. Both are built in-chain — the `405` by the innermost middleware, which replaces the one fetch-router would otherwise return unhardened
-  ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e) — so a consumer's queued policy set-overwrites the baseline on each.
+  ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e) — so a consumer's queued policy set-overwrites the baseline on each. A handler that rewrites
+  `context.url`, in place or by assigning a new `URL`, and returns a `405` gets neither: the method-mismatch check refuses the rewrite, and
+  the boundary answers and logs a `500` ([`ROUTING_AND_MIDDLEWARE.md`][ram-3a] §3a).
 
 **Both error pages quote the request id when there is one to quote.** The default page and `createErrorPage` render a short `Reference: <id>` line
 from `requestIdCtx`, escaped — the opaque internal identifier [`ERROR_HANDLING.md`][eh-3b] §3b permits, and what a user can paste into a support
@@ -225,6 +354,10 @@ The boundary logs via `createLogger("app")` and includes the escaped `err.messag
 `#relax/error-page` module discloses it to both the fallback 500 and `createErrorPage` ([`NAMESPACES.md`][namespaces-5i] §5i). There is no option
 and no other switch, so every other build prints the fixed sentence. **The client never receives a stack trace.** Consumers may override the page
 with `onError` on `createApp`, `definePage`, or `defineAction`.
+
+**The boundary records; a `createApp` `onError` override renders.** The boundary writes its `Unhandled error` record, carrying
+`serializeError(err)`, before it calls the override, so the override owns only the `Response` and must not log the error again.
+`onError: createErrorPage(...)` therefore yields exactly one error record.
 
 ### 5c. Infrastructure Errors — Log and Fail Closed
 
@@ -249,13 +382,16 @@ full-page boundary. A `defineAction` HTMX call swaps a fragment into an existing
 the client receives, never in whether the error is recorded.
 
 **One error, one record, written by the layer that terminates it.** A `definePage` with no `onError` logs nothing and re-throws — the boundary is
-the terminating layer and reports it there. A builder that recovers the error itself logs it, because the boundary never will: `definePage` with an
-`onError` at error level, `defineAction` at **warn** when its `onError` recovers and at error when it renders the generic 500. Every one of those
-records carries `serializeError(error)`, so the shape is the same wherever it was written. `requestLogger`'s per-request summary is a separate
-record by design — it carries the `method`, `path` and `duration` the error record does not.
+the terminating layer and reports it there, and it stays the one that reports when a `createApp` `onError` renders the answer: it records
+`Unhandled error` before calling the override, which logs nothing of its own (§5b). A builder that recovers the error itself logs it, because
+the boundary never will: `definePage` with an `onError` at error level, `defineAction` at **warn** when its `onError` recovers and at error
+when it renders the generic 500. Every one of those records carries `serializeError(error)`, so the shape is the same wherever it was
+written. `requestLogger`'s per-request summary is a separate record by design — it carries the `method`, `path` and `duration` the error
+record does not.
 
 **A throwing `onError` is attributed to the hook, not folded into the original.** Every hook — `createApp`'s, `definePage`'s and `defineAction`'s —
-logs its own failure with the original error alongside it, then falls through as if no hook had been supplied.
+logs its own failure with the original error alongside it, then falls through as if no hook had been supplied. For `createApp`'s that is a second
+record beside the boundary's `Unhandled error`, which was written before the hook ran.
 
 **Use these hooks for per-route recovery instead of ad-hoc `try/catch`.**
 
@@ -305,21 +441,32 @@ the same stack frame as the mistake, and a function typed `Promise<Result<…>>`
 **`operation` is the function the consumer called** — `createEmailOtpFactor`, not `auth/passkey`. Helpers wrapping `authLimit` take the label as a
 parameter and never supply their own (`passkeyTtlSeconds(operation, requested)`), because the wrapper's name is not one a consumer has ever typed.
 
+[a11y-5a]: ../src/ui/design/reference/10-accessibility.md#5a-one-live-region-and-why-toast-is-not-one
+[af-2b]: ./AUTH_FLOWS.md#2b-what-the-visitor-is-told
+[am-1]: ./AUTH_MOUNTING.md#1-the-mount-in-order
 [boundaries-5]: ../warden/canon/libs/BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [eh-1b]: ../warden/canon/libs/ERROR_HANDLING.md#1b-narrowing-a-result
+[eh-3a]: ../warden/canon/libs/ERROR_HANDLING.md#3a-fragment-versus-full-page
 [eh-3b]: ../warden/canon/libs/ERROR_HANDLING.md#3b-what-a-client-never-receives
 [eh-5a]: ../warden/canon/libs/ERROR_HANDLING.md#5a-expected-errors--return-result
 [eh-5c]: ../warden/canon/libs/ERROR_HANDLING.md#5c-infrastructure-errors--log-and-fail-closed
 [iv]: ./INPUT_VALIDATION.md
 [iv-1b]: ./INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
+[iv-3a]: ./INPUT_VALIDATION.md#3a-the-csrf-policy--guard-mutating-routes
 [namespaces-5e]: ./NAMESPACES.md#5e-exported-factory-and-type-naming-convention
 [namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-1e]: ./ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
+[ram-3a]: ./ROUTING_AND_MIDDLEWARE.md#3a-global-vs-route-level-middleware
+[ram-3f]: ./ROUTING_AND_MIDDLEWARE.md#3f-one-csrf-policy-per-app-verified-once
 [sb]: ./STORAGE_BINDINGS.md
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
 [sb-4a]: ./STORAGE_BINDINGS.md#4a-two-function-pattern
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
+[sh-3e]: ./SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
+[sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
+[sl-4a]: ./STRUCTURED_LOGGING.md#4a-level-mapping-convention
 [testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucc-1a]: ./UI_CLASS_COMPOSITION.md#1a-conflict-resolution-the-fail-open-boundary-and-the-memo
+[ucr-4a]: ./UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-and-marked-5xx

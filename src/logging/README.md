@@ -25,7 +25,7 @@ optional field bag. The `prefix` labels every record it writes.
 import { consoleChannel, createLogger, kvLogChannel } from "@y-core/forge/logging";
 
 const log = createLogger("billing", {
-  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
+  channels: [consoleChannel(), kvLogChannel(c.env.LOGS_KV)],
   bindings: { region: "weur" }, // merged into every record
 });
 
@@ -58,7 +58,11 @@ Resolve the list from the request context so a missing binding degrades instead 
 That fallback is the canonical form and [`STRUCTURED_LOGGING.md`][sl-2d] §2d owns it:
 
 ```ts
-channels: (c) => (c.env.LOGS_KV ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)] : [consoleChannel()]);
+import { consoleChannel, kvLogChannel, requestLogger } from "@y-core/forge/logging";
+
+requestLogger<AppEnv>({
+  channels: (c) => (c.env.LOGS_KV ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)] : [consoleChannel()]),
+});
 ```
 
 `consoleChannel()` is write-only: one JSON line per record, with `level`, `prefix`, `message` and `timestamp` winning over anything of the same name
@@ -68,11 +72,13 @@ in your `data`, so a caller cannot forge them. `kvLogChannel(kv, options?)` is r
 
 ## Persisting logs to KV
 
-`kvLogChannel(env.LOGS_KV, options?)` persists each record under a time-ordered key, newest first. The key format and what a purge deletes are
+`kvLogChannel(c.env.LOGS_KV, options?)` persists each record under a time-ordered key, newest first. The key format and what a purge deletes are
 [`STRUCTURED_LOGGING.md`][sl-2g] §2g's.
 
 ```ts
-const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 });
+import { kvLogChannel } from "@y-core/forge/logging";
+
+const channel = kvLogChannel(c.env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 });
 ```
 
 The options are two independent decisions.
@@ -104,7 +110,7 @@ Cut the stream at the logger or at a single channel; the two places answer diffe
 ```ts
 import { consoleChannel, kvLogChannel, withMinLevel } from "@y-core/forge/logging";
 
-const channels = [consoleChannel(), withMinLevel(kvLogChannel(env.LOGS_KV), "warn")];
+const channels = [consoleChannel(), withMinLevel(kvLogChannel(c.env.LOGS_KV), "warn")];
 ```
 
 `withMinLevel(channel, min)` names a floor. `withLevels(channel, levels)` names the set outright, which buys two things a floor cannot express — a
@@ -115,10 +121,10 @@ non-contiguous selection, and silence from an empty array. Why "off" is a _value
 import { consoleChannel, kvLogChannel, LOG_LEVELS, parseLogLevels, withLevels } from "@y-core/forge/logging";
 
 // Failures only on the console; the KV history stays complete.
-const channels = [withLevels(consoleChannel(), ["warn", "error"]), kvLogChannel(env.LOGS_KV)];
+const channels = [withLevels(consoleChannel(), ["warn", "error"]), kvLogChannel(c.env.LOGS_KV)];
 
 // LOG_LEVEL="warn,error" → failures only; "none" → silent; unset or unrecognised → the fallback.
-const fromEnv = [withLevels(consoleChannel(), parseLogLevels(env.LOG_LEVEL, LOG_LEVELS))];
+const fromEnv = [withLevels(consoleChannel(), parseLogLevels(c.env.LOG_LEVEL, LOG_LEVELS))];
 ```
 
 `parseLogLevel(value, fallback)` is the single-level form, for a `minLevel` driven by a `LOG_LEVEL` variable. Both parsers are case-insensitive and
@@ -172,13 +178,20 @@ and 422s do not page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4
 `prefix` defaults to `"request"` if you do not set one, and `minLevel` may be a level or a per-request function of the context.
 
 **A 500 persists as two correlated records.** The summary shows `status: 500` and no error detail; the app's error boundary publishes the detail
-separately on the same per-request logger, as an `error` record with the message `unhandled error` carrying the serialized error under `data.error`.
-Nothing deduplicates the pair — `message === "unhandled error"` tells them apart.
+separately on the same per-request logger, as an `error` record with the message `Unhandled error` carrying the serialized error under `data.error`.
+Nothing deduplicates the pair — `message === "Unhandled error"` tells them apart.
 
-**To log requests without the ids in their URLs, mask `path` and read `routePattern`.** `routePattern` is the pattern of the route that answered —
-`"/orders/:id"` where `path` is `/orders/8c1e…` — and `null` when no route matched: a 404, a 405, or a throw before any route ran.
+**Forge's own handler records ride the same logger.** `definePage`, `defineAction`, the Turnstile screen and `rateLimit` look up the request logger
+when they log and tag each record with `data.source`. Without `requestLogger` they write to the console, as before
+([`STRUCTURED_LOGGING.md`][sl-3d] §3d).
+
+**To log requests without the ids in their URLs, mask `path` and read `routePattern`.** `routePattern` is the pattern of the route the request
+matched — `"/orders/:id"` where `path` is `/orders/8c1e…` — even when a guard refused it, and `null` when no route matches the URL and method: a 404
+or a 405.
 
 ```ts
+import { consoleChannel, defineLogRedaction, requestLogger } from "@y-core/forge/logging";
+
 requestLogger<AppEnv>({
   channels: () => [consoleChannel()],
   redact: defineLogRedaction({ also: ["path"] }),
@@ -222,7 +235,7 @@ records: `serializeError` emits `type` and `detail`, so no forge record field co
 The controls that adjust it are both bare key stems:
 
 ```ts
-import { defineLogRedaction } from "@y-core/forge/logging";
+import { createLogger, defineLogRedaction } from "@y-core/forge/logging";
 
 const log = createLogger("billing", {
   // `also` adds a stem; `allow` keeps one the default set would have taken, and wins over both.
@@ -247,7 +260,7 @@ import { consoleChannel, kvLogChannel, withRedaction } from "@y-core/forge/loggi
 // Both channels are already redacted; KV additionally keeps no request path.
 const channels = [
   consoleChannel(),
-  withRedaction(kvLogChannel(env.LOGS_KV), (r) => (r.data ? { ...r, data: { ...r.data, path: undefined } } : r)),
+  withRedaction(kvLogChannel(c.env.LOGS_KV), (r) => (r.data ? { ...r, data: { ...r.data, path: undefined } } : r)),
 ];
 ```
 
@@ -257,11 +270,13 @@ The call-site half is yours, and it is the one no wrapper can fix — a value in
 pass can reach into:
 
 ```ts
-// BAD — the id is now part of the message
-log.error(`process failed for ${userId}: ${err.message}`);
+function reportFailure(err: Error, userId: string, requestId: string) {
+  // BAD — the id is now part of the message
+  log.error(`process failed for ${userId}: ${err.message}`);
 
-// GOOD — static label, variable data in fields
-log.error("contact: process failed", { requestId, error: err.message });
+  // GOOD — static label, variable data in fields
+  log.error("contact: process failed", { requestId, error: err.message });
+}
 ```
 
 ---
@@ -275,10 +290,12 @@ You get one for free. With no hook configured, a failed write prints a single st
 `wrangler tail` with no setup at all. Pass a hook when you want it somewhere else — a counter, a health route, an alerting channel:
 
 ```ts
+import { consoleChannel, createLogger, kvLogChannel, serializeError } from "@y-core/forge/logging";
+
 let droppedWrites = 0;
 
 const log = createLogger("billing", {
-  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
+  channels: [consoleChannel(), kvLogChannel(c.env.LOGS_KV)],
   onChannelError: (error) => {
     droppedWrites++;
     console.error(JSON.stringify({ event: "log_write_failed", error: serializeError(error) }));
@@ -297,13 +314,15 @@ A single call to `loadLogViewer` in a `definePage` loader is the entire mount �
 `view` never runs:
 
 ```ts
+import { createHandlerFactory } from "@y-core/forge/app";
 import { kvLogChannel } from "@y-core/forge/logging";
 import { loadLogViewer } from "@y-core/forge/logging/viewer";
 import { sessionCtx } from "@y-core/forge/session";
 
-import { definePage } from "./handlers"; // createHandlerFactory<AppEnv, AppConfig>()
 import { routes } from "./routes"; // logs: get("/admin/logs")
 import { chevronDownIcon } from "./ui/icons";
+
+const { definePage } = createHandlerFactory<AppEnv, AppConfig>();
 
 export const logsPage = definePage(routes.logs, {
   loader: (c) =>
@@ -416,6 +435,7 @@ in it.
 [sl-2f]: ../../docs/STRUCTURED_LOGGING.md#2f-channel-write-failures-and-flushs-error-contract
 [sl-2g]: ../../docs/STRUCTURED_LOGGING.md#2g-log-ordering--newest-first-by-inverted-key
 [sl-3c]: ../../docs/STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger
+[sl-3d]: ../../docs/STRUCTURED_LOGGING.md#3d-forges-own-records-follow-the-request-logger
 [sl-4a]: ../../docs/STRUCTURED_LOGGING.md#4a-level-mapping-convention
 [sl-4c]: ../../docs/STRUCTURED_LOGGING.md#4c-silencing-and-level-allowlists
 [sl-5a]: ../../docs/STRUCTURED_LOGGING.md#5a-loadlogviewer--auth-gated-response-for-every-path

@@ -482,6 +482,10 @@ describe("resolveModuleFile() — the file a module path names", () => {
       "src/ui/mod.tsx",
       "src/shadow.ts",
       "src/shadow/mod.ts",
+      "src/indexed/index.ts",
+      "src/indexed-ui/index.tsx",
+      "src/barrelled/mod.ts",
+      "src/barrelled/index.ts",
     ];
     for (const file of files) {
       mkdirSync(dirname(join(root, file)), { recursive: true });
@@ -496,6 +500,9 @@ describe("resolveModuleFile() — the file a module path names", () => {
     { label: "a directory's `mod.ts` barrel", modulePath: "src/dir", expected: "src/dir/mod.ts" },
     { label: "a directory's `mod.tsx` barrel", modulePath: "src/ui", expected: "src/ui/mod.tsx" },
     { label: "the file over a same-named directory's barrel", modulePath: "src/shadow", expected: "src/shadow.ts" },
+    { label: "a directory's `index.ts`", modulePath: "src/indexed", expected: "src/indexed/index.ts" },
+    { label: "a directory's `index.tsx`", modulePath: "src/indexed-ui", expected: "src/indexed-ui/index.tsx" },
+    { label: "the `mod.ts` barrel over an `index.ts` beside it", modulePath: "src/barrelled", expected: "src/barrelled/mod.ts" },
     { label: "nothing for a path naming no file", modulePath: "src/missing", expected: null },
   ];
 

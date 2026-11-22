@@ -7,7 +7,16 @@ import { experimental_generateTypes } from "wrangler";
 
 import { validateCommentBudget } from "../../gate/checks/comment-budget-parse";
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
-import { collectBindings, collectNamedEnvVars, collectPolicyVars, collectSecretNames, collectVars, declaresSecrets, emit } from "./cf-env-gen";
+import {
+  collectBindings,
+  collectNamedEnvVars,
+  collectPolicyVars,
+  collectRateLimits,
+  collectSecretNames,
+  collectVars,
+  declaresSecrets,
+  emit,
+} from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 import type { Entry, GenOptions } from "./types";
 
@@ -321,6 +330,108 @@ describe("collectPolicyVars", () => {
   });
 });
 
+describe("collectRateLimits", () => {
+  const TWO = {
+    ratelimits: [
+      { name: "LOGIN_LIMITER", namespace_id: "1001", simple: { limit: 5, period: 60 } },
+      { name: "API_LIMITER", namespace_id: "1002", simple: { limit: 100, period: 10 } },
+    ],
+  };
+
+  it("reads each entry's name and simple window", () => {
+    expect(collectRateLimits(TWO)).toEqual({ LOGIN_LIMITER: { limit: 5, period: 60 }, API_LIMITER: { limit: 100, period: 10 } });
+  });
+
+  const empty: { name: string; cfg: Record<string, unknown> }[] = [
+    { name: "a config with no ratelimits", cfg: {} },
+    { name: "an empty ratelimits list", cfg: { ratelimits: [] } },
+    {
+      name: "a binding declared only inside a named env",
+      cfg: { env: { staging: { ratelimits: [{ name: "STAGING_ONLY", simple: { limit: 1, period: 10 } }] } } },
+    },
+  ];
+  for (const { name, cfg } of empty) {
+    it(`returns an empty table for ${name}`, () => {
+      expect(collectRateLimits(cfg)).toEqual({});
+    });
+  }
+
+  it("fails a missing simple.period, naming the binding", () => {
+    expect(() => collectRateLimits({ ratelimits: [{ name: "LOGIN_LIMITER", simple: { limit: 5 } }] })).toThrow(
+      'ratelimits "LOGIN_LIMITER": simple.period must be 10 or 60, got undefined',
+    );
+  });
+
+  it("fails an entry with no simple block at all, naming the binding", () => {
+    expect(() => collectRateLimits({ ratelimits: [{ name: "LOGIN_LIMITER", namespace_id: "1001" }] })).toThrow(
+      'ratelimits "LOGIN_LIMITER": simple.period must be 10 or 60',
+    );
+  });
+
+  const badPeriods: { period: unknown; shown: string }[] = [
+    { period: 30, shown: "30" },
+    { period: 0, shown: "0" },
+    { period: "60", shown: '"60"' },
+  ];
+  for (const { period, shown } of badPeriods) {
+    it(`fails a simple.period of ${shown}, naming the binding and the value`, () => {
+      expect(() => collectRateLimits({ ratelimits: [{ name: "API_LIMITER", simple: { limit: 100, period } }] })).toThrow(
+        new Error(`ratelimits "API_LIMITER": simple.period must be 10 or 60, got ${shown}`),
+      );
+    });
+  }
+
+  const badLimits: { limit: unknown; shown: string }[] = [
+    { limit: undefined, shown: "undefined" },
+    { limit: 0, shown: "0" },
+    { limit: -1, shown: "-1" },
+    { limit: 1.5, shown: "1.5" },
+    { limit: "100", shown: '"100"' },
+  ];
+  for (const { limit, shown } of badLimits) {
+    it(`fails a simple.limit of ${shown}, naming the binding`, () => {
+      expect(() => collectRateLimits({ ratelimits: [{ name: "API_LIMITER", simple: { limit, period: 60 } }] })).toThrow(
+        `ratelimits "API_LIMITER": simple.limit must be a positive integer`,
+      );
+    });
+  }
+
+  it("accepts a limit of 1, the smallest positive integer", () => {
+    expect(collectRateLimits({ ratelimits: [{ name: "API_LIMITER", simple: { limit: 1, period: 60 } }] })).toEqual({
+      API_LIMITER: { limit: 1, period: 60 },
+    });
+  });
+
+  it("fails a named env that changes a binding's period, naming the binding and the environment", () => {
+    const simple = { limit: 5, period: 10 };
+    const cfg = { ...TWO, env: { staging: { ratelimits: [{ name: "LOGIN_LIMITER", namespace_id: "1001", simple }] } } };
+    expect(() => collectRateLimits(cfg)).toThrow('ratelimits "LOGIN_LIMITER": env.staging declares');
+  });
+
+  it("generates a named env that sets its own limit, keeping each binding's top-level limit", () => {
+    const cfg = { ...TWO, env: { dev: { ratelimits: [{ name: "LOGIN_LIMITER", namespace_id: "1001", simple: { limit: 500, period: 60 } }] } } };
+    expect(collectRateLimits(cfg)).toEqual({ LOGIN_LIMITER: { limit: 5, period: 60 }, API_LIMITER: { limit: 100, period: 10 } });
+  });
+
+  it("fails an env.dev that changes a binding's period, with the whole message naming the binding, the env and both periods", () => {
+    const cfg = { ...TWO, env: { dev: { ratelimits: [{ name: "LOGIN_LIMITER", namespace_id: "1001", simple: { limit: 500, period: 10 } }] } } };
+    expect(() => collectRateLimits(cfg)).toThrow(
+      new Error('ratelimits "LOGIN_LIMITER": env.dev declares period 10, the top level 60 — a binding has one period across environments'),
+    );
+  });
+
+  it("names the environment that drifts, not the first one declared", () => {
+    const same = { ratelimits: [{ name: "LOGIN_LIMITER", simple: { limit: 5, period: 60 } }] };
+    const cfg = { ...TWO, env: { staging: same, production: { ratelimits: [{ name: "LOGIN_LIMITER", simple: { limit: 5, period: 10 } }] } } };
+    expect(() => collectRateLimits(cfg)).toThrow('ratelimits "LOGIN_LIMITER": env.production declares');
+  });
+
+  it("passes a named env that restates every binding's window unchanged", () => {
+    const cfg = { ...TWO, env: { staging: { ratelimits: TWO.ratelimits }, production: { ratelimits: [TWO.ratelimits[1]] } } };
+    expect(collectRateLimits(cfg)).toEqual({ LOGIN_LIMITER: { limit: 5, period: 60 }, API_LIMITER: { limit: 100, period: 10 } });
+  });
+});
+
 describe("emit", () => {
   const COMMAND = "forge cf gen env --out src/app/env-schema.ts";
 
@@ -376,6 +487,49 @@ declare module "@y-core/forge/config" {
 
   it("quotes a key that is not a valid identifier, so the generated module still parses", () => {
     expect(emit([{ name: "WEIRD-KEY", expr: "v.string()" }], COMMAND)).toContain(`  "WEIRD-KEY": v.string(),`);
+  });
+
+  const WINDOWS = { LOGIN_LIMITER: { limit: 5, period: 60 }, API_LIMITER: { limit: 100, period: 10 } } as const;
+
+  it("renders RATELIMITS between EnvSchema and the DeclaredEnv augmentation, one row per binding", () => {
+    expect(emit([{ name: "BASE_URL", expr: "v.string()" }], COMMAND, WINDOWS))
+      .toBe(`/** GENERATED — do not edit; run \`forge cf gen env --out src/app/env-schema.ts\`. */
+
+import { v } from "@y-core/forge/validation";
+
+/** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
+export type Env = v.InferOutput<typeof EnvSchema>;
+
+/** The Worker's binding/var surface as a runtime valibot schema. */
+export const EnvSchema = v.object({
+  BASE_URL: v.string(),
+});
+
+/** Each rate-limit binding's top-level window from \`wrangler.jsonc\`'s \`ratelimits\`; an environment may set its own \`limit\`, never its \`period\`. */
+export const RATELIMITS = {
+  LOGIN_LIMITER: { limit: 5, period: 60 },
+  API_LIMITER: { limit: 100, period: 10 },
+} as const;
+
+declare module "@y-core/forge/config" {
+  interface DeclaredEnv extends Env {}
+}
+`);
+  });
+
+  it("renders no RATELIMITS for an empty table, byte-identical to a module given none", () => {
+    const entries: Entry[] = [{ name: "BASE_URL", expr: "v.string()" }];
+    expect(emit(entries, COMMAND, {})).toBe(emit(entries, COMMAND));
+    expect(emit(entries, COMMAND)).not.toContain("RATELIMITS");
+  });
+
+  it("writes a module with a rate-limit table the comment budget passes", () => {
+    const source = emit([{ name: "BASE_URL", expr: "v.string()" }], COMMAND, WINDOWS);
+    expect(validateCommentBudget("src/app/env.schema.ts", source)).toEqual([]);
+  });
+
+  it("quotes a rate-limit name that is not a valid identifier", () => {
+    expect(emit([], COMMAND, { "LOGIN-LIMITER": { limit: 5, period: 60 } })).toContain(`  "LOGIN-LIMITER": { limit: 5, period: 60 },`);
   });
 });
 

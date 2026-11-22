@@ -1,3 +1,4 @@
+import { KV_MIN_TTL_SECONDS } from "../session/kv-storage";
 import type { AuthAlgorithm, AuthFactorKind } from "./types";
 
 /** The factor kinds that identify the visitor, and so the only ones that may be offered as primary. @public */
@@ -12,7 +13,7 @@ export const AUTH_SECOND_FACTORS = ["totp-app", "passkey"] as const satisfies re
 export const AUTH_SUPPORTED_ALGORITHMS: readonly AuthAlgorithm[] = [-7, -257];
 
 /** Shortest expiration Workers KV accepts — session storage's floor, and the one a ceremony borrows. @public */
-export const AUTH_KV_MIN_TTL_SECONDS = 60;
+export const AUTH_KV_MIN_TTL_SECONDS = KV_MIN_TTL_SECONDS;
 
 /** Digits in an emailed one-time code. @public */
 export const AUTH_OTP_DIGITS = 6;

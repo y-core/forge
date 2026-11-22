@@ -1,5 +1,6 @@
 import { Box, pdfContainer } from "./components";
 import { roundedBoxCommands, transformCommands } from "./path";
+import { toPdfElements } from "./tree";
 import type { ImageProps, Ink, PanelProps, PathProps, PdfCursor, PdfElement, PdfPathCommand, PdfPathPaint, PdfShading } from "./types";
 
 function isShading(fill: Ink | PdfShading): fill is PdfShading {
@@ -91,11 +92,12 @@ export function Image(props: ImageProps): PdfElement {
 
 /** Draws a rounded panel behind its children, which it keeps whole rather than breaking. @public */
 export function Panel(props: PanelProps): PdfElement {
+  const children = toPdfElements(props.children);
   const padding = props.padding ?? 0;
-  const inner = Box({ children: props.children, gap: props.gap ?? 0, padding });
+  const inner = Box({ children, gap: props.gap ?? 0, padding });
   const radius = props.radius ?? 0;
   return {
-    ...pdfContainer(props.children),
+    ...pdfContainer(children),
     measure: (width, set) => inner.measure(width, set),
     fragments(box, set) {
       const height = inner.measure(box.width, set).height;

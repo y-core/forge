@@ -50,7 +50,7 @@ also blocks a merge regardless of severity argument.
 | Invariant | Owner |
 | --- | --- |
 | `valibot` is never imported outside the `validation` facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
-| A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`][iv-3a] §3a |
+| A state-changing route is covered by the app's CSRF policy | [`INPUT_VALIDATION.md`][iv-3a] §3a |
 | No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
 
 ---
@@ -126,13 +126,13 @@ excludes the one legitimate class — a published-surface assertion importing a 
 rg -n '\bBun\.|from "node:' src/ \
   --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/snapshot.ts' \
   --glob '!src/testing/harness.ts' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
-  --glob '!**/*.fixture.ts' --glob '!src/testing/d1.ts' --glob '!**/*.mjs'
+  --glob '!**/*.fixture.ts' --glob '!src/testing/d1/*.ts' --glob '!**/*.mjs'
 ```
 
 _Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
 is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/snapshot.ts` reads a fixture off the disk,
-`src/testing/harness.ts` starts workerd under node and `src/testing/d1.ts` stands up a local D1 under node, and each is reached only through a
-subpath of its own and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them
+`src/testing/harness.ts` starts workerd under node and `src/testing/d1/*.ts` stand up a local D1 under node or Bun, and each is reached only
+through a subpath of its own and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them
 ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the files, not the namespace around them. Tests and `.browser.ts` specs run under Bun or
 Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker does. The `!**/*.mjs` glob drops the
 generated node bundles: each is subpath-only like the module it is built from, and a `validate-*-bundle` gate step byte-checks it against that
@@ -155,7 +155,7 @@ _Triage:_ a hit is only a defect if the handle it returns is not cleared in the 
 **Substring assertion on rendered HTML**
 
 ```bash
-rg -n 'toContain\(|toMatch\(' src/ --glob '*.test.ts*'
+rg -n 'toContain\(|toMatch\(|\.includes\(' src/ --glob '*.test.ts*'
 ```
 
 _Triage:_ legitimate on non-HTML strings — an error message, a log line, a SQL fragment. **A hit asserting on rendered markup is a defect**
@@ -197,8 +197,10 @@ forge's signature?_ ([`FORGE_STRUCTURE.md`][la-4a] §4a.)
 **Namespace classification.** Read the new imports in the changed namespace. _Does this introduce a cross-namespace edge that the classification
 does not declare?_ ([`NAMESPACES.md`][namespaces-4b] §4b.)
 
-**Guard placement.** Read the controller, not the handler. _Is the guard in the action's `middleware` array, or inline inside the handler?_ Inline
-guards are invisible to a reader auditing the route map ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b] §1b).
+**Guard placement.** Read the chain declaration and the controller, not the handler. _Is every origin check and address-keyed rate limit in a chain
+guard group covering the route, every identity or param check in the action's `middleware` array, and none inline inside the handler?_ An origin
+check or address-keyed limit on the route runs after the final CSRF verify; a route guarded by neither is the finding, an empty `middleware` array
+under a covering group is not ([`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f).
 
 **Async lifetime.** Read every function whose returned promise reaches `executionCtx.waitUntil()` or `Logger.flush()`. _Does the returned promise
 cover every piece of work the function started, or only the headline one?_ A `void work().catch(…)` branch is untracked, so the isolate may suspend
@@ -256,7 +258,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
-| `node:fs` / `node:path` in `src/testing/snapshot.ts`, `src/testing/harness.ts` or `src/testing/d1.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk, a harness starts workerd and a local D1 runs under node, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
+| `node:fs` / `node:path` in `src/testing/snapshot.ts`, `src/testing/harness.ts` or `src/testing/d1/*.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk, a harness starts workerd and a local D1 runs under node, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `announcers` in `src/ui/client/announce.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |
@@ -372,7 +374,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [htmx-7b]: ./HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
-[iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[iv-3a]: ./INPUT_VALIDATION.md#3a-the-csrf-policy--guard-mutating-routes
 [la-10]: ./FORGE_STRUCTURE.md#10-stylesheets-take-the-source-comment-forms
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-4a]: ./FORGE_STRUCTURE.md#4a-re-export-rules-for-facade-namespaces
@@ -382,7 +384,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [namespaces-5b]: ./NAMESPACES.md#5b-uicore--ssr-components-only
 [nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
-[ram-1b]: ./ROUTING_AND_MIDDLEWARE.md#1b-controller--mapping-route-names-to-actions
+[ram-3f]: ./ROUTING_AND_MIDDLEWARE.md#3f-one-csrf-policy-per-app-verified-once
 [ram-4a]: ./ROUTING_AND_MIDDLEWARE.md#4a-contextvar-typed-accessor
 [sa-2]: ./STATE_ATTRIBUTES.md#2-presentational-attributes-are-declared-too
 [testing]: ../warden/canon/libs/TESTING.md

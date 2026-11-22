@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { fail } from "../../../src/tooling/gate/finding";
 import { lintKeyOf } from "../../../src/tooling/lint/design-rules";
 import plugin from "../../../src/tooling/lint/plugin";
-import { checkDesign } from "./design";
+import { checkDesign, checkDocFences } from "./design";
 
 const roots: string[] = [];
 afterAll(() => {
@@ -286,5 +286,124 @@ describe("checkDesign() — tsx fences compile against the exports", () => {
     const source = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='neutral'>x</Badge>;");
 
     expect(fenceFindings({ "design/clean.md": source })).toEqual([]);
+  });
+
+  it("fails a corpus fence importing a module of the app's own, which the corpus never passes as context", () => {
+    const source = fence("tsx", 'import { AppIcon } from "./icons";', "<AppIcon />;");
+
+    expect(fenceFindings({ "design/local.md": source }).map(({ line }) => line)).toEqual([2]);
+  });
+
+  it("compiles a corpus fence flagged `nocheck`, because the corpus has no opt-out marker", () => {
+    const source = fence("tsx nocheck", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='default'>New</Badge>;");
+
+    expect(fenceFindings({ "design/marked.md": source }).map(({ line }) => line)).toEqual([3]);
+  });
+});
+
+describe("checkDocFences() — README `ts` fences compile against the exports", () => {
+  const forgeFile = (path: string): string => fileURLToPath(new URL(`../../../src/${path}`, import.meta.url));
+  const consumerTsconfig = fileURLToPath(new URL("../../../tests/fixtures/workers-consumer/tsconfig.json", import.meta.url));
+  const fence = (info: string, ...body: string[]): string => ["```" + info, ...body, "```"].join("\n");
+
+  const readme = [
+    "# App",
+    "",
+    fence(
+      "ts",
+      'import { applyMiddlewareChain } from "@y-core/forge/app";',
+      "",
+      "applyMiddlewareChain(app, { securityHeaders: {}, csrf: { ring, subject } });",
+    ),
+    "",
+    fence("ts nocheck", "const count: number = 'one';"),
+    "",
+    fence(
+      "ts",
+      'import { applyMiddlewareChain } from "@y-core/forge/app";',
+      "",
+      'applyMiddlewareChain(app, { securityHeaders: {}, csrf: [{ paths: ["*"], ring }] });',
+    ),
+    "",
+    fence("ts", 'import { csrfProtection } from "@y-core/forge/form";'),
+    "",
+    fence("tsx", "<NotCompiled />;"),
+    "",
+    fence("ts", 'import { banner } from "./relax.strict";', 'await Bun.write("banner.txt", banner);'),
+    "",
+    fence("ts", 'import { nothing } from "@y-core/forge/nope";'),
+  ].join("\n");
+
+  const dir = root(oxlintConfig(","));
+  writeFileSync(join(dir, "README.md"), readme, "utf-8");
+  const result = checkDocFences({
+    root: dir,
+    packageName: "@y-core/forge",
+    exports: { "./app": forgeFile("app/mod.ts"), "./form": forgeFile("form/mod.ts") },
+    fencedDocs: ["README.md"],
+    tsconfig: consumerTsconfig,
+  });
+  const failures = result.findings.map(({ file, line, message }) => ({ file, line, message }));
+
+  it("passes a fence written against the one-object `csrf` policy", () => {
+    expect(failures.filter(({ line }) => line !== undefined && line < 8)).toEqual([]);
+  });
+
+  it("skips a fence flagged `nocheck` and counts it", () => {
+    expect(failures.some(({ line }) => line === 10)).toBe(false);
+    expect(result.summary).toContain("1 marked `nocheck` were skipped");
+  });
+
+  it("fails a fence passing `csrf` an array of policies, at the call", () => {
+    expect(failures.filter(({ line }) => line === 16).map(({ message }) => message)).toEqual([
+      expect.stringMatching(/^`ts` fence does not compile: .*\(TS2\d{3}\)$/),
+    ]);
+  });
+
+  it("fails a fence importing the removed `csrfProtection`", () => {
+    expect(failures.filter(({ line }) => line === 20).map(({ message }) => message)).toEqual([
+      expect.stringMatching(/^`ts` fence does not compile: Module '"@y-core\/forge\/form"' has no exported member 'csrfProtection'\. \(TS2305\)$/),
+    ]);
+  });
+
+  it("leaves a `tsx` fence uncompiled under the default languages", () => {
+    expect(failures.some(({ line }) => line === 24)).toBe(false);
+    expect(result.ok).toBe(false);
+  });
+
+  it("passes an import of the app's own module and a runtime global as app context", () => {
+    expect(failures.filter(({ line }) => line === 28 || line === 29)).toEqual([]);
+  });
+
+  it("still fails an import of a subpath the package does not export", () => {
+    expect(failures.filter(({ line }) => line === 33).map(({ message }) => message)).toEqual([
+      expect.stringMatching(/^`ts` fence does not compile: Cannot find module '@y-core\/forge\/nope'/),
+    ]);
+  });
+
+  it("imports an untyped subpath as `any`, so a fence of a node-only subpath compiles, and still fails one the package does not export", () => {
+    const nodeDir = root(oxlintConfig(","));
+    const nodeReadme = [
+      fence("ts", 'import { openTestD1 } from "@y-core/forge/testing/d1";', "", "const db = await openTestD1({ migrations: [] });"),
+      "",
+      fence("ts", 'import { openTestD1 } from "@y-core/forge/testing/nope";'),
+    ].join("\n");
+    writeFileSync(join(nodeDir, "README.md"), nodeReadme, "utf-8");
+    const nodeResult = checkDocFences({
+      root: nodeDir,
+      packageName: "@y-core/forge",
+      exports: { "./testing/d1": forgeFile("testing/d1/mod.ts") },
+      fencedDocs: ["README.md"],
+      tsconfig: consumerTsconfig,
+      untypedSubpaths: ["./testing/d1"],
+    });
+
+    expect(nodeResult.findings.map(({ line, message }) => ({ line, message }))).toEqual([
+      { line: 8, message: expect.stringMatching(/^`ts` fence does not compile: Cannot find module '@y-core\/forge\/testing\/nope'/) },
+    ]);
+  });
+
+  it("reports scanning nothing when `fencedDocs` names no markdown", () => {
+    expect(checkDocFences({ root: dir, packageName: "@y-core/forge", exports: {}, fencedDocs: [] }).ok).toBe(false);
   });
 });

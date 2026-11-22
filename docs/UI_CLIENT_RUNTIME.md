@@ -36,7 +36,7 @@ audience: consumer
 - §3b Lazy Loading: the deferred import, and the failure that must not be silent
 - §3c Resumable Scopes: `registerScope` and `resume`, how a swapped-out scope is disposed, and the inert-click guard
 - §4 htmx Bundle Import: the side-effect entry point, the `forge-htmx` extension, and why htmx's indicator sheet is removed
-- §4a Which Responses Swap: HTML 4xx Yes, 5xx No: why a rendered refusal lands in its target, and any other failure does not
+- §4a Which Responses Swap: HTML 4xx and Marked 5xx: why a rendered refusal or a marked fragment lands in its target, and nothing else does
 - §4b Why the Entry Listens on `document`: htmx dispatches on `document` for an element a swap removed
 - §5 Never Use ui/client in an SSR Context: pointer to the governance rule that owns it
 
@@ -500,19 +500,26 @@ rules replace it, and also hide an indicator on a page whose script never ran.
 **The module is listed in `package.json` `sideEffects`, which is what stops a bundler tree-shaking it away.** That file owns the list — never
 restate which modules are side-effectful. **Never import htmx from a CDN URL**: this entry point is what pins the version to the forge package.
 
-### 4a. Which Responses Swap: HTML 4xx Yes, 5xx No
+### 4a. Which Responses Swap: HTML 4xx and Marked 5xx
 
-**A 4xx `text/html` response swaps into its target, and no other failure does.** A 5xx never swaps, and a 4xx of any other type swaps nothing and
-has its text spoken on the `failure` channel (§2m).
+**A 4xx `text/html` response swaps into its target, and so does a 5xx carrying `FAILURE_FRAGMENT_HEADER`; no other failure does.** An unmarked
+5xx never swaps, even when it sends `HX-Reswap`, and a 4xx of any other type swaps nothing and has its text spoken on the `failure` channel (§2m).
 
 **An HTML 4xx swaps because forge answers a refused submission with a fragment written for the target**: `defineAction`'s 422 of validation errors,
 and the `auth` actions' form re-rendered at 422 with a `FieldError`. Suppressing it would leave the reader no word of what was wrong.
 
-**Any other failure does not swap because it is not markup written for the target.** forge's CSRF and cross-origin refusals, its 404 and its 429
-answer in plain text, and its 5xx bodies are a full error page or plain text; swapped in, either would replace the form or card it answers.
+**A marked 5xx swaps because forge wrote it for the target too.** `FAILURE_FRAGMENT_HEADER` (`Forge-Failure-Fragment`, from `ui/contracts`) is set
+by `refuseAsFragment` at every status and by `defineAction`'s generic 500 fragment ([`FORGE_ERRORS.md`][fe-3e] §3e, §2a). The fragment lands in
+`HX-Retarget` with `HX-Reswap` when the response sends them, and in the request's own target and swap otherwise. Its panel carries
+`ANNOUNCE_FAILURE_ATTR`, so it is spoken once, on the `failure` channel, as it is swapped in; the plain-text rule never speaks an HTML response. The
+marker is read on an HTML answer only: a marked `text/plain` 5xx is spoken on the `failure` channel and swaps nothing, as a 4xx of that type does.
 
-**An element's `hx-status:` attribute overrides the content-type rule**, because htmx reads it after `htmx:after:request`: `hx-status:403` swaps a
-403 whatever its type. A handler that answers a swap request with an HTML 4xx owns the body it sends.
+**Any other failure does not swap because it is not markup written for the target.** forge's CSRF and cross-origin refusals, its 404 and its 429
+answer in plain text, and its unmarked 5xx bodies, such as the error page and a guard's default `503`, are a full error page or plain text;
+swapped in, either would replace the form or card it answers.
+
+**An element's `hx-status:` attribute overrides both rules**, because htmx reads it after `htmx:after:request`: `hx-status:403` swaps a 403
+whatever its type, and `hx-status:5xx` swaps an unmarked 5xx. A handler that answers a swap request with an HTML 4xx owns the body it sends.
 
 ### 4b. Why the Entry Listens on `document`
 
@@ -533,6 +540,7 @@ is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
 [boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1a]: ../warden/canon/libs/BOUNDARIES.md#1a-what-may-be-imported-where
 [boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
+[fe-3e]: ./FORGE_ERRORS.md#3e-one-refusal-contract-for-every-guard
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [interaction]: ../src/ui/design/reference/09-interaction.md
 [iv-4a]: ./INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha

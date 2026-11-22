@@ -5,44 +5,25 @@ import { Forge } from "../app/forge-app";
 import { metaTags } from "../app/meta";
 import { applyMiddlewareChain } from "../app/middleware-chain";
 import type { PageShell } from "../app/types";
-import { contextVar } from "../context/accessor";
-import type { AppContext } from "../context/types";
 import { importKeyRing } from "../crypto/keyring/ring";
 import type { KeyRingResolver } from "../crypto/keyring/types";
-import { csrfProtection } from "../form/csrf";
+import type { JSXNode } from "../render/jsx/types";
 import { ok } from "../result/result";
 import { createAnonymousSession } from "../session/anonymous";
-import { sessionCtx } from "../session/session";
 import { createD1Client } from "../storage/db/client";
 import type { D1DatabaseLike } from "../storage/db/types";
 import type { KVNamespace } from "../storage/kv/types";
+import type { NavState } from "../ui/chrome/types";
 import { Announcer } from "../ui/core/announcer";
-import { createEmailOtpFactor } from "./factors/email-otp";
-import { createPasskeyFactor } from "./factors/passkey";
-import { createRecoveryCodeFactor } from "./factors/recovery-code";
-import { createFactorRegistry } from "./factors/registry";
-import { createTotpAppFactor } from "./factors/totp-app";
-import { createEmailChangeFlow } from "./flows/email-change";
-import { createSecurityNotices } from "./flows/security-notices";
-import { createSigninFlow } from "./flows/signin";
-import { createSignupFlow } from "./flows/signup";
 import { importAuthKeyRing } from "./keys/ring";
-import { createAdminUserStore } from "./stores/admin-users";
-import { createChallengeStore } from "./stores/challenges";
-import { createCredentialStore } from "./stores/credentials";
-import { createFactorStore } from "./stores/factors";
-import { createNonceStore } from "./stores/nonces";
-import { createOtpStateStore } from "./stores/otp-state";
-import { createRecoveryCodeStore } from "./stores/recovery-codes";
-import { createAuthSessionStore } from "./stores/sessions";
-import { createUserStore } from "./stores/users";
-import type { AuthNotifier, UserStore } from "./types";
+import type { AuthNotifier } from "./types";
 import { createAuthGuards, resolveAuth } from "./web/guards";
 import { AUTH_NAV_SIGNOUT_SLOT, authNav } from "./web/nav";
 import { authEnrolmentPaths, authPaths } from "./web/paths";
 import { registerAccount, registerAdmin, registerAuth } from "./web/register";
 import { accountRoutes, adminRoutes, authRoutes } from "./web/routes";
-import type { AuthRequestServices, AuthWebOptions } from "./web/types";
+import { authRequestServices } from "./web/services";
+import type { AuthWebOptions } from "./web/types";
 
 // The real mount a deployment writes, every factor live, so `journey.browser.ts` drives what ships;
 // `web/mount.test.ts` is the same composition with the ceremonies stubbed.
@@ -70,9 +51,7 @@ const accountMap = accountRoutes("/account");
 const adminMap = adminRoutes("/admin");
 const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
 
-const servicesCtx = contextVar<Promise<AuthRequestServices>>("journeyAuthServices");
-
-const csrfKey: KeyRingResolver<JourneyEnv> = (context) => importKeyRing([context.env.CSRF_SECRET]);
+const csrfKey: KeyRingResolver<JourneyEnv> = (env) => importKeyRing([env.CSRF_SECRET]);
 
 // wrangler prints a logged object across several lines, so the notice is one line of JSON instead.
 const notifier: AuthNotifier = {
@@ -84,80 +63,32 @@ const notifier: AuthNotifier = {
   },
 };
 
-async function addressOf(users: UserStore, userId: string): Promise<string> {
-  const found = await users.findById(userId);
-  if (!found.ok || found.data === null) throw new Error("journey: no address for the identity a challenge was issued to");
-  return found.data.email;
-}
-
-async function buildServices(c: AppContext<JourneyEnv>): Promise<AuthRequestServices> {
-  const keys = await importAuthKeyRing([c.env.AUTH_KEY_RING]);
-  const db = createD1Client(c.env.DB as never);
-  const users = createUserStore(db);
-  const enrolments = createFactorStore(db);
-  const credentials = createCredentialStore(db);
-  const state = createOtpStateStore(db);
-  const nonces = createNonceStore(db);
-  const challenges = createChallengeStore(db);
-  const address = (userId: string): Promise<string> => addressOf(users, userId);
-
-  const factors = createFactorRegistry(enrolments, {
-    primary: createEmailOtpFactor({ keys, state, nonces, notifier, address: async (userId) => ok(await address(userId)) }),
-    second: {
-      // The starter's shape: the authenticator app mandatory, a passkey optional.
-      offered: [
-        {
-          service: createTotpAppFactor({ keys, factors: enrolments, challenges, issuer: "Forge journey", account: address }),
-          requirement: "mandatory",
-        },
-        {
-          service: createPasskeyFactor({
-            rpId: c.url.hostname,
-            rpName: "Forge journey",
-            // http, not `c.url`'s scheme: the dev server stamps https onto the URL the Worker sees, while
-            // the client data a passkey signs carries the http origin the page was loaded from.
-            origin: `http://${c.url.host}`,
-            sessionId: sessionCtx.get(c).id,
-            users,
-            factors: enrolments,
-            credentials,
-            challenges,
-            subject: async (userId) => {
-              const email = await address(userId);
-              return { name: email, displayName: email };
-            },
-          }),
-          requirement: "optional",
-        },
-      ],
-      recovery: createRecoveryCodeFactor({ factors: enrolments, codes: createRecoveryCodeStore(db) }),
+const resolveServices = authRequestServices<JourneyEnv>({
+  auth: { ring: (env) => importAuthKeyRing([env.AUTH_KEY_RING]) },
+  db: (c) => createD1Client(c.env.DB as never),
+  notifier: () => notifier,
+  defer: (c) => (work) => c.executionCtx.waitUntil(work),
+  confirmUrl: (c, token) => `${c.url.origin}/?token=${token}`,
+  // The starter's shape: the authenticator app mandatory, a passkey optional.
+  secondFactors: {
+    "totp-app": { issuer: "Forge journey", requirement: "mandatory" },
+    passkey: {
+      rpId: (c) => c.url.hostname,
+      rpName: "Forge journey",
+      // http, not `c.url`'s scheme: the dev server stamps https onto the URL the Worker sees, while
+      // the client data a passkey signs carries the http origin the page was loaded from.
+      origin: (c) => `http://${c.url.host}`,
+      requirement: "optional",
     },
-  });
-  const defer = (work: Promise<unknown>): void => c.executionCtx.waitUntil(work);
+  },
+});
 
-  return {
-    users,
-    sessions: createAuthSessionStore(db),
-    credentials,
-    factors,
-    enrolments,
-    signin: createSigninFlow({ keys, users, factors, state, nonces, defer }),
-    signup: createSignupFlow({ users, factors, defer }),
-    emailChange: createEmailChangeFlow({ keys, users, nonces, notifier, defer, confirmUrl: (token) => `${c.url.origin}/?token=${token}` }),
-    notices: createSecurityNotices({ notifier, defer }),
-    admin: createAdminUserStore(db),
-  };
+const nav = authNav({ signoutPath: paths.auth.signout() });
+
+function signoutControl(state: NavState): JSXNode {
+  const slot = state.slots[AUTH_NAV_SIGNOUT_SLOT];
+  return typeof slot === "function" ? slot({ inMenu: false }) : slot;
 }
-
-function resolveServices(c: AppContext<JourneyEnv>): Promise<AuthRequestServices> {
-  const resolved = servicesCtx.getOptional(c);
-  if (resolved !== undefined) return resolved;
-  const building = buildServices(c);
-  servicesCtx.set(c, building);
-  return building;
-}
-
-const nav = authNav({ signoutPath: paths.auth.signout(), ring: csrfKey });
 
 const shell: PageShell<JourneyEnv> = async (c, content, slot) => (
   <html lang='en'>
@@ -168,7 +99,7 @@ const shell: PageShell<JourneyEnv> = async (c, content, slot) => (
     </head>
     <body>
       <Announcer />
-      <nav>{(await nav(c)).slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false })}</nav>
+      <nav>{signoutControl(await nav(c))}</nav>
       <main>{content}</main>
     </body>
   </html>
@@ -198,22 +129,22 @@ export function journeyWorker(ddl: string): { fetch(request: Request, env: Journ
 
   applyMiddlewareChain<JourneyEnv>(app, {
     securityHeaders: { scriptSrc: ["'self'"] },
-    session: createAnonymousSession<JourneyEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
-    globals: [
-      csrfProtection({ ring: csrfKey, subject: (c) => sessionCtx.getOptional(c)?.id }),
-      resolveAuth<JourneyEnv>({ sessions: async (c) => (await resolveServices(c)).sessions }),
+    session: createAnonymousSession<JourneyEnv>({ ring: (env) => importKeyRing([env.SESSION_SECRET]), kv: (env) => env.KV }),
+    csrf: { ring: csrfKey, subject: "session" },
+    globals: [resolveAuth<JourneyEnv>({ services: resolveServices })],
+    contributions: [
+      createAuthGuards<JourneyEnv>({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: { services: resolveServices, signinPath: paths.auth.signin() },
+        enrolment: {
+          factors: async (c) => (await resolveServices(c)).factors,
+          enrolmentPaths: authEnrolmentPaths(paths.auth),
+          stepUpPath: paths.auth.verify.show(),
+          settledPath: paths.account.passkeys(),
+        },
+        origin: { allowedOrigins: (c) => [c.url.origin] },
+      }),
     ],
-    guards: createAuthGuards<JourneyEnv>({
-      routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { sessions: async (c) => (await resolveServices(c)).sessions, signinPath: paths.auth.signin() },
-      enrolment: {
-        factors: async (c) => (await resolveServices(c)).factors,
-        enrolmentPaths: authEnrolmentPaths(paths.auth),
-        stepUpPath: paths.auth.verify.show(),
-        settledPath: paths.account.passkeys(),
-      },
-      origin: { allowedOrigins: (c) => [c.url.origin] },
-    }),
   });
 
   registerAuth(app, authMap, options);

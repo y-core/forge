@@ -4,6 +4,7 @@ import { DEFAULT_PDF_MAX_PAGES } from "./limits";
 import { embeddedWidth, linesOf, preferredWidth, widestOf, wordsOf } from "./measure";
 import { wrapBy } from "./text";
 import { resolveTracks, trackOffsets } from "./tracks";
+import { toPdfElements } from "./tree";
 import type {
   BoxProps,
   DividerProps,
@@ -123,42 +124,43 @@ export function Text(props: TextProps): PdfElement {
 
 /** Stacks its children one under the next, with `gap` between them. @public */
 export function Stack(props: StackProps): PdfElement {
-  return stack(props.children, props.gap ?? 0);
+  return stack(toPdfElements(props.children), props.gap ?? 0);
 }
 
 /** Sets its children side by side across its tracks, each in the room its track resolves to. @public */
 export function Row(props: RowProps): PdfElement {
+  const children = toPdfElements(props.children);
   const gap = props.gap ?? 0;
-  const tracks = props.tracks ?? props.children.map(() => 1);
+  const tracks = props.tracks ?? children.map(() => 1);
   const boxesIn = (box: PdfBox): PdfBox[] => {
     const widths = resolveTracks(tracks, box.width, gap);
     const offsets = trackOffsets(widths, gap);
     return widths.map((width, index) => ({ x: box.x + (offsets[index] ?? 0), width, height: box.height }));
   };
   return {
-    ...pdfContainer(props.children),
+    ...pdfContainer(children),
     measure(width, set) {
       const boxes = boxesIn({ x: 0, width, height: Number.POSITIVE_INFINITY });
-      const measured = props.children.map((child, index) => child.measure(boxes[index]?.width ?? width, set));
+      const measured = children.map((child, index) => child.measure(boxes[index]?.width ?? width, set));
       return {
-        preferred: measured.reduce((total, one) => total + one.preferred, 0) + gap * Math.max(props.children.length - 1, 0),
-        minimum: measured.reduce((total, one) => total + one.minimum, 0) + gap * Math.max(props.children.length - 1, 0),
+        preferred: measured.reduce((total, one) => total + one.preferred, 0) + gap * Math.max(children.length - 1, 0),
+        minimum: measured.reduce((total, one) => total + one.minimum, 0) + gap * Math.max(children.length - 1, 0),
         height: Math.max(...measured.map((one) => one.height), 0),
       };
     },
     fragments(box, set) {
       const boxes = boxesIn(box);
-      const advance = Math.max(...props.children.map((child, index) => child.measure(boxes[index]?.width ?? box.width, set).height), 0);
+      const advance = Math.max(...children.map((child, index) => child.measure(boxes[index]?.width ?? box.width, set).height), 0);
       // A row is one fragment because its cells share a baseline; a row no page could hold has to
       // break somewhere all the same, so it gives its cells back their own fragments.
-      if (advance > box.height) return props.children.flatMap((child, index) => [...child.fragments(boxes[index] ?? box, set)]);
+      if (advance > box.height) return children.flatMap((child, index) => [...child.fragments(boxes[index] ?? box, set)]);
       return [
         {
           reserve: advance,
           advance,
           paint(cursor) {
             const top = cursor.y;
-            props.children.forEach((child, index) => {
+            children.forEach((child, index) => {
               cursor.y = top;
               const cell = boxes[index];
               if (cell === undefined) return;
@@ -174,10 +176,11 @@ export function Row(props: RowProps): PdfElement {
 
 /** Insets its children from the box it was given, and stacks them. @public */
 export function Box(props: BoxProps): PdfElement {
+  const children = toPdfElements(props.children);
   const padding = props.padding ?? 0;
-  const inner = stack(props.children, props.gap ?? 0);
+  const inner = stack(children, props.gap ?? 0);
   return {
-    ...pdfContainer(props.children),
+    ...pdfContainer(children),
     measure(width, set) {
       const measured = inner.measure(width - padding * 2, set);
       return { preferred: measured.preferred + padding * 2, minimum: measured.minimum + padding * 2, height: measured.height + padding * 2 };
@@ -262,9 +265,10 @@ export function PageBreak(): PdfElement {
 
 /** Moves its children to the next page together rather than letting a break fall inside them. @public */
 export function KeepTogether(props: KeepTogetherProps): PdfElement {
-  const inner = stack(props.children, props.gap ?? 0);
+  const children = toPdfElements(props.children);
+  const inner = stack(children, props.gap ?? 0);
   return {
-    ...pdfContainer(props.children),
+    ...pdfContainer(children),
     measure: (width, set) => inner.measure(width, set),
     fragments(box, set) {
       const own = inner.fragments(box, set);

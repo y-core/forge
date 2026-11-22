@@ -93,9 +93,10 @@ for a preview database) — since D1's REST API addresses a deployed database by
 something that is not the database the developer is working in — the generated config carries its own `--persist-to`, so nothing a standby run
 does can reach the live local state. The generated config is not read by the Worker and is safe to delete; `.forge/` as a whole is scratch.
 
-**`forge db standby reset` is the one verb that builds one**: empty the state directory, apply every migration, apply every seed. It refuses every
-place but `standby`, which is why its `--target` defaults there. **The wipe is on the way in, and nothing wipes on the way out**: an exit path can
-be skipped — a killed run, an interrupted gate — so determinism never depends on the previous run having cleaned up.
+**`forge db standby reset` is the one verb that builds one**: empty the state directory, apply every migration, apply every seed (`--no-seed` stops
+after the migrations, `--empty` after the wipe). It refuses every place but `standby`, which is why its `--target` defaults there. **The wipe is on
+the way in, and nothing wipes on the way out**: an exit path can be skipped — a killed run, an interrupted gate — so determinism never depends on
+the previous run having cleaned up. **The app's dump bucket is the one state they share**: standby runs open it, as their config binds none.
 
 ---
 
@@ -189,8 +190,7 @@ edited-after-applied file detectable at all; seed history is deliberately delete
 One row per seed: `source`, the directory that declared it, its name, the SHA-256 of its **raw** file text, and when it ran — keyed by `(source,
 name)` as a unique index over a synthetic `id`. The contract it enforces is §7's.
 
-`forge db seed reset` deletes every row here and nothing else — the rows the seeds wrote stay where they are, and every seed runs again on the next
-apply.
+`forge db seed reset` deletes every row here and nothing else: the rows the seeds wrote stay, and every seed runs again on the next apply.
 
 ---
 

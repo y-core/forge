@@ -1,6 +1,7 @@
 import { escapeHtml } from "../../html/escape";
 import type { SafeHtml } from "../../html/html";
 import { rawHtml } from "../../html/html";
+import { ANNOUNCE_FAILURE_ATTR } from "../../ui/contracts/announcer-contract";
 import type { FragmentOptions } from "./types";
 
 // Duplicates `src/ui/core/alert.tsx`'s variant classes: importing them would add a `render/htmx → ui/core`
@@ -20,16 +21,22 @@ export function renderSuccess(message: string, options?: FragmentOptions): SafeH
   return rawHtml(`<div class="${cls}" ${attr}><p>${escapeHtml(message)}</p></div>`);
 }
 
-/** Renders an HTML error banner with an escaped message and optional custom class. @public */
-export function renderError(message: string, options?: FragmentOptions): SafeHtml {
-  const cls = escapeHtml(options?.class ?? ERROR_CLASSES);
-  return rawHtml(`<div class="${cls}"><p>${escapeHtml(message)}</p></div>`);
+const VALIDATION_LEAD = "Please correct the following fields.";
+
+function failureBanner(cls: string, announced: string, body: string): SafeHtml {
+  return rawHtml(`<div class="${cls}" ${ANNOUNCE_FAILURE_ATTR}="${escapeHtml(announced)}">${body}</div>`);
 }
 
-/** Renders an HTML validation error list with each error HTML-escaped; supports custom container and list classes. @public */
+/** Renders an HTML error banner with an escaped message and optional custom class, marked so the announcer speaks the message. @public */
+export function renderError(message: string, options?: FragmentOptions): SafeHtml {
+  const cls = escapeHtml(options?.class ?? ERROR_CLASSES);
+  return failureBanner(cls, message, `<p>${escapeHtml(message)}</p>`);
+}
+
+/** Renders an HTML validation error list with each error HTML-escaped, marked so the announcer speaks its lead; supports custom container and list classes. @public */
 export function renderValidationErrors(errors: readonly string[], options?: FragmentOptions): SafeHtml {
   const cls = escapeHtml(options?.class ?? ERROR_CLASSES);
   const ulCls = escapeHtml(options?.ulClass ?? "mt-2 list-disc ps-5");
   const items = errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("");
-  return rawHtml(`<div class="${cls}"><p>Please correct the following fields.</p><ul class="${ulCls}">${items}</ul></div>`);
+  return failureBanner(cls, VALIDATION_LEAD, `<p>${VALIDATION_LEAD}</p><ul class="${ulCls}">${items}</ul>`);
 }

@@ -1,13 +1,23 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 
+import type { Middleware } from "@remix-run/fetch-router";
+
+import { contextVar } from "../context/accessor";
+import { importKeyRing } from "../crypto/keyring/ring";
+import type { KeyRing } from "../crypto/keyring/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
+import { createCsrfToken } from "../form/csrf";
+import { requestLog } from "../logging/request-logger";
 import { post } from "../router/mod";
+import type { RateLimit } from "../security/types";
 import { createTestContext } from "../testing/context";
+import { captureLogs } from "../testing/logs";
 import { mapHandler } from "../testing/route";
-import type { TestAction } from "../testing/types";
+import type { CapturedLogs, TestAction } from "../testing/types";
 import { v } from "../validation/validation";
 import { Forge } from "./forge-app";
 import { createHandlerFactory } from "./handler-factory";
+import { applyMiddlewareChain } from "./middleware-chain";
 import { firstDeclaredField, screenTurnstile } from "./pipeline";
 import type { ActionTurnstileOptions } from "./types";
 
@@ -19,8 +29,14 @@ const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
-function makeApp(action: TestAction<"/test">) {
-  const app = new Forge();
+function makeApp(action: TestAction<"/test">, capture?: CapturedLogs) {
+  const app = new Forge(capture?.logger);
+  if (capture) {
+    app.use("*", (context, next) => {
+      requestLog.set(context, capture.logger);
+      return next();
+    });
+  }
   mapHandler(app, "POST", "/test", action);
   return app;
 }
@@ -29,20 +45,16 @@ function submit(app: Requestable, body: string, path = "/test"): Promise<Respons
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
-const ACTION_500_FRAGMENT =
-  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>';
-
-async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
-  const lines: string[] = [];
-  const originalLog = console.log;
-  console.log = (msg: string) => lines.push(msg);
-  try {
-    await run();
-  } finally {
-    console.log = originalLog;
-  }
-  return lines;
+function refusal(...fields: readonly string[]): string {
+  const items = fields.map((field) => `<li>${field}</li>`).join("");
+  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5">${items}</ul></div>`;
 }
+
+const UNPARSEABLE_FRAGMENT =
+  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Unable to process the form data. Please try again."><p>Unable to process the form data. Please try again.</p></div>';
+
+const ACTION_500_FRAGMENT =
+  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>';
 
 let savedFetch: typeof globalThis.fetch | undefined;
 
@@ -150,6 +162,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
   });
 
   it("logs a throwing resolver, because a route defect is the operator's to see", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(ACTION_ROUTE, {
         schema: NameSchema,
@@ -161,36 +174,46 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
         },
         handle: () => new Response("success"),
       }),
+      capture,
     );
 
-    const logs = await captureLogs(() => submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
-    expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
+    await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    expect(capture.records.map(({ message, data }) => ({ message, source: data?.source }))).toContainEqual({
+      message: "Action threw",
+      source: "action",
+    });
   });
 
   it("logs every tripped turnstile guard with its reason, not only an unreachable siteverify", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
+      capture,
     );
 
-    const logs = await captureLogs(() => submit(app, "name=Jane"));
-    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("missing-token"))).toBe(true);
+    await submit(app, "name=Jane");
+    expect(capture.records.find((record) => record.message === "Submission refused by a bot guard")?.data).toMatchObject({
+      reason: "missing-token",
+    });
   });
 
   it("names the guard that refused on the same line", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
+      capture,
     );
 
-    const logs = await captureLogs(() => submit(app, "name=Jane"));
-    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("turnstile"))).toBe(true);
+    await submit(app, "name=Jane");
+    expect(capture.records.find((record) => record.message === "Submission refused by a bot guard")?.data).toMatchObject({ guard: "turnstile" });
   });
 
   it("still reaches handle through resolvers that do not throw", async () => {
@@ -248,16 +271,18 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
   });
 
   it("logs a rejected onValidationError on the same line a throwing one produces", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => Promise.reject(new Error("formatter rejected")),
       }),
+      capture,
     );
 
-    const logs = await captureLogs(() => submit(app, "name="));
-    expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
+    await submit(app, "name=");
+    expect(capture.records.map((record) => record.message)).toContain("Action threw");
   });
 
   it("absorbs a rejected onBotDetected into the same arm", async () => {
@@ -290,12 +315,11 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
   });
 });
 
-/** The Turnstile lines a run logged, each parsed and stripped of its timestamp and prefix. */
-function botGuardLines(lines: readonly string[]): unknown[] {
-  return lines
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
+/** The Turnstile records a run logged, each reduced to its level, message and data. */
+function botGuardRecords(capture: CapturedLogs): unknown[] {
+  return capture.records
     .filter((record) => record.message === "Submission refused by a bot guard")
-    .map(({ timestamp: _timestamp, prefix: _prefix, ...record }) => record);
+    .map(({ level, message, data }) => ({ level, message, ...data }));
 }
 
 function tokenForm(fields: Record<string, string>): FormData {
@@ -306,35 +330,31 @@ function tokenForm(fields: Record<string, string>): FormData {
 
 describe("screenTurnstile", () => {
   it("refuses a form carrying no token as missing-token, logging the guard and the reason at warn", async () => {
-    const c = createTestContext(new Request("http://test/submit", { method: "POST" }));
-    let result: unknown;
+    const capture = captureLogs();
+    const c = createTestContext(new Request("http://test/submit", { method: "POST" }), { logger: capture.logger });
 
-    const logs = await captureLogs(async () => {
-      result = await screenTurnstile(c, tokenForm({ name: "Jane" }), "test-secret", {
-        expectedHostname: "localhost",
-        tokenField: "cf-turnstile-response",
-      });
+    const result = await screenTurnstile(c, tokenForm({ name: "Jane" }), "test-secret", {
+      expectedHostname: "localhost",
+      tokenField: "cf-turnstile-response",
     });
 
-    expect({ result, logged: botGuardLines(logs) }).toEqual({
+    expect({ result, logged: botGuardRecords(capture) }).toEqual({
       result: { ok: false, error: "missing-token" },
-      logged: [{ level: "warn", message: "Submission refused by a bot guard", guard: "turnstile", reason: "missing-token" }],
+      logged: [{ level: "warn", message: "Submission refused by a bot guard", source: "pipeline", guard: "turnstile", reason: "missing-token" }],
     });
   });
 
   it("admits a token siteverify accepts and logs nothing about it", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
-    const c = createTestContext(new Request("http://test/submit", { method: "POST" }));
-    let result: unknown;
+    const capture = captureLogs();
+    const c = createTestContext(new Request("http://test/submit", { method: "POST" }), { logger: capture.logger });
 
-    const logs = await captureLogs(async () => {
-      result = await screenTurnstile(c, tokenForm({ "cf-turnstile-response": "solved" }), "test-secret", {
-        expectedHostname: "localhost",
-        tokenField: "cf-turnstile-response",
-      });
+    const result = await screenTurnstile(c, tokenForm({ "cf-turnstile-response": "solved" }), "test-secret", {
+      expectedHostname: "localhost",
+      tokenField: "cf-turnstile-response",
     });
 
-    expect({ result, logged: botGuardLines(logs) }).toEqual({ result: { ok: true, data: undefined }, logged: [] });
+    expect({ result, logged: botGuardRecords(capture) }).toEqual({ result: { ok: true, data: undefined }, logged: [] });
   });
 
   it("reads the token from the field it is given, not from the default one", async () => {
@@ -504,5 +524,204 @@ describe("createSubmissionPipeline — Turnstile defaults", () => {
     );
 
     expect({ status: res.status, sent }).toEqual({ status: 200, sent: [{ secret: "override-secret", response: "solved" }] });
+  });
+});
+
+describe("createSubmissionPipeline — the rate-limit stage's place in the sequence", () => {
+  const CSRF_HEX_KEY = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
+  const userIdVar = contextVar<string>("pipeline-test.userId");
+  type LimitedEnv = { SUBMISSIONS?: RateLimit };
+
+  let ring: KeyRing;
+  beforeAll(async () => {
+    ring = await importKeyRing([CSRF_HEX_KEY]);
+  });
+
+  function identify(events: string[]): Middleware {
+    return (context, next) => {
+      const user = context.request.headers.get("x-user");
+      events.push(`identify:${user ?? "none"}`);
+      if (user === null) return new Response("Unauthorized", { status: 401 });
+      userIdVar.set(context, user);
+      return next();
+    };
+  }
+
+  function stagedApp(
+    events: string[],
+    rateLimits: Record<string, { limit: number; period: number }> = { SUBMISSIONS: { limit: 5, period: 60 } },
+    onError?: (error: Error) => Response,
+  ) {
+    const app = new Forge<LimitedEnv>();
+    applyMiddlewareChain(app, { securityHeaders: {}, rateLimits, csrf: { ring: () => ring, subject: false } });
+    mapHandler(app, "POST", "/test", {
+      middleware: [identify(events)],
+      handler: defineAction(ACTION_ROUTE, {
+        schema: NameSchema,
+        rateLimit: { binding: "SUBMISSIONS", key: (c) => userIdVar.get(c) },
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
+        handle: (data) => {
+          events.push("handle");
+          return new Response(`saved ${data.name}`);
+        },
+        ...(onError === undefined ? {} : { onError }),
+      }),
+    });
+    return app;
+  }
+
+  function limiterEnv(events: string[], admits: boolean): LimitedEnv {
+    return {
+      SUBMISSIONS: {
+        limit: async ({ key }) => {
+          events.push(`limit:${key}`);
+          return { success: admits };
+        },
+      },
+    };
+  }
+
+  function siteverifyAnswering(events: string[], success: boolean): void {
+    fakeSiteverify(async () => {
+      events.push("siteverify");
+      return new Response(JSON.stringify(success ? { success: true, hostname: "localhost" } : { success: false }));
+    });
+  }
+
+  const SOLVED = `${TURNSTILE_FIELD_DEFAULT}=solved-token`;
+
+  const cases: {
+    name: string;
+    headers: { user?: string; token?: boolean; contentType?: string };
+    body: string;
+    admits?: boolean;
+    humanVerified?: boolean;
+    expected: { status: number; body: string; events: string[] };
+  }[] = [
+    {
+      name: "spends the limit after CSRF and identity, then screens Turnstile, validates, and handles an admitted submission",
+      headers: { user: "alice", token: true },
+      body: `name=Jane&${SOLVED}`,
+      expected: { status: 200, body: "saved Jane", events: ["identify:alice", "limit:alice", "siteverify", "handle"] },
+    },
+    {
+      name: "answers a CSRF-refused submission 403 without reaching identity or spending the limit",
+      headers: { user: "alice" },
+      body: `name=Jane&${SOLVED}`,
+      expected: { status: 403, body: "Forbidden", events: [] },
+    },
+    {
+      name: "answers a submission identity refuses without spending the limit",
+      headers: { token: true },
+      body: `name=Jane&${SOLVED}`,
+      expected: { status: 401, body: "Unauthorized", events: ["identify:none"] },
+    },
+    {
+      name: "answers an over-limit submission 429 without calling siteverify or the handler",
+      headers: { user: "alice", token: true },
+      body: `name=Jane&${SOLVED}`,
+      admits: false,
+      expected: { status: 429, body: "Too many requests. Please try again later.", events: ["identify:alice", "limit:alice"] },
+    },
+    {
+      name: "spends the limit on a submission Turnstile then trips",
+      headers: { user: "alice", token: true },
+      body: `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`,
+      humanVerified: false,
+      expected: { status: 422, body: refusal("name"), events: ["identify:alice", "limit:alice", "siteverify"] },
+    },
+    {
+      name: "spends the limit on a submission the schema then refuses",
+      headers: { user: "alice", token: true },
+      body: `name=&${SOLVED}`,
+      expected: { status: 422, body: refusal("name"), events: ["identify:alice", "limit:alice", "siteverify"] },
+    },
+    {
+      name: "answers an over-limit schema-invalid submission 429 rather than its field errors",
+      headers: { user: "alice", token: true },
+      body: `name=&${SOLVED}`,
+      admits: false,
+      expected: { status: 429, body: "Too many requests. Please try again later.", events: ["identify:alice", "limit:alice"] },
+    },
+    {
+      name: "answers an unparseable body 400 without spending the limit",
+      headers: { user: "alice", token: true, contentType: "application/json" },
+      body: JSON.stringify({ name: "Jane" }),
+      expected: { status: 400, body: UNPARSEABLE_FRAGMENT, events: ["identify:alice"] },
+    },
+  ];
+
+  for (const { name, headers, body, admits = true, humanVerified = true, expected } of cases) {
+    it(name, async () => {
+      const events: string[] = [];
+      siteverifyAnswering(events, humanVerified);
+      const app = stagedApp(events);
+      const init: RequestInit = {
+        method: "POST",
+        headers: {
+          "content-type": headers.contentType ?? "application/x-www-form-urlencoded",
+          ...(headers.user === undefined ? {} : { "x-user": headers.user }),
+          ...(headers.token ? { "x-csrf-token": await createCsrfToken(ring, "/test") } : {}),
+        },
+        body,
+      };
+
+      const res = await app.request("/test", init, limiterEnv(events, admits));
+
+      expect({ status: res.status, body: await res.text(), events }).toEqual(expected);
+    });
+  }
+
+  it("answers the stage's 429 with Retry-After set to the chain's declared period", async () => {
+    const events: string[] = [];
+    const app = stagedApp(events, { SUBMISSIONS: { limit: 3, period: 900 } });
+    const token = await createCsrfToken(ring, "/test");
+
+    const res = await app.request(
+      "/test",
+      { method: "POST", headers: { ...FORM_HEADERS, "x-user": "alice", "x-csrf-token": token }, body: `name=Jane&${SOLVED}` },
+      limiterEnv(events, false),
+    );
+
+    expect({ status: res.status, retryAfter: res.headers.get("Retry-After") }).toEqual({ status: 429, retryAfter: "900" });
+  });
+
+  it("answers 503 without handling the submission when the limit's binding is absent", async () => {
+    const events: string[] = [];
+    siteverifyAnswering(events, true);
+    const app = stagedApp(events);
+    const token = await createCsrfToken(ring, "/test");
+
+    const res = await app.request(
+      "/test",
+      { method: "POST", headers: { ...FORM_HEADERS, "x-user": "alice", "x-csrf-token": token }, body: `name=Jane&${SOLVED}` },
+      {},
+    );
+
+    expect({ status: res.status, body: await res.text(), events }).toEqual({
+      status: 503,
+      body: "Service Unavailable",
+      events: ["identify:alice"],
+    });
+  });
+
+  it("fails the request, naming the binding, rather than spending when the limit's binding is not in the chain's rateLimits", async () => {
+    const events: string[] = [];
+    let thrown: Error | undefined;
+    siteverifyAnswering(events, true);
+    const app = stagedApp(events, { OTHER_LIMIT: { limit: 5, period: 60 } }, (error) => {
+      thrown = error;
+      return new Response("failed", { status: 500 });
+    });
+    const token = await createCsrfToken(ring, "/test");
+
+    const res = await app.request(
+      "/test",
+      { method: "POST", headers: { ...FORM_HEADERS, "x-user": "alice", "x-csrf-token": token }, body: `name=Jane&${SOLVED}` },
+      limiterEnv(events, true),
+    );
+
+    expect({ status: res.status, events }).toEqual({ status: 500, events: ["identify:alice"] });
+    expect(thrown?.message).toContain('"SUBMISSIONS"');
   });
 });

@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { file } from "bun";
+
 import { safeJoin } from "./paths";
 import { shaper, subsetWasm } from "./peers";
 import type { FontBuild, FontMetricsData, FontPackData, FontSubset, HarfbuzzFace, HarfbuzzFont, HarfbuzzModule, SubsetRequest } from "./types";
@@ -33,7 +35,7 @@ const subsetters = new Map<string, Promise<SubsetExports>>();
 function exports(wasmPath: string): Promise<SubsetExports> {
   const built = subsetters.get(wasmPath);
   if (built !== undefined) return built;
-  const instantiated = Bun.file(wasmPath)
+  const instantiated = file(wasmPath)
     .arrayBuffer()
     .then((bytes) => WebAssembly.instantiate(bytes, {}))
     .then((module) => module.instance.exports as unknown as SubsetExports);
@@ -179,7 +181,7 @@ export async function buildFontPacks(
   const byFamily = new Map<string, FontPackData>();
   const bytes = new Map<string, Uint8Array>();
   for (const subset of subsets) {
-    const source = new Uint8Array(await Bun.file(subset.from).arrayBuffer());
+    const source = new Uint8Array(await file(subset.from).arrayBuffer());
     const codePoints = [...new Set([...subset.covering].map((character) => character.codePointAt(0) ?? 0))];
     const built = await buildFont({ sfnt: source, codePoints, wasm });
     bytes.set(subset.to, built.sfnt);

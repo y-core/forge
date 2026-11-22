@@ -26,6 +26,8 @@ token mechanism. See [Security][sec-anchor].
 A request id and the security headers belong at app level, on every route.
 
 ```ts
+import { createSecurityHeaders, NONCE, requestId } from "@y-core/forge/security";
+
 app.use("*", requestId());
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 ```
@@ -38,6 +40,8 @@ whole header set onto the response. Which headers are in that set, and why each 
 Everything else is route-scoped. Apply each guard where it belongs and nowhere else:
 
 ```ts
+import { cors, originProtection } from "@y-core/forge/security";
+
 app.use("/api/*", cors({ origins: ["https://app.example.com"] }));
 app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins }));
 ```
@@ -64,8 +68,13 @@ A response built **outside** the middleware chain — an error page raised befor
 Mint the nonce yourself, render with it, then harden the response with that same value:
 
 ```ts
-const nonce = crypto.randomUUID().replaceAll("-", "");
-return applySecurityHeaders(htmlResponse(renderErrorPage(nonce)), { nonce });
+import { htmlResponse } from "@y-core/forge/http";
+import { applySecurityHeaders } from "@y-core/forge/security";
+
+function errorPage(): Response {
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  return applySecurityHeaders(htmlResponse(renderErrorPage(nonce)), { nonce });
+}
 ```
 
 `applySecurityHeaders` takes every option `createSecurityHeaders` takes, plus that optional `nonce`, and mints a fresh one when you omit it. The
@@ -85,6 +94,8 @@ A directive you pass replaces its default outright, so name `'self'` and `NONCE`
 For Cloudflare Turnstile, `TURNSTILE_CSP` is the CDN origin as a constant, so the string is never spelled out in the app:
 
 ```ts
+import { createSecurityHeaders, NONCE, TURNSTILE_CSP } from "@y-core/forge/security";
+
 app.use(
   "*",
   createSecurityHeaders({
@@ -104,6 +115,8 @@ To widen a directive on top of an options object you already have, `mergeSecurit
 base never mentioned with its default before the concatenation:
 
 ```ts
+import { mergeSecurityHeaders } from "@y-core/forge/security";
+
 const withCdnSheet = mergeSecurityHeaders(baseHeaders, { styleSrc: ["https://cdn.example.com"] });
 // style-src 'self' https://cdn.example.com — the app's own stylesheet survives
 ```
@@ -131,6 +144,8 @@ The choice you are making is how much you hand back:
 Reach down that table from the top, never up from the bottom.
 
 ```ts
+import { createSecurityHeaders, NONCE, WASM_UNSAFE_EVAL } from "@y-core/forge/security";
+
 // script-src 'self' 'nonce-<base64url>' 'wasm-unsafe-eval'
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE, WASM_UNSAFE_EVAL] }));
 
@@ -157,6 +172,8 @@ A tightened policy that breaks a page breaks it for every visitor at once. Ship 
 browser enforces nothing from it and reports every load it would have blocked. Trusted Types is the usual candidate:
 
 ```ts
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
+
 app.use(
   "*",
   createSecurityHeaders({
@@ -185,6 +202,8 @@ policy too, so a real block is reported as well.
 **Promote the candidate once the reports go quiet.** Move `trustedTypes` to the top level and delete `reportOnly`:
 
 ```ts
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
+
 createSecurityHeaders({
   scriptSrc: ["'self'", NONCE],
   reporting: { endpoint: "/csp-reports" },
@@ -203,6 +222,8 @@ Some routes need a source the rest of the app must not have. A Web Worker script
 should not carry it. `createRouteSecurityHeaders` widens the CSP on one route only:
 
 ```ts
+import { createRouteSecurityHeaders, createSecurityHeaders, NONCE, WASM_UNSAFE_EVAL } from "@y-core/forge/security";
+
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 app.use("/workers/*", createRouteSecurityHeaders({ scriptSrc: [WASM_UNSAFE_EVAL] }));
 // on /workers/* only: script-src 'self' 'nonce-<base64url>' 'wasm-unsafe-eval'
@@ -248,6 +269,8 @@ export const devCspSources: typeof strictDevCspSources = whenArmed(isDevBuildArm
 
 ```ts
 // the shared app module
+import { createSecurityHeaders, mergeSecurityHeaders } from "@y-core/forge/security";
+
 import { devCspSources } from "#app/relax";
 
 app.use("*", createSecurityHeaders(mergeSecurityHeaders(baseHeaders, devCspSources())));
@@ -262,6 +285,8 @@ A deploy bundles the strict file, so the hash never reaches production. The cont
 The default is a two-year policy with `includeSubDomains` and `preload`. `hsts` changes any part of it, and `hsts: false` drops the header:
 
 ```ts
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
+
 // strict-transport-security: max-age=31536000; includeSubDomains
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE], hsts: { maxAge: 31536000, preload: false } }));
 ```
@@ -279,6 +304,8 @@ such a file, under the same options, and the asset pipeline writes them into `_h
 the Worker_):
 
 ```ts
+import { assetSecurityHeaders } from "@y-core/forge/security";
+
 assetSecurityHeaders({ hsts: false });
 // [["x-content-type-options", "nosniff"], ["cross-origin-resource-policy", "same-origin"],
 //  ["content-security-policy", "default-src 'none'; frame-ancestors 'none'; sandbox"]]
@@ -292,6 +319,8 @@ By default a link to another site sends your origin, never the path. When a path
 Referer to other sites at all:
 
 ```ts
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
+
 // referrer-policy: same-origin
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE], referrerPolicy: "same-origin" }));
 ```
@@ -307,6 +336,8 @@ The option only tightens the default, so a value that would leak more is a type 
 (`GET`, `HEAD`, `OPTIONS`, `TRACE`) before either.
 
 ```ts
+import { originProtection } from "@y-core/forge/security";
+
 app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins }));
 
 // Or resolve per request, so a config change reaches the guard without a redeploy of the route table:
@@ -314,6 +345,31 @@ app.use("/api/*", originProtection<AppEnv>({ allowedOrigins: (c) => originsFor(c
 ```
 
 > **List the app's own origin in `allowedOrigins`**, or its own same-origin mutations are refused.
+
+Pass `onRefuse(c, refusal)` to answer a refusal your own way; which hook answers without one, and the log line, are the guard policy table's
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). `refusal.reason` is `cross-site`, `same-site`, `disallowed` or `missing`, for the operator; do not
+echo it to the sender.
+
+```ts
+import { htmlResponse } from "@y-core/forge/http";
+import { originProtection } from "@y-core/forge/security";
+
+app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins, onRefuse: (_c, refusal) => htmlResponse(refusedPage(), refusal.status) }));
+```
+
+**An endpoint called by a server or a tool, not a browser, is admitted by name: `missing: "allow"`.** An MCP endpoint or a CSP report
+receiver sends no `Origin`, `Referer` or `Sec-Fetch-Site`, and the default refuses that request `403` with reason `missing`. Under
+`missing: "allow"` it passes, while a disallowed `Origin` or `Referer` and a `cross-site` or `same-site` `Sec-Fetch-Site` are still refused,
+and so is a WebSocket upgrade with no `Origin`. Use it only on a path that never authenticates by cookie:
+
+```ts
+import { applyMiddlewareChain } from "@y-core/forge/app";
+
+applyMiddlewareChain(app, {
+  securityHeaders: {},
+  guards: [{ paths: ["/mcp", "/csp-report"], origin: { allowedOrigins: ["https://example.com"], missing: "allow" } }],
+});
+```
 
 The single-signal tiers `originProtection` is built from are exported too — `crossOriginProtection` (Fetch Metadata only) and `originGuard` (the
 allowlist only, taking a plain `string[]`). Which to reach for, why `same-site` is refused alongside `cross-site`, and why `Sec-Fetch-Site` is a
@@ -326,8 +382,12 @@ For a one-off check inside a handler rather than a route-wide middleware, the pu
 plain results:
 
 ```ts
-const result = verifyOrigin(c.request, allowedOrigins);
-if (!result.ok) return new Response("Forbidden", { status: 403 });
+import { verifyOrigin } from "@y-core/forge/security";
+
+function refuseForeign(request: Request): Response | undefined {
+  const result = verifyOrigin(request, allowedOrigins);
+  if (!result.ok) return new Response("Forbidden", { status: 403 });
+}
 ```
 
 `checkCrossOriginProtection(request, options?)` is the Fetch-Metadata equivalent. Both answer a `GuardResult`, so the reason code is in `.error`.
@@ -337,47 +397,78 @@ if (!result.ok) return new Response("Forbidden", { status: 403 });
 channel a foreign page could otherwise hold open. List the guard in the upgrade route's controller entry like any mutating one:
 
 ```ts
-live: { middleware: [originProtection({ allowedOrigins: config.allowedOrigins })], handler: openLiveSocket },
+import { createController, get, route } from "@y-core/forge/router";
+import { originProtection } from "@y-core/forge/security";
+
+const routes = route({ live: get("/live") });
+
+createController(routes, {
+  actions: {
+    live: { middleware: [originProtection({ allowedOrigins: config.allowedOrigins })], handler: openLiveSocket },
+  },
+});
 ```
 
 The handshake is judged on `Origin` alone: a browser always sends one there, so an upgrade without it is refused even beside a matching `Referer`
 or a `Sec-Fetch-Site: same-origin`. A plain `GET` on the same route stays exempt.
 
-An HTML form endpoint wants one guard more. `requireFormContentType()` answers `415` to anything whose `Content-Type` is not
+An HTML form endpoint wants one guard more. `requireFormContentType()` answers `415` to any request whose `Content-Type` is not
 `application/x-www-form-urlencoded` or `multipart/form-data`, comparing case-insensitively (RFC 9110 §8.3.1) and ignoring any `; charset=…`. Apply
 it on form routes only — never on a JSON API.
 
 ```ts
+import { requireFormContentType } from "@y-core/forge/security";
+
 app.use("/form/*", requireFormContentType());
 ```
+
+**Safe methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`) pass unchecked**, because they carry no form body. One path can serve a page and its form
+`POST` behind the guard, so it can sit in a guard group's `shape` ahead of the CSRF verify. `isSafeMethod(method)` is the same test, exported for
+a guard of your own.
 
 ---
 
 ## Opening an API to another origin
 
 ```ts
+import { cors } from "@y-core/forge/security";
+
 app.use("/api/*", cors({ origins: ["https://app.example.com", "https://*.preview.example.com"] }));
 ```
 
-`cors` answers preflights with `204` and adds the CORS headers to allowed responses. An `origins` entry is either an exact origin or a
-single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`, `:`, `@`, `?` and `#`, so `https://a/b.example.com` does not
-match `https://*.example.com`. `matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
+Register it with `app.use` after `applyMiddlewareChain`, where it works behind any guard group ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). `cors`
+answers preflights with `204` and adds the CORS headers to allowed responses. An `origins` entry is either an exact origin or a single-label
+subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`, `:`, `@`, `?` and `#`, so `https://a/b.example.com` does not match
+`https://*.example.com`. `matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
+
+Where the allowlist comes from validated config, pass a resolver instead of a list. It may be sync or async, and runs once per `env` object; the
+compiled matcher is reused until the env changes, and a rejected resolution is retried on the next request.
+
+```ts
+import { cors } from "@y-core/forge/security";
+
+app.use("/api/*", cors<Bindings>({ origins: (env) => configStore.get(env).site.url.allowedOrigins }));
+```
 
 A cross-origin script reads only the CORS-safelisted response headers unless you name the others:
 
 ```ts
+import { cors } from "@y-core/forge/security";
+
 app.use("/api/*", cors({ origins: ["https://app.example.com"], exposedHeaders: ["ETag", "X-Total-Count"] }));
 ```
 
 The rest of the options are the trade-offs you are choosing between: `methods` and `allowedHeaders` (what the preflight advertises),
 `exposedHeaders` (what a script may read from an allowed response; never sent on a preflight), `maxAge` (how long a browser may cache that
 preflight, default `86400` seconds), and `credentials` (off by default, and what both interlocks below hang on).
-**`credentials: true` with a `"*"` origin, or with `"*"` in `exposedHeaders`, throws at construction.** The CORS spec makes the first pair
+**`credentials: true` with a `"*"` origin, or with `"*"` in `exposedHeaders`, throws at construction** — or, for a `"*"` a resolver returns, at
+its first resolution, which answers that request with a `500`. The CORS spec makes the first pair
 mutually exclusive, and a credentialed response reads the second `*` as a header literally named `*`. An `allowedHeaders` or `exposedHeaders`
 entry that is not a header-name token throws too.
 
 **Apply `cors` on the routes actually consumed cross-origin, never globally.** `Vary: Origin` is marked on every origin-dependent response,
-refusals included, except under `origins: ["*"]` without credentials; both rulings are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
+refusals included, except under a static `origins: ["*"]` without credentials — a resolver's list can change per env, so it always varies; both
+rulings are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
 
 **Private Network Access is not offered.** Chrome 142 replaced the PNA preflight with the Local Network Access permission, and a Worker is
 never the private-network target the header is for.
@@ -387,10 +478,9 @@ never the private-network target the header is for.
 ## Rate limiting a route
 
 ```ts
-const rateLimitGuard = rateLimit<AppEnv>({
-  limiter: (c) => c.env.RATE_LIMITER,
-  trustCfHeaders: true, // this Worker runs behind Cloudflare — key by CF-Connecting-IP
-});
+import { rateLimit } from "@y-core/forge/security";
+
+const rateLimitGuard = rateLimit<AppEnv>({ binding: "RATE_LIMITER" }); // keyed by CF-Connecting-IP under the chain's trustCfHeaders
 ```
 
 Declare the binding in `wrangler.jsonc`:
@@ -401,9 +491,11 @@ Declare the binding in `wrangler.jsonc`:
 ]
 ```
 
-`limiter(c)` resolves the binding per request — its shape is the exported `RateLimitBinding` type. An absent binding answers `503`, except under
-[`forge cf dev`][cf-dev], which skips the guard and logs a warning instead. Over the limit,
-`onLimit(c)` answers; it defaults to `429`.
+`binding` names the binding on `env`, typed as the exported `RateLimit`. Under `applyMiddlewareChain`, the name must also be a key of the
+chain's `rateLimits`, the `RATELIMITS` table `forge cf gen env` generates; a name missing from it throws. `methods: ["POST"]` counts only the
+methods listed, and a request by any other passes without spending. An absent binding answers `503`, except under
+[`forge cf dev`][cf-dev], which skips the guard and logs a warning instead. The `429` and `503`s, `Retry-After`, the hook that answers them and
+the log line are the guard policy table's ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e); `refusal.retryAfter` carries the period a hook needs.
 
 ### Choosing the key
 
@@ -411,31 +503,54 @@ The key decides _what_ is throttled. Pick it for the abuse you are defending aga
 
 | Strategy | Key | When |
 | --- | --- | --- |
-| Per-IP — the default, under `trustCfHeaders: true` | `CF-Connecting-IP` | Anonymous endpoints behind Cloudflare. Coarse: NAT users share an IP, and botnets rotate them |
+| Per-IP — the default, under the chain's `trustCfHeaders: true` | `CF-Connecting-IP` | Anonymous endpoints behind Cloudflare. Coarse: NAT users share an IP, and botnets rotate them |
 | Per-session | `(c) => sessionCtx.get(c).id` | Session-bearing apps — throttles the actor rather than the network |
-| Route-scoped composite | pathname plus the client key | One binding shared across several routes, each with an independent budget per client |
+| Route-scoped composite | `keySuffix: (c) => new URL(c.request.url).pathname`, keyed `<ip>:<pathname>` | One binding shared across several routes, each with an independent budget per client |
+| Per-route pattern | `keySuffix: routeKeySuffix`, keyed `<ip>:<pattern>` | A route with ids in its URL, where a per-pathname key would mint a budget per id |
 
 ```ts
+import { rateLimit } from "@y-core/forge/security";
 import { sessionCtx } from "@y-core/forge/session";
 
 const perSession = rateLimit<AppEnv>({
-  limiter: (c) => c.env.RATE_LIMITER,
+  binding: "RATE_LIMITER",
   key: (c) => sessionCtx.get(c).id, // register sessionMiddleware BEFORE this guard
 });
 ```
 
 That import couples _your app_ to `@y-core/forge/session`; forge's own `security` namespace does not depend on it. A custom `key` always wins,
-whatever `trustCfHeaders` says.
+whatever the chain's trust.
+
+To keep the client-IP key and extend it, pass `keySuffix` rather than reading `CF-Connecting-IP` yourself:
+
+```ts
+import { rateLimit } from "@y-core/forge/security";
+
+const perRoute = rateLimit<AppEnv>({
+  binding: "RATE_LIMITER",
+  keySuffix: (c) => new URL(c.request.url).pathname, // keyed "<ip>:<pathname>"
+});
+```
+
+An absent IP still answers `503`. `rateLimit` takes no trust option: the client-IP key, by default or with `keySuffix`, is read only where
+`applyMiddlewareChain` declared `trustCfHeaders: true`, and answers `503` with reason `key-failed` elsewhere. `rateLimit` throws at construction
+when `keySuffix` comes with a `key`.
+
+`routeKeySuffix` keys on the matched route's pattern instead — `/admin/users/:id`, never `/admin/users/1` — so a client cannot mint a fresh budget
+by varying an id, and every request no route matches shares the one suffix `"<unmatched>"`. Forge resolves the pattern before the first `app.use`
+middleware runs, so the guard sees it.
 
 **Every keying failure is closed, with `503`** — a throwing `key`, such as `sessionCtx.get` before the session middleware ran, included. Which
-failures those are is [`SECURITY_HARDENING.md`][sh-4d] §4d's; why the flag exists, and how `applyMiddlewareChain` threads one value to every surface
-that takes it, are [§5c][sh-5c]'s.
+failures those are is [`SECURITY_HARDENING.md`][sh-4d] §4d's; why the flag exists, and how `applyMiddlewareChain` publishes its one value to every
+rate limit, are [§5c][sh-5c]'s.
 
 ---
 
 ## Correlating requests in logs
 
 ```ts
+import { requestId, requestIdCtx } from "@y-core/forge/security";
+
 app.use("*", requestId({ trustCfHeaders: true })); // behind Cloudflare — adopt CF-Ray
 
 const id = requestIdCtx.getOptional(c); // string | undefined
@@ -456,11 +571,13 @@ parsed origin, hostname and protocol, plus the derived `allowedOrigins`. It refu
 `http://127.0.0.1` for local development.
 
 ```ts
-import { BaseUrlConfigSchema } from "@y-core/forge/security";
+import { BaseUrlConfigSchema, cors } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
 
-const config = v.parse(BaseUrlConfigSchema, env.SITE_ORIGIN);
-app.use("/api/*", cors({ origins: config.allowedOrigins }));
+function mountApi(env: Bindings): void {
+  const config = v.parse(BaseUrlConfigSchema, env.SITE_ORIGIN);
+  app.use("/api/*", cors({ origins: config.allowedOrigins }));
+}
 ```
 
 Feed the same `config.allowedOrigins` into `originGuard` and `originProtection` and one env change moves all three together.
@@ -470,6 +587,8 @@ Without the schema, `parseUrl(input)` gives the `ParsedUrl` and `deriveAllowedOr
 same port and nothing else.
 
 ```ts
+import { deriveAllowedOrigins, parseUrl } from "@y-core/forge/security";
+
 deriveAllowedOrigins(parseUrl("https://example.com:8443"), { includeWww: true });
 // ["https://example.com:8443", "https://www.example.com:8443"]
 ```
@@ -496,25 +615,43 @@ Both sides follow [Standard Webhooks](https://www.standardwebhooks.com): three h
 `whsec_`-prefixed secrets held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule — `whsec_$(openssl rand -base64 32)` gives one. Store each
 secret in a Worker secret, never in source.
 
-Both sides start from one `createWebhookSigning` instance, created once at app level like a signed cookie and reused by every request:
+Both sides start from one signer per `env`. Build a resolver at module scope with `createWebhookSigningResolver`, and call it inside the handler:
 
 ```ts
-import { createWebhookSigning } from "@y-core/forge/security";
+import { createWebhookSigningResolver, parseWebhookSecrets } from "@y-core/forge/security";
 
-const webhooks = createWebhookSigning({ secrets: [env.WEBHOOK_SECRET] }); // a weak or malformed secret throws — see below
+const resolveWebhooks = createWebhookSigningResolver<Env>((env) => ({ secrets: parseWebhookSecrets(env.WEBHOOK_SECRETS) }));
+
+// inside a handler
+const webhooks = await resolveWebhooks(c);
 ```
 
-**Build the instance at app level, never inside a handler.** The instance imports each secret's key on first use and keeps it, so building one
-per request imports every key again on every request.
+**Never call `createWebhookSigning` inside a handler.** A signer imports each secret's key on first use and keeps it, so building one per request
+imports every key again on every request. The resolver keeps one signer for each `env` object, which every request a Worker isolate serves shares.
+Calls racing on a cold `env` share one build, and a build that throws is retried by the next request rather than cached.
 
-**A configuration mistake throws here, before any request is read** — a malformed secret, an empty `secrets` list, or a `toleranceSeconds` or
-`maxBytes` that is not a whole number of at least 1. It is a deployment defect, not a refused webhook.
+**A configuration mistake rejects the resolver's call, before any request body is read** — a malformed secret, an empty `secrets` list, or a
+`toleranceSeconds` or `maxBytes` that is not a whole number of at least 1. It is a deployment defect, not a refused webhook.
+
+To catch a malformed or short secret at startup instead, make `WebhookSecretSchema` the variable's field in your app's env schema. It accepts the
+comma-joined rotation form, each entry `whsec_` followed by base64 of at least 32 bytes, and a bad value fails validation with
+`Invalid environment: WEBHOOK_SECRETS: <reason>`:
+
+```ts
+import { WebhookSecretSchema } from "@y-core/forge/security";
+import { v } from "@y-core/forge/validation";
+
+const EnvSchema = v.object({ WEBHOOK_SECRETS: WebhookSecretSchema /* , …the rest of your bindings */ });
+```
+
+Pass that schema to `validateBindings` or `validateEnv` — [Validating bindings before anything reads them][app-readme-bindings] shows where each
+one goes. The schema checks length only; the rest of §8's rule runs when the signer is built.
 
 ### Sending a webhook
 
 ```ts
-const body = JSON.stringify(event);
-const headers = await webhooks.sign({ id: event.id, body });
+const body = JSON.stringify(payload);
+const headers = await webhooks.sign({ id: payload.id, body });
 await fetch(endpoint, { method: "POST", body, headers: { ...headers, "content-type": "application/json" } });
 ```
 
@@ -526,9 +663,13 @@ throws, because the receiver could not deduplicate on it or the signed content w
 Verification runs inside the handler rather than as middleware, and hands back the exact bytes that were signed. Parse only after it succeeds:
 
 ```ts
-const verified = await webhooks.verify(c.request);
-if (!verified.ok) return new Response("Unauthorized", { status: 401 });
-const event: unknown = JSON.parse(new TextDecoder().decode(verified.data.body));
+async function receive(request: Request): Promise<Response> {
+  const verified = await webhooks.verify(request);
+  if (!verified.ok) return new Response("Unauthorized", { status: 401 });
+  const event: unknown = JSON.parse(new TextDecoder().decode(verified.data.body));
+  /* … validate `event`, then act on it */
+  return new Response(null, { status: 204 });
+}
 ```
 
 **`verify` consumes the request body.** `verified.data.body` is the only copy. Validate the parsed value before trusting its shape — a valid
@@ -536,20 +677,21 @@ signature proves who sent it, not what it contains. Deduplicate on `verified.dat
 
 The reason for a refusal is in `.error`. Log it; never send it back.
 
-The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`); pass either to
-`createWebhookSigning` to change it. An oversized body is refused from its `Content-Length` before any byte is read, and metered as it streams in
+The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`); return either from
+the resolver's options to change it. An oversized body is refused from its `Content-Length` before any byte is read, and metered as it streams in
 case that header is absent or wrong.
 
 ### Rotating a secret
 
-Pass every secret that is currently valid. The sender emits one signature per secret, and the receiver accepts a match against any of them:
+Put every secret that is currently valid in `WEBHOOK_SECRETS`, comma-joined. The sender emits one signature per secret, and the receiver
+accepts a match against any of them:
 
-```ts
-const webhooks = createWebhookSigning({ secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
+```bash
+WEBHOOK_SECRETS=whsec_<next>,whsec_<current>
 ```
 
-Add the new secret on both sides, move the sender to it, then remove the old one. Each step is a deploy, which creates a fresh instance with the new
-list.
+Add the new secret on both sides, move the sender to it, then remove the old one. Each step is a secret change, which arrives with a new `env`, so
+the resolver builds a fresh signer with the new list.
 
 ---
 
@@ -561,7 +703,7 @@ The guards above are building blocks rather than a posture. Pair them to the thr
 
 | Layer | Mechanism | Where |
 | --- | --- | --- |
-| Token-based CSRF | Per-session token mint and verify | `@y-core/forge/form` — `csrfProtection`, `mintCsrf` |
+| Token-based CSRF | Per-session token mint and verify | `@y-core/forge/form` — `csrfMintStage`, `mintCsrf` |
 | Origin-based CSRF | Fetch Metadata and the origin allowlist | Here — `originProtection`, `crossOriginProtection`, `originGuard` |
 | Content-type defence | Refuse a non-form body on a form route | Here — `requireFormContentType` |
 
@@ -606,6 +748,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
   tiering (§3e), `allowedOrigins` in dev (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)
 - [`WORKERS_PLATFORM.md`][wp-4e] §4e — the https-everywhere dev transport posture the origin guards depend on
 
+[app-readme-bindings]: ../app/README.md#validating-bindings-before-anything-reads-them
 [assets-readme]: ../tooling/assets/README.md
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [cf-dev]: ../tooling/cf/README.md#running-the-app-locally

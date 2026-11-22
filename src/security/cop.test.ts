@@ -1,14 +1,18 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import { createRouter } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createApp } from "../app/app";
 import { Forge } from "../app/forge-app";
+import { refuseHookCtx } from "../context/refusal";
+import type { Refusal } from "../context/types";
+import { requestLog } from "../logging/request-logger";
+import { captureLogs } from "../testing/logs";
 import { mapHandler } from "../testing/route";
 import { checkCrossOriginProtection, crossOriginProtection, crossOriginVerdict, originProtection } from "./cop";
 import * as securityBarrel from "./mod";
-import type { OriginProtectionOptions } from "./types";
+import type { OriginProtectionOptions, OriginRefusal } from "./types";
 
 function makeApp() {
   return createApp({
@@ -26,6 +30,37 @@ function makeOriginApp(opts: OriginProtectionOptions = { allowedOrigins: [ALLOWE
   mapHandler(app, "ANY", "/test", () => new Response("ok"));
   return app;
 }
+
+function loggedOriginApp(opts: OriginProtectionOptions) {
+  const capture = captureLogs();
+  const app = new Forge();
+  app.use("*", (context, next) => {
+    requestLog.set(context, capture.logger);
+    return next();
+  });
+  app.use("*", originProtection(opts));
+  mapHandler(app, "ANY", "/test", () => new Response("ok"));
+  return {
+    app,
+    get warnings() {
+      return capture.records.map(({ level, message, data }) => [level, message, data]);
+    },
+  };
+}
+
+const originLine = (reason: OriginRefusal) => [
+  "warn",
+  "security.origin.refused",
+  { source: "security", guard: "origin", status: 403, reason, routePattern: "/test", requestId: null },
+];
+
+const REFUSED: { reason: OriginRefusal; init: RequestInit }[] = [
+  { reason: "cross-site", init: { method: "POST", headers: { "Sec-Fetch-Site": "cross-site", Origin: ALLOWED } } },
+  { reason: "same-site", init: { method: "POST", headers: { "Sec-Fetch-Site": "same-site", Origin: ALLOWED } } },
+  { reason: "disallowed", init: { method: "POST", headers: { "Sec-Fetch-Site": "same-origin", Origin: "https://evil.example.com" } } },
+  { reason: "missing", init: { method: "POST" } },
+  { reason: "missing", init: { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } } },
+];
 
 describe("checkCrossOriginProtection", () => {
   it("allows GET regardless of Sec-Fetch-Site", () => {
@@ -256,6 +291,123 @@ describe("originProtection middleware", () => {
     const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } });
     expect(res.status).toBe(403);
   });
+
+  for (const { reason, init } of REFUSED) {
+    it(`hands a ${reason} refusal of ${init.method} to onRefuse as an origin 403 and logs security.origin.refused`, async () => {
+      const seen: Refusal[] = [];
+      const logged = loggedOriginApp({
+        allowedOrigins: [ALLOWED],
+        onRefuse: (_c, refusal) => {
+          seen.push(refusal);
+          return new Response("refused", { status: 418 });
+        },
+      });
+      const res = await logged.app.request("/test", init);
+      expect({ status: res.status, body: await res.text(), seen, warnings: logged.warnings }).toEqual({
+        status: 418,
+        body: "refused",
+        seen: [{ guard: "origin", status: 403, reason }],
+        warnings: [originLine(reason)],
+      });
+    });
+
+    it(`answers a ${reason} refusal of ${init.method} with a bare 403 and logs security.origin.refused when no hook is declared`, async () => {
+      const logged = loggedOriginApp({ allowedOrigins: [ALLOWED] });
+      const res = await logged.app.request("/test", init);
+      expect({ status: res.status, body: await res.text(), warnings: logged.warnings }).toEqual({
+        status: 403,
+        body: "Forbidden",
+        warnings: [originLine(reason)],
+      });
+    });
+  }
+
+  it("returns the response an async onRefuse resolves to", async () => {
+    const { app } = loggedOriginApp({ allowedOrigins: [ALLOWED], onRefuse: async () => Response.json({ error: "origin" }, { status: 400 }) });
+    const res = await app.request("/test", { method: "POST", headers: { Origin: "https://evil.example.com" } });
+    expect({ status: res.status, body: await res.json() }).toEqual({ status: 400, body: { error: "origin" } });
+  });
+
+  it("hands onRefuse the app context, so it can read the request's bindings", async () => {
+    const app = makeOriginApp({ allowedOrigins: [ALLOWED], onRefuse: (c) => new Response(String(c.env.SUPPORT_URL), { status: 403 }) });
+    const res = await app.request("/test", { method: "POST" }, { SUPPORT_URL: "https://help.example.com" });
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "https://help.example.com" });
+  });
+
+  it("neither calls onRefuse nor logs on an admitted request", async () => {
+    const seen: Refusal[] = [];
+    const logged = loggedOriginApp({
+      allowedOrigins: [ALLOWED],
+      onRefuse: (_c, refusal) => (seen.push(refusal), new Response(null, { status: 418 })),
+    });
+    const res = await logged.app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "same-origin", Origin: ALLOWED } });
+    expect({ status: res.status, body: await res.text(), seen, warnings: logged.warnings }).toEqual({
+      status: 200,
+      body: "ok",
+      seen: [],
+      warnings: [],
+    });
+  });
+
+  it("refuses and logs to the console under the security prefix when no request logger is set", async () => {
+    const consoleLog = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const res = await makeOriginApp().request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } });
+      const lines = consoleLog.mock.calls.map(([line]) => {
+        const { timestamp: _timestamp, ...rest } = JSON.parse(String(line)) as Record<string, unknown>;
+        return rest;
+      });
+      expect({ status: res.status, body: await res.text(), lines }).toEqual({
+        status: 403,
+        body: "Forbidden",
+        lines: [
+          {
+            level: "warn",
+            prefix: "security",
+            message: "security.origin.refused",
+            guard: "origin",
+            status: 403,
+            reason: "cross-site",
+            routePattern: "/test",
+            requestId: null,
+          },
+        ],
+      });
+    } finally {
+      consoleLog.mockRestore();
+    }
+  });
+
+  it("answers through the hook published on the request when it declares none of its own", async () => {
+    const seen: Refusal[] = [];
+    const app = new Forge();
+    app.use("*", (context, next) => {
+      refuseHookCtx.set(context, (_c, refusal) => (seen.push(refusal), new Response("chain", { status: 418 })));
+      return next();
+    });
+    app.use("*", originProtection({ allowedOrigins: [ALLOWED] }));
+    mapHandler(app, "ANY", "/test", () => new Response("ok"));
+
+    const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } });
+    expect({ status: res.status, body: await res.text(), seen }).toEqual({
+      status: 418,
+      body: "chain",
+      seen: [{ guard: "origin", status: 403, reason: "cross-site" }],
+    });
+  });
+
+  it("answers through its own hook ahead of the one published on the request", async () => {
+    const app = new Forge();
+    app.use("*", (context, next) => {
+      refuseHookCtx.set(context, () => new Response("chain", { status: 418 }));
+      return next();
+    });
+    app.use("*", originProtection({ allowedOrigins: [ALLOWED], onRefuse: () => new Response("own", { status: 409 }) }));
+    mapHandler(app, "ANY", "/test", () => new Response("ok"));
+
+    const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } });
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 409, body: "own" });
+  });
 });
 
 describe("crossOriginProtection on a WebSocket upgrade", () => {
@@ -274,6 +426,75 @@ describe("originProtection and `FORGE_DEV_ORIGINS`", () => {
     const res = await makeOriginApp().request("/test", { method: "POST", headers: { Origin: TUNNEL } }, { FORGE_DEV_ORIGINS: TUNNEL });
     expect(res.status).toBe(403);
   });
+});
+
+function hookedOriginApp(opts: OriginProtectionOptions) {
+  const seen: Refusal[] = [];
+  const app = makeOriginApp({ ...opts, onRefuse: (_c, refusal) => (seen.push(refusal), new Response("refused", { status: 418 })) });
+  return { app, seen };
+}
+
+const ADMITS_SIGNALLESS: OriginProtectionOptions = { allowedOrigins: [ALLOWED], missing: "allow" };
+
+const STILL_REFUSED_UNDER_ALLOW: { name: string; reason: OriginRefusal; init: RequestInit }[] = [
+  { name: "a disallowed Origin", reason: "disallowed", init: { method: "POST", headers: { Origin: "https://evil.example.com" } } },
+  { name: "a disallowed Referer", reason: "disallowed", init: { method: "POST", headers: { Referer: "https://evil.example.com/page" } } },
+  { name: "a cross-site Sec-Fetch-Site", reason: "cross-site", init: { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } } },
+  { name: "a same-site Sec-Fetch-Site", reason: "same-site", init: { method: "POST", headers: { "Sec-Fetch-Site": "same-site" } } },
+  { name: "a WebSocket upgrade with no signal", reason: "missing", init: { method: "GET", headers: UPGRADE } },
+  {
+    name: "a WebSocket upgrade vouched only by Sec-Fetch-Site",
+    reason: "missing",
+    init: { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } },
+  },
+];
+
+describe('originProtection with missing: "allow"', () => {
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    it(`admits a ${method} carrying no Origin, Referer or Sec-Fetch-Site without calling onRefuse`, async () => {
+      const { app, seen } = hookedOriginApp(ADMITS_SIGNALLESS);
+      const res = await app.request("/test", { method });
+      expect({ status: res.status, body: await res.text(), seen }).toEqual({ status: 200, body: "ok", seen: [] });
+    });
+  }
+
+  it("still admits an allowed Origin", async () => {
+    const res = await makeOriginApp(ADMITS_SIGNALLESS).request("/test", { method: "POST", headers: { Origin: ALLOWED } });
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 200, body: "ok" });
+  });
+
+  for (const { name, reason, init } of STILL_REFUSED_UNDER_ALLOW) {
+    it(`still hands onRefuse a ${reason} origin 403 for ${name}`, async () => {
+      const { app, seen } = hookedOriginApp(ADMITS_SIGNALLESS);
+      const res = await app.request("/test", init);
+      expect({ status: res.status, seen }).toEqual({ status: 418, seen: [{ guard: "origin", status: 403, reason }] });
+    });
+
+    it(`still answers ${name} with a bare 403 when no hook is declared`, async () => {
+      const res = await makeOriginApp(ADMITS_SIGNALLESS).request("/test", init);
+      expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
+    });
+  }
+});
+
+describe("originProtection refuses a signal-less mutation unless missing is allow", () => {
+  const REFUSING: { name: string; opts: OriginProtectionOptions }[] = [
+    { name: "by default", opts: { allowedOrigins: [ALLOWED] } },
+    { name: 'under missing: "refuse"', opts: { allowedOrigins: [ALLOWED], missing: "refuse" } },
+  ];
+
+  for (const { name, opts } of REFUSING) {
+    it(`hands onRefuse a missing origin 403 for a POST with no signal ${name}`, async () => {
+      const { app, seen } = hookedOriginApp(opts);
+      const res = await app.request("/test", { method: "POST" });
+      expect({ status: res.status, seen }).toEqual({ status: 418, seen: [{ guard: "origin", status: 403, reason: "missing" }] });
+    });
+
+    it(`answers a POST with no signal with a bare 403 ${name}`, async () => {
+      const res = await makeOriginApp(opts).request("/test", { method: "POST" });
+      expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
+    });
+  }
 });
 
 describe("crossOriginVerdict", () => {

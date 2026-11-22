@@ -20,6 +20,22 @@ var FORM_MAX_BYTES_DEFAULT = 100 * 1024;
 var CsrfConfigSchema = v.object({ secret: KeyRingSecretSchema });
 var TurnstileConfigSchema = v.object({ secretKey: v.string(), siteKey: v.string() });
 
+// src/form/turnstile-keys.ts
+var TURNSTILE_TEST_KEYS = Object.freeze({
+  site: Object.freeze({
+    pass: "1x00000000000000000000AA",
+    block: "2x00000000000000000000AB",
+    invisible: "1x00000000000000000000BB",
+    interactive: "3x00000000000000000000FF"
+  }),
+  secret: Object.freeze({
+    pass: "1x0000000000000000000000000000000AA",
+    fail: "2x0000000000000000000000000000000AA",
+    spent: "3x0000000000000000000000000000000AA"
+  }),
+  token: "XXXX.DUMMY.TOKEN.XXXX"
+});
+
 // src/crypto/primitives/aead.ts
 function importAeadKey(raw) {
   if (raw.byteLength !== 32) throw new Error("importAeadKey: AES-256-GCM requires a 32-byte key");
@@ -171,13 +187,33 @@ function importKeyRing(secrets) {
 
 // src/context/accessor.ts
 import { createContextKey } from "@remix-run/fetch-router";
+
+// src/context/request-scope.node.ts
+var RequestFreeBundleError = class extends Error {
+  name = "RequestFreeBundleError";
+  constructor() {
+    super(
+      "forge's `node` export condition loads a request-free bundle, which holds no request state of its own \u2014 serve requests through the TypeScript source (docs/TEST_RUNNERS.md \xA77f)"
+    );
+  }
+};
+var requestScope = {
+  read: () => {
+    throw new RequestFreeBundleError();
+  },
+  write: () => {
+    throw new RequestFreeBundleError();
+  }
+};
+
+// src/context/accessor.ts
 function contextVar(name) {
   const key = createContextKey();
   return {
     key,
     // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
     get(c, message) {
-      const value = c.get(key);
+      const value = requestScope.read(c, key);
       if (value === void 0) {
         throw new Error(message ?? `Context variable "${name}" is not set`);
       }
@@ -185,13 +221,22 @@ function contextVar(name) {
     },
     // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
     set(c, value) {
-      c.set(key, value);
+      requestScope.write(c, key, value);
     },
     // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
     getOptional(c) {
-      return c.get(key);
+      return requestScope.read(c, key);
     }
   };
+}
+
+// src/context/env-memo.ts
+function cachePendingUntilRejected(cache, key, pending) {
+  cache.set(key, pending);
+  pending.catch(() => {
+    if (cache.get(key) === pending) cache.delete(key);
+  });
+  return pending;
 }
 
 // src/crypto/keyring/subkey.ts
@@ -211,13 +256,6 @@ function cacheFor(cache, ring) {
   const fresh = /* @__PURE__ */ new Map();
   cache.set(ring, fresh);
   return fresh;
-}
-function cachePendingUntilRejected(cache, key, pending) {
-  cache.set(key, pending);
-  pending.catch(() => {
-    if (cache.get(key) === pending) cache.delete(key);
-  });
-  return pending;
 }
 function resolveKeyRingSubkey(ring, request) {
   const root = lookupKeyRingKey(ring, request.kid);
@@ -267,6 +305,7 @@ async function createCsrfToken(ring, path, options = {}) {
   const sigEncoded = base64urlEncode(mac);
   return `${payloadEncoded}.${sigEncoded}`;
 }
+var csrfArmedCtx = contextVar("csrfArmed");
 
 // src/testing/csrf.ts
 async function mintTestCsrfToken(hexSecret, path, options) {
@@ -276,5 +315,6 @@ export {
   CSRF_FIELD_DEFAULT,
   CSRF_HEADER_DEFAULT,
   FORM_MAX_BYTES_DEFAULT,
+  TURNSTILE_TEST_KEYS,
   mintTestCsrfToken
 };

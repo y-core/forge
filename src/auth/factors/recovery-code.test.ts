@@ -291,6 +291,23 @@ describe("createRecoveryCodeFactor — stepping up with a code", () => {
     ]);
   });
 
+  it("states its configured lockout as the attempt window, the span past the last counted guess that a spent budget refuses", async () => {
+    const held = world();
+    const codes = await confirmedCodes(held);
+    const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 1, lockoutMs: 90_000 });
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 1, fakeFactorCaller());
+    const stated = factor.attemptWindowMs ?? 0;
+    expect({
+      stated,
+      before: await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 1 + stated - 1, fakeFactorCaller()),
+      lapsed: await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 1 + stated, fakeFactorCaller()),
+    }).toEqual({
+      stated: 90_000,
+      before: { ok: false, error: "too-many-attempts" },
+      lapsed: { ok: true, data: { kind: "recovery-code", userId: USER_ID, verifiedAt: AT + 90_001 } },
+    });
+  });
+
   it("reports a store outage on the spend, the read after it or the consume as `unavailable`", async () => {
     const outage = () => Promise.resolve(err(new AuthStoreError("unavailable", "recoveryCodes")));
     const outcomes = [];
@@ -429,8 +446,8 @@ describe("createRecoveryCodeFactor — its contract and the ranges it holds", ()
   const factory = (overrides: { maxAttempts?: number; lockoutMs?: number }) => () => createRecoveryCodeFactor({ ...world(), ...overrides });
 
   it("steps up only, answers no numeric code, and lasts TOTP's lockout window by default", () => {
-    const { kind, enrolment, capabilities, codeDigits, codePeriodSeconds, reissueAfterMs, challengeTtlMs } = factory({})();
-    expect({ kind, enrolment, capabilities, codeDigits, codePeriodSeconds, reissueAfterMs, challengeTtlMs }).toEqual({
+    const { kind, enrolment, capabilities, codeDigits, codePeriodSeconds, reissueAfterMs, challengeTtlMs, attemptWindowMs } = factory({})();
+    expect({ kind, enrolment, capabilities, codeDigits, codePeriodSeconds, reissueAfterMs, challengeTtlMs, attemptWindowMs }).toEqual({
       kind: "recovery-code",
       enrolment: "explicit",
       capabilities: { stepUp: true },
@@ -438,6 +455,7 @@ describe("createRecoveryCodeFactor — its contract and the ranges it holds", ()
       codePeriodSeconds: null,
       reissueAfterMs: null,
       challengeTtlMs: AUTH_TOTP_LOCKOUT_MS,
+      attemptWindowMs: AUTH_TOTP_LOCKOUT_MS,
     });
   });
 

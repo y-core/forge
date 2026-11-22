@@ -112,8 +112,8 @@ that was just re-rendered means the confirmation disappears the next time that r
 
 Where a failure renders is [`07-states.md`][states]'s — `forge-ui-state-error-inline` for a failure that belongs to a visible surface,
 `forge-ui-state-error-toast` for one the reader is not watching. Under a swap the two map cleanly onto the two response shapes: the in-place `Alert`
-is the fragment body, and the toast is an out-of-band swap. A 4xx fragment lands in its target and a 5xx leaves the target as it was
-([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a), so a refusal the reader can fix is rendered at 4xx beside what they did.
+is the fragment body, and the toast is an out-of-band swap. A 4xx fragment and a marked failure fragment land in their target, and any other 5xx
+leaves the target as it was ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a), so a refusal the reader can fix is rendered at 4xx beside what they did.
 
 Default: target out-of-band swaps at stable ids the page layout owns, and give each one exactly one writer — unless the region is a genuine append
 target such as the flash container. <!-- rule:forge-ui-htmx-oob-scoped --> An OOB selector picks its target client-side, so two handlers writing the
@@ -162,4 +162,4 @@ deliberately, on the element that now represents what the reader was doing.
 [floor]: ../floor.md
 [htmx]: ../../../../docs/HTMX.md
 [states]: ./07-states.md
-[ucr-4a]: ../../../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
+[ucr-4a]: ../../../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-and-marked-5xx

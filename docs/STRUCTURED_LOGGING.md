@@ -28,6 +28,7 @@ audience: consumer
 - §3 requestLogger Middleware: the per-request child logger
 - §3a requestLogger Configuration: per-request channels and bindings
 - §3c Ordering — requestId Before requestLogger: why the order is load-bearing
+- §3d Forge's Own Records Follow the Request Logger: which writers reach the request logger, and which still take their own `logger`
 - §4 Log Levels by HTTP Status: the alert-noise convention
 - §4a Level Mapping Convention: status range to level
 - §4b Debug Is Not Emitted by requestLogger: why the level exists but never appears
@@ -120,7 +121,8 @@ spelling. `routePattern` is not `route` for exactly that reason — applications
 **`path` is the accepted cost of the exception.** A URL carries ids and occasionally a token, so `also: ["path"]` is a stem an application may
 genuinely want — and it masks `path` on `request.completed` and `request.failed` too. **That is the id-free recipe:** `also: ["path"]` plus
 `routePattern`, the matched route's pattern source (`"/n/:nb"`, never `"/n/3f2a…"`), which still names the endpoint a request hit. `routePattern`
-is `null` when no route matched — a 404, a 405, or a throw before dispatch — so those records name no endpoint once `path` is masked. `allow`
+is `null` when no route matches the URL and method — a 404 or a 405 — so those records name no endpoint once `path` is masked; a request a guard
+refuses still carries it. `allow`
 cannot separate forge's `path` from an application's own, so an application that must keep the first while masking the second writes its own under
 a different name and leaves the stem off.
 
@@ -237,6 +239,33 @@ context. If ordered incorrectly, `requestId` will be undefined in every log reco
 `applyMiddlewareChain` produces that order, along with the rest of the chain's — see [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e, which is where the
 whole order is stated. A hand-written chain registers `requestId()` first and `requestLogger` after it.
 
+### 3d. Forge's Own Records Follow the Request Logger
+
+**These writers log to the context's request logger, resolved when they log, with `data.source` naming the writer:**
+
+| Writer | `data.source` |
+| --- | --- |
+| `definePage` | `"page"` |
+| `defineAction` | `"action"` |
+| The submission pipeline's Turnstile screen | `"pipeline"` |
+| Every guard refusal, a `rateLimit`'s included, as `security.<guard>.refused` | `"security"` |
+| The error boundary's `Unhandled error` and `onError override threw` | `"app"` |
+| The factors and flows `authRequestServices` builds, unless given its `logger` option | `"auth"` |
+| The schema monitor and client a `defineD1Binding` given no `logger` mounts, and `resolveD1Client` given no `client.logger` | `"storage/db"` |
+
+Their records carry the request's bindings and reach the app's channels; the D1 client writes only at `warn` and above. Without `requestLogger`
+each falls back to a console logger of its own, and the error boundary to `createApp`'s `logger`, which is how a throw before `requestLogger` runs
+is still recorded.
+
+**These take their logger from the options they are built with, and write to the console without one:** a `createD1Client` built by hand and
+a KV store from `createKVStore` or `resolveKVStore`, each at `warn` and above, and an auth factor or flow constructed directly rather than through
+`authRequestServices`. The warning a `forge cf dev` build writes when it skips an absent rate-limit binding
+([`SECURITY_HARDENING.md`][sh-4b] §4b) goes to the console and takes no logger.
+
+There is no process-wide default channel to swap. A test silences the request logger's records by giving the context a quiet request logger, which
+`createTestContext` does by default, and asserts on them through `captureLogs()` (`src/testing/README.md`). An app that takes its channels as a
+parameter is silenced by `quietChannel()`, beside `captureLogs()` in `@y-core/forge/testing`, passed in their place.
+
 ---
 
 ## 4. Log Levels by HTTP Status
@@ -340,4 +369,5 @@ known user base, and a keyed one means `crypto.subtle`, which is async, while `d
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [ram-6]: ./ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sb-5]: ./STORAGE_BINDINGS.md#5-dev-degradation
+[sh-4b]: ./SECURITY_HARDENING.md#4b-a-missing-binding-under-forge-cf-dev
 [sh-5b]: ./SECURITY_HARDENING.md#5b-logging-integration

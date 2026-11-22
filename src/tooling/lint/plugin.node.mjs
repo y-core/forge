@@ -1400,7 +1400,7 @@ var dataSlotBeforeSpread = {
 var SEED_RENDERER = /^render(?:[A-Z]\w*)?$/;
 var SUBSTRING_MATCHERS = /* @__PURE__ */ new Set(["toContain", "toMatch"]);
 var LIST_METHODS = /* @__PURE__ */ new Set(["split", "map", "filter", "flatMap", "concat", "matchAll"]);
-var LIST_HELPERS = ["classesOf"];
+var LIST_HELPERS = ["classesOf", "tagsOf", "elementsOf", "attrValuesOf"];
 var nameOf = (node) => node?.type === "Identifier" ? node.name : void 0;
 function memberName(node) {
   if (node?.type !== "MemberExpression" || node.computed === true) return void 0;
@@ -1468,16 +1468,50 @@ function yieldsList(node, isList) {
   if (value.type === "BlockStatement") return blockReturnsList(value, isList);
   return producesList(value, isList);
 }
+var EQUALITY_MATCHERS = /* @__PURE__ */ new Set(["toEqual", "toStrictEqual"]);
+var itemsOf = (node) => node.elements ?? [];
+function keyOf(node) {
+  const property = node;
+  if (node?.type !== "Property" || property?.computed === true) return void 0;
+  const key = property?.key;
+  return nameOf(key) ?? (key?.type === "Literal" && typeof key.value === "string" ? key.value : void 0);
+}
+function matcherArgument(matcher) {
+  const call = matcher?.parent;
+  return call?.type === "CallExpression" ? call.arguments[0] : void 0;
+}
+var isLiteral = (node, value) => node?.type === "Literal" && node.value === value;
+function expectedInSlot(node) {
+  const holder = node.parent;
+  let subject;
+  let pick;
+  if (holder?.type === "ArrayExpression") {
+    const index = itemsOf(holder).indexOf(node);
+    subject = holder;
+    pick = (expected2) => expected2.type === "ArrayExpression" ? itemsOf(expected2)[index] : void 0;
+  } else if (holder?.type === "Property" && holder.value === node && keyOf(holder) !== void 0) {
+    const key = keyOf(holder);
+    subject = holder.parent;
+    pick = (expected2) => expected2.type === "ObjectExpression" ? expected2.properties?.find((property) => keyOf(property) === key) : void 0;
+  } else {
+    return void 0;
+  }
+  const asserted = subject?.parent;
+  if (asserted?.type !== "CallExpression" || nameOf(asserted.callee) !== "expect" || asserted.arguments[0] !== subject) {
+    return void 0;
+  }
+  const expected = EQUALITY_MATCHERS.has(memberName(asserted.parent) ?? "") ? matcherArgument(asserted.parent) : void 0;
+  const slot = expected === void 0 ? void 0 : pick(expected);
+  return slot?.type === "Property" ? slot.value : slot;
+}
 function assertsAbsence(node) {
+  if (isLiteral(expectedInSlot(node), false)) return true;
   const asserted = node.parent;
   if (asserted?.type !== "CallExpression" || nameOf(asserted.callee) !== "expect") return false;
   const negated = memberName(asserted.parent) === "not";
   const matcher = negated ? asserted.parent?.parent : asserted.parent;
   if (memberName(matcher) !== "toBe") return false;
-  const call = matcher?.parent;
-  const argument = call?.type === "CallExpression" ? call.arguments[0] : void 0;
-  const value = argument?.type === "Literal" ? argument.value : void 0;
-  return value === negated;
+  return isLiteral(matcherArgument(matcher), negated);
 }
 function declarationOf(identifier, sourceCode) {
   const name = nameOf(identifier);
@@ -1488,13 +1522,30 @@ function declarationOf(identifier, sourceCode) {
   }
   return void 0;
 }
+var CALLBACK_RESULT_ARGS = /* @__PURE__ */ new Map([
+  ["then", [0, 1]],
+  ["map", [0]],
+  ["flatMap", [0]]
+]);
+function namesMarkupFunction(ref, markup, resolve) {
+  if (SEED_RENDERER.test(nameOf(ref) ?? "")) return true;
+  const declared = resolve(ref);
+  return declared !== void 0 && markup.functions.has(declared);
+}
+function callbackReturnsMarkup(callback, markup, resolve) {
+  const fn = unwrap(callback);
+  if (fn == null) return false;
+  if (isFunction(fn)) return returnsMarkup(fn, markup, resolve);
+  return fn.type === "Identifier" && namesMarkupFunction(fn, markup, resolve);
+}
 function reachesMarkup(node, markup, resolve) {
   if (node === void 0) return false;
+  if (markup.responseText && node.type === "AwaitExpression" && memberName(unwrap(node)?.callee) === "text") return true;
   if (node.type === "CallExpression") {
     const callee = node.callee;
-    if (SEED_RENDERER.test(nameOf(callee) ?? "")) return true;
-    const declared = resolve(callee);
-    if (declared !== void 0 && markup.functions.has(declared)) return true;
+    if (namesMarkupFunction(callee, markup, resolve)) return true;
+    const callbacks = CALLBACK_RESULT_ARGS.get(memberName(callee) ?? "") ?? [];
+    if (callbacks.some((index) => callbackReturnsMarkup(node.arguments[index], markup, resolve))) return true;
   }
   if (node.type === "Identifier") {
     const declared = resolve(node);
@@ -1502,13 +1553,39 @@ function reachesMarkup(node, markup, resolve) {
   }
   return childrenOf(node).some((child) => !spellsName(node, child) && reachesMarkup(child, markup, resolve));
 }
+function resultOf(node) {
+  const last = node.type === "SequenceExpression" ? node.expressions.at(-1) : void 0;
+  return last === void 0 ? node : resultOf(last);
+}
+function blockReturns(node) {
+  return childrenOf(node).flatMap((child) => {
+    if (isFunction(child)) return [];
+    if (child.type !== "ReturnStatement") return blockReturns(child);
+    const argument = child.argument;
+    return argument == null ? [] : [resultOf(argument)];
+  });
+}
+var readsText = (node) => {
+  const value = unwrap(node);
+  return value?.type === "CallExpression" && memberName(value.callee) === "text";
+};
+function returnsMarkup(node, markup, resolve) {
+  const fn = unwrap(node);
+  const body = isFunction(fn) ? fn.body : fn;
+  if (body == null) return false;
+  const returned = body.type === "BlockStatement" ? blockReturns(body) : [resultOf(body)];
+  return returned.some((expression) => markup.responseText && readsText(expression) || reachesMarkup(expression, markup, resolve));
+}
 var exactMarkupAssertion = {
   meta: {
     type: "problem",
-    docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." }
+    docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." },
+    // `responseText: false` is for a tree whose responses are not all markup, where a 429's plain-text body is not.
+    schema: [{ type: "object", properties: { responseText: { type: "boolean" } }, additionalProperties: false }]
   },
   create(context) {
-    const markup = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set() };
+    const responseText = context.options?.[0]?.responseText ?? true;
+    const markup = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set(), responseText };
     const lists = /* @__PURE__ */ new Set();
     const resolved = /* @__PURE__ */ new Map();
     const bindings = [];
@@ -1559,9 +1636,11 @@ var exactMarkupAssertion = {
           size = markup.functions.size + markup.values.size + lists.size;
           for (const binding of bindings) {
             if (annotatesList(binding.returnType) || yieldsList(binding.body, isList)) lists.add(binding.declaration);
-            if (!reachesMarkup(binding.body, markup, resolve)) continue;
-            if (binding.fn) markup.functions.add(binding.declaration);
-            else if (!lists.has(binding.declaration)) markup.values.add(binding.declaration);
+            if (binding.fn) {
+              if (returnsMarkup(binding.body, markup, resolve)) markup.functions.add(binding.declaration);
+            } else if (!lists.has(binding.declaration) && reachesMarkup(binding.body, markup, resolve)) {
+              markup.values.add(binding.declaration);
+            }
           }
         }
         for (const { subject, matcher, loc } of candidates) {

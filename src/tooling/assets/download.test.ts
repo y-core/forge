@@ -4,6 +4,8 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { file, write } from "bun";
+
 import { fetchURL } from "./download";
 
 /** The pin a caller would write into config for `content`. */
@@ -28,8 +30,8 @@ describe("fetchURL()", () => {
 
   it("does not call fetch when the file on disk already matches the pin", async () => {
     dest = join(tmpdir(), `forge-assets-skip-${Date.now()}`);
-    // Bun.write bypasses any node:fs.writeFileSync mock left installed by another test file.
-    await Bun.write(dest, "existing content");
+    // `write` from "bun" bypasses any node:fs.writeFileSync mock left installed by another test file.
+    await write(dest, "existing content");
 
     savedFetch = globalThis.fetch;
     let fetchCalled = false;
@@ -46,13 +48,13 @@ describe("fetchURL()", () => {
   // copy permanent, since nothing later in the build ever looks at those bytes again.
   it("re-fetches a file on disk whose digest no longer matches the pin", async () => {
     dest = join(tmpdir(), `forge-assets-poisoned-${Date.now()}`);
-    await Bun.write(dest, "poisoned by an earlier build");
+    await write(dest, "poisoned by an earlier build");
 
     const spy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("clean", { status: 200 }));
     try {
       await fetchURL("https://cdn.example.com/file", dest, { sha256: pin("clean") });
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(await Bun.file(dest).text()).toBe("clean");
+      expect(await file(dest).text()).toBe("clean");
     } finally {
       spy.mockRestore();
     }
@@ -60,7 +62,7 @@ describe("fetchURL()", () => {
 
   it("calls fetch when force:true even if the file matches", async () => {
     dest = join(tmpdir(), `forge-assets-force-${Date.now()}`);
-    await Bun.write(dest, "stale");
+    await write(dest, "stale");
 
     await expect(fetchURL("https://this.url.does.not.exist.invalid/file", dest, { sha256: pin("stale"), force: true })).rejects.toThrow();
   });
@@ -104,7 +106,7 @@ describe("fetchURL()", () => {
       await expect(fetchURL("https://cdn.example.com/font.woff2", dest, { sha256: pin("x") })).rejects.toThrow(
         "[forge-assets] https://cdn.example.com/font.woff2: redirected to http://cdn.example.com/font.woff2 — only https:// URLs may be downloaded",
       );
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -130,7 +132,7 @@ describe("fetchURL()", () => {
     const { spy, asked } = chain([redirect("/mirror/font.woff2"), new Response("trusted", { status: 200 })]);
     try {
       await fetchURL("https://cdn.example.com/font.woff2", dest, { sha256: pin("trusted") });
-      expect(await Bun.file(dest).text()).toBe("trusted");
+      expect(await file(dest).text()).toBe("trusted");
       expect(asked).toEqual(["https://cdn.example.com/font.woff2", "https://cdn.example.com/mirror/font.woff2"]);
     } finally {
       spy.mockRestore();
@@ -164,7 +166,7 @@ describe("fetchURL()", () => {
     const spy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("tampered", { status: 200 }));
     try {
       await expect(fetchURL("https://cdn.example.com/icon.svg", dest, { sha256: pin("expected") })).rejects.toThrow(/sha256 mismatch/);
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -175,7 +177,7 @@ describe("fetchURL()", () => {
     const spy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("trusted", { status: 200 }));
     try {
       await fetchURL("https://cdn.example.com/icon.svg", dest, { sha256: pin("trusted") });
-      expect(await Bun.file(dest).text()).toBe("trusted");
+      expect(await file(dest).text()).toBe("trusted");
     } finally {
       spy.mockRestore();
     }
@@ -198,7 +200,7 @@ describe("fetchURL()", () => {
         /over the 32-byte cap/,
       );
       expect(emitted).toBeLessThan(16);
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -217,7 +219,7 @@ describe("fetchURL()", () => {
     const undeclared = spyOn(globalThis, "fetch").mockResolvedValue(new Response(body, { status: 200 }));
     try {
       await expect(fetchURL("https://cdn.example.com/big", dest, { sha256: pin(body), maxBytes: 16 })).rejects.toThrow(/over the 16-byte cap/);
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       undeclared.mockRestore();
     }
@@ -230,7 +232,7 @@ describe("fetchURL()", () => {
       await expect(fetchURL("https://cdn.example.com/huge", dest, { sha256: pin("x") })).rejects.toThrow(
         /^\[forge-assets\] https:\/\/cdn\.example\.com\/huge: declares 1073741824 bytes, over the \d+-byte cap$/,
       );
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -254,7 +256,7 @@ describe("fetchURL()", () => {
       await expect(fetchURL("https://cdn.example.com/slow.woff2", dest, { sha256: pin("x"), timeoutMs: 5 })).rejects.toThrow(
         "[forge-assets] https://cdn.example.com/slow.woff2: timed out after 5ms",
       );
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -274,7 +276,7 @@ describe("fetchURL()", () => {
       await expect(fetchURL("https://cdn.example.com/stall.woff2", dest, { sha256: pin("x"), timeoutMs: 5 })).rejects.toThrow(
         "[forge-assets] https://cdn.example.com/stall.woff2: timed out after 5ms",
       );
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -294,7 +296,7 @@ describe("fetchURL()", () => {
       );
       expect(signals.length).toBe(2);
       expect(signals[1]).toBe(signals[0]);
-      expect(await Bun.file(dest).exists()).toBe(false);
+      expect(await file(dest).exists()).toBe(false);
     } finally {
       spy.mockRestore();
     }

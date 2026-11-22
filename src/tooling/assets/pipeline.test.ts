@@ -1,7 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import { spawnSync } from "bun";
 
 import { createPdfFontSet, readPdfFontPack } from "../../render/pdf/fonts/mod";
 import type { PdfFontPackData } from "../../render/pdf/fonts/types";
@@ -10,7 +13,7 @@ import type { PdfArtwork, PdfLetterhead } from "../../render/pdf/types";
 import type { SpawnOptions, SpawnOutcome } from "../cli/types";
 import { validateCommentBudget } from "../gate/checks/comment-budget-parse";
 import { buildAll, generateAssetsTypes, readEmittedManifest, structuralSignature } from "./pipeline";
-import type { ResolvedConfig } from "./types";
+import type { FontPackData, ResolvedConfig, ServiceWorkerRecord } from "./types";
 
 function parseEmittedObject(source: string, opening: string): Record<string, string> {
   const start = source.indexOf(opening);
@@ -479,7 +482,7 @@ const LOGS_PRECACHE = [
 ].join("\n");
 
 function runWorker(path: string): { precache: string[]; version: string } {
-  return JSON.parse(Bun.spawnSync(["bun", path]).stdout.toString()) as { precache: string[]; version: string };
+  return JSON.parse(spawnSync(["bun", path]).stdout.toString()) as { precache: string[]; version: string };
 }
 
 function chunkHolding(publicDir: string, marker: string): string {
@@ -522,7 +525,7 @@ describe("buildAll() — the service worker", () => {
       );
 
       const worker = join(tmpDir, "public", "sw.js");
-      const seen = JSON.parse(Bun.spawnSync(["bun", worker]).stdout.toString()) as { main: string; admin: string; precache: string[] };
+      const seen = JSON.parse(spawnSync(["bun", worker]).stdout.toString()) as { main: string; admin: string; precache: string[] };
 
       expect(seen.main).toMatch(/^\/assets\/js\/main-[A-Z0-9]+\.js$/);
       expect(seen.admin).toMatch(/^\/assets\/js\/admin-[A-Z0-9]+\.js$/);
@@ -589,6 +592,30 @@ describe("buildAll() — the service worker", () => {
     }
   });
 
+  it("records the entry, the digest of sw.js and of every file its bundle read beside the generated module, the virtual precache module aside", async () => {
+    const tmpDir = workerApp(`import { assets } from "@assets";\nimport { prune } from "./prune";\n${LOGS_PRECACHE}\nprune(assets);\n`);
+    writeFileSync(join(tmpDir, "src", "prune.ts"), "export const prune = (value: unknown) => value;\n");
+    const digest = (path: string) =>
+      createHash("sha256")
+        .update(readFileSync(join(tmpDir, path)))
+        .digest("hex");
+
+    try {
+      await buildAll(
+        workerConfig(tmpDir, join(tmpDir, "public", "assets"), { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }),
+        { assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      const record = JSON.parse(readFileSync(join(tmpDir, ".forge", "sw.inputs.json"), "utf-8")) as ServiceWorkerRecord;
+      const local = Object.entries(record.inputs).filter(([path]) => !path.startsWith("../"));
+
+      expect([record.entry, record.worker, record.sha256]).toEqual(["src/sw.ts", "public/sw.js", digest("public/sw.js")]);
+      expect(local).toEqual([".forge/assets.ts", "src/prune.ts", "src/sw.ts"].map((path) => [path, digest(path)]));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("deletes the sw.js an earlier build wrote once the config drops js.serviceWorker", async () => {
     const tmpDir = workerApp(LOGS_PRECACHE);
     const publicDir = join(tmpDir, "public", "assets");
@@ -597,12 +624,37 @@ describe("buildAll() — the service worker", () => {
 
     try {
       await buildAll(workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }), { assetsPath });
-      expect(existsSync(worker)).toBe(true);
+      expect([existsSync(worker), existsSync(join(tmpDir, ".forge", "sw.inputs.json"))]).toEqual([true, true]);
 
       await buildAll(workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: null }), { assetsPath });
 
       expect(existsSync(worker)).toBe(false);
+      expect(existsSync(join(tmpDir, ".forge", "sw.inputs.json"))).toBe(false);
       expect(existsSync(join(tmpDir, "public", "_headers"))).toBe(true);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("deletes a stale record beside the generated module a build with no worker writes, leaving a hand-written sw.js it never recorded", async () => {
+    const tmpDir = workerApp(LOGS_PRECACHE);
+    const record = join(tmpDir, "gen", "sw.inputs.json");
+    const handWritten = "self.addEventListener('fetch', () => {});\n";
+    mkdirSync(join(tmpDir, "gen"), { recursive: true });
+    mkdirSync(join(tmpDir, "public"), { recursive: true });
+    writeFileSync(record, JSON.stringify({ entry: "src/sw.ts", worker: "public/sw.js", sha256: "0", inputs: {} }));
+    writeFileSync(join(tmpDir, "public", "sw.js"), handWritten);
+
+    try {
+      await buildAll(workerConfig(tmpDir, join(tmpDir, "public", "assets"), { bundles: [], serviceWorker: null }), {
+        assetsPath: join(tmpDir, "gen", "assets.ts"),
+      });
+
+      expect([existsSync(join(tmpDir, "gen", "assets.ts")), existsSync(record), readFileSync(join(tmpDir, "public", "sw.js"), "utf-8")]).toEqual([
+        true,
+        false,
+        handWritten,
+      ]);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -1259,14 +1311,24 @@ describe("buildAll() — the font subset stage", () => {
   });
 
   // The join, with no hand-written fixture on the path: what the build wrote is what the engine reads.
+  it("declares the pack it builds as one the engine's reader accepts", () => {
+    const fits: FontPackData extends PdfFontPackData ? true : false = true;
+    expect(fits).toBe(true);
+  });
+
   it("produces a packs.json the engine resolves a face from", async () => {
     const publicDir = await build([
       { family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: "Declaration", weight: 400 },
       { family: "Oswald", from: SOURCE, to: "fonts/oswald-700.ttf", covering: "Declaration", weight: 700 },
     ]);
     try {
-      const written = JSON.parse(readFileSync(join(publicDir, "fonts", "packs.json"), "utf-8")) as PdfFontPackData[];
-      const set = createPdfFontSet(written.map((pack) => readPdfFontPack(pack, (path) => new Uint8Array(readFileSync(join(publicDir, path))))));
+      const written: unknown[] = JSON.parse(readFileSync(join(publicDir, "fonts", "packs.json"), "utf-8"));
+      const packs = written.map((pack) => {
+        const read = readPdfFontPack(pack, (path) => new Uint8Array(readFileSync(join(publicDir, path))));
+        if (!read.ok) throw new Error(read.error.message);
+        return read.data;
+      });
+      const set = createPdfFontSet(packs);
       expect(set.families).toEqual(["Oswald"]);
       const bold = set.match({ family: "Oswald", weight: 700 });
       expect(bold.ok).toBe(true);

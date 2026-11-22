@@ -67,7 +67,7 @@ describe("PasskeyEnrolView contract attributes", () => {
     });
   });
 
-  // A ceremony spans two endpoints and `csrfProtection` binds a token to one path, so one token
+  // A ceremony spans two endpoints and the CSRF policy binds a token to one path, so one token
   // used twice is a 403 on whichever endpoint it was not minted for.
   it("never emits the same token for both endpoints", async () => {
     const attrs = attrsOf(await enrol(), `data-scope="${PASSKEY_SCOPE}"`);
@@ -150,7 +150,7 @@ describe("PasskeyEnrolView sign-out", () => {
     expect(tagOf(html, 'href="/auth/signout"')).toBe("");
   });
 
-  it("posts to the sign-out path with the token the route needs, so csrfProtection admits it", async () => {
+  it("posts to the sign-out path with the token the route needs, so the CSRF policy admits it", async () => {
     const html = await enrol();
     expect(attrOf(html, 'data-slot="form"', "method")).toBe("post");
     expect(attrOf(html, 'data-slot="form"', "action")).toBe("/auth/signout");

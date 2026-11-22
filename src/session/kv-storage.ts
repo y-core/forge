@@ -7,7 +7,8 @@ import type { KVSessionStorageOptions, SessionKVBinding } from "./types";
 type SessionData = NonNullable<Parameters<typeof createSession>[1]>;
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
-const KV_MIN_TTL_SECONDS = 60;
+/** The shortest `expirationTtl` Workers KV accepts. @internal */
+export const KV_MIN_TTL_SECONDS = 60;
 
 /** Throws where a KV session TTL is not finite or is below the shortest `expirationTtl` Workers KV accepts. @internal */
 export function assertKVSessionTtl(operation: string, knob: string, ttlSeconds: number): void {

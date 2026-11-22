@@ -1136,9 +1136,9 @@ describe("findCodeFences()", () => {
     ].join("\n");
 
     expect(findCodeFences(source)).toEqual([
-      { lang: "tsx", line: 4, body: "<Badge />;" },
-      { lang: "html", line: 10, body: "<p>x</p>\n<p>y</p>" },
-      { lang: "", line: 15, body: "plain" },
+      { lang: "tsx", flags: [], line: 4, body: "<Badge />;" },
+      { lang: "html", flags: [], line: 10, body: "<p>x</p>\n<p>y</p>" },
+      { lang: "", flags: [], line: 15, body: "plain" },
     ]);
   });
 
@@ -1171,13 +1171,17 @@ describe("findCodeFences()", () => {
   it("drops a fence that is never closed", () => {
     const source = ["```tsx", "<Badge />;", "```", "", "```tsx", "<Card />;", "", "Prose the open fence swallowed."].join("\n");
 
-    expect(findCodeFences(source)).toEqual([{ lang: "tsx", line: 2, body: "<Badge />;" }]);
+    expect(findCodeFences(source)).toEqual([{ lang: "tsx", flags: [], line: 2, body: "<Badge />;" }]);
   });
 
   it("keeps an indented fence's body verbatim, indentation included", () => {
     const source = ["1. Step one:", "", "   ```tsx", "   <Stack>", "     <Badge />", "   </Stack>;", "   ```"].join("\n");
 
-    expect(findCodeFences(source)).toEqual([{ lang: "tsx", line: 4, body: "   <Stack>\n     <Badge />\n   </Stack>;" }]);
+    expect(findCodeFences(source)).toEqual([{ lang: "tsx", flags: [], line: 4, body: "   <Stack>\n     <Badge />\n   </Stack>;" }]);
+  });
+
+  it("splits the info-string words after the language into flags", () => {
+    expect(findCodeFences(["```ts  nocheck", "bad;", "```"].join("\n"))).toEqual([{ lang: "ts", flags: ["nocheck"], line: 2, body: "bad;" }]);
   });
 });
 

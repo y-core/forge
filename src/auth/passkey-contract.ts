@@ -28,10 +28,11 @@ export const PASSKEY_OPTIONS_TOKEN_ATTR = "data-passkey-options-token";
 /** CSRF token minted for `PASSKEY_VERIFY_PATH_ATTR`, and valid at no other path. @public */
 export const PASSKEY_VERIFY_TOKEN_ATTR = "data-passkey-verify-token";
 
-/** Header both tokens are sent on, when the app's `csrfProtection` does not use the default. @public */
+/** Header both tokens are sent on, when the app's CSRF policy does not use the default. @public */
 export const PASSKEY_CSRF_HEADER_ATTR = "data-passkey-csrf-header";
 
-/** `csrfProtection`'s own default header name, used when the attribute is absent. @public */
+// A copy of `form`'s `CSRF_HEADER_DEFAULT`, not an import: the browser bundle reads this contract, which NAMESPACES.md §5h keeps pure data with no imports.
+/** The CSRF policy's own default header name, used when the attribute is absent. @public */
 export const PASSKEY_CSRF_HEADER_DEFAULT = "X-CSRF-Token";
 
 /** Where the controller navigates once verification succeeds. @public */

@@ -48,4 +48,37 @@ describe("buildRequest", () => {
     expect(req.method).toBe("POST");
     expect(await req.text()).toBe("raw");
   });
+
+  it("sets mode and credentials only when given", () => {
+    const req = buildRequest("/x", { mode: "navigate", credentials: "omit" });
+    expect(req.mode).toBe("navigate");
+    expect(req.credentials).toBe("omit");
+    expect(buildRequest("/x").mode).toBe("cors");
+  });
+
+  it("leaves mode and credentials at the runtime's defaults when neither is given", () => {
+    const runtime = new Request("http://test/x");
+    const req = buildRequest("/x");
+    expect({ mode: req.mode, credentials: req.credentials }).toEqual({ mode: runtime.mode, credentials: runtime.credentials });
+    expect(Object.getOwnPropertyDescriptor(req, "credentials")).toBeUndefined();
+  });
+
+  it.each(["navigate", "same-origin", "no-cors", "cors"] as const)("reads mode %s back", (mode) => {
+    expect(buildRequest("/x", { mode }).mode).toBe(mode);
+  });
+
+  it.each(["omit", "same-origin", "include"] as const)("reads credentials %s back", (credentials) => {
+    expect(buildRequest("/x", { credentials }).credentials).toBe(credentials);
+  });
+
+  it("keeps method, headers and body alongside mode and credentials", async () => {
+    const req = buildRequest("/x", { json: { a: 1 }, mode: "same-origin", credentials: "omit" });
+    expect({
+      method: req.method,
+      type: req.headers.get("content-type"),
+      body: await req.text(),
+      mode: req.mode,
+      credentials: req.credentials,
+    }).toEqual({ method: "POST", type: "application/json", body: '{"a":1}', mode: "same-origin", credentials: "omit" });
+  });
 });

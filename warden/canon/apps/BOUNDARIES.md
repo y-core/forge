@@ -21,8 +21,8 @@ description: "SSR versus browser, middleware ordering and guard placement, valid
 - §1c Why It Is a Path Convention and Not a Guard: the failure mode each catches
 - §2 Middleware Ordering and Guard Placement: the chain is the security boundary
 - §2a The Global Chain Order: identity, headers, logging, policy
-- §2b Guards Live in the Route's Middleware List: never inline in a handler
-- §2c Guard Order Within a Route: cheapest and most transport-shaped first
+- §2b Guards Are Declared, Never Inline: a covering chain group, or the route's middleware list
+- §2c Guard Order Within a Route: cheapest and most transport-shaped first, the chain's before the route's
 - §2d Rejection Status Discipline: what each refusal returns
 - §2e A Route Answers Only the Method It Declares: no override, no state-changing GET
 - §3 Validate at the Boundary: untrusted input stops at the handler
@@ -94,14 +94,24 @@ executes.
 **Middleware that queues on the way out is not a substitute for one that queues on the way in.** The difference is invisible on a successful request
 and decisive on a failing one.
 
-### 2b. Guards Live in the Route's Middleware List
+### 2b. Guards Are Declared, Never Inline
 
-**A route's guards are declared in its middleware list, never inline inside the handler.**
+**A route's guards are declared where a reviewer auditing the routes can see them, never inline inside the handler.** Two declarations count, and
+each holds what it can check:
 
-An inline guard is invisible to anyone auditing the route map, which is the one artifact a reviewer reads to answer "which routes are protected". A
-guard that is not in that list does not exist for review purposes, however correct its code is.
+- **A guard group on the middleware chain whose paths cover the route** holds the checks that need nothing but the request: its shape, its origin,
+  a rate limit keyed by client address, and the CSRF verification after them. They run before routing, so a hostile request is refused before a
+  route is matched.
+- **The route's own middleware list** holds the checks that need the route matched: the identity check, a membership check reading the route's
+  parameters, and a rate limit keyed by that identity or parameter.
 
-The corollary: **a state-changing route with an empty middleware list is a finding on its face**, without reading the handler at all.
+An origin check or an address-keyed limit placed in the route's middleware list runs after the chain's CSRF verification, out of §2c's order; it
+belongs in a covering group. An inline guard is invisible to anyone auditing the chain declaration and the route map, which are the artifacts a
+reviewer reads to answer "which routes are protected". A guard in neither does not exist for review purposes, however correct its code is.
+
+The corollary: **a state-changing route that neither a covering guard group nor its own middleware list guards is a finding on its face**, without
+reading the handler at all. The chain declaration and the route's binding are read together; an empty middleware list under a covering group is
+not a finding.
 
 ### 2c. Guard Order Within a Route
 
@@ -109,10 +119,12 @@ Order guards **cheapest and most transport-shaped first**, so a hostile request 
 
 1. **Request-shape guards** — method, content type, expected client hints.
 2. **Origin and cross-origin verification.**
-3. **Rate limiting.**
+3. **Rate limiting** keyed by client address.
 4. **CSRF verification** — it reads the body, so it comes after the shape checks that make a body worth reading.
+5. **The route's own checks** — identity, then membership, then a rate limit keyed by either.
 
-A guard that performs a network call or a cryptographic verification never runs before one that inspects a header.
+Steps 1 to 4 are the covering guard groups', in the chain's order; step 5 is the route's middleware list (§2b). A guard that performs a network call
+or a cryptographic verification never runs before one that inspects a header.
 
 ### 2d. Rejection Status Discipline
 
@@ -151,13 +163,13 @@ The canonical sequence for a mutating handler. **The order is the rule** — eac
 the next would otherwise have to parse:
 
 1. **Read the body with a size limit.** An unbounded read is a denial-of-service surface.
-2. **CSRF verification** — already applied as route middleware (§2b), so it rejected before the handler was entered.
+2. **CSRF verification** — already applied by the chain (§2b), so it rejected before the handler was entered.
 3. **Challenge or CAPTCHA verification**, where configured.
 4. **Schema parse** of the whole body, producing typed output or an issue list.
 5. **Pass the typed output to the service.**
 
 **A declarative handler builder should supply steps 1, 3, 4 and 5 from configuration**, so a route names its schema and its guard fields and nothing
-else. Step 2 stays middleware, because a transport guard belongs where a reader auditing the route map can see it.
+else. Step 2 stays in the chain, because a transport guard belongs where a reader auditing the routes can see it.
 
 ### 3c. Trust Boundaries on Inbound Headers
 

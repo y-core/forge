@@ -20,8 +20,8 @@ export interface AuthTokenOptions {
 }
 
 /** Behaviour configuration for the auth namespace. @public */
-export interface AuthOptions {
-  ring: KeyRingResolver;
+export interface AuthOptions<Bindings = Record<string, unknown>> {
+  ring: KeyRingResolver<Bindings>;
   algorithms?: readonly AuthAlgorithm[];
 }
 

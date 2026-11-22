@@ -18,7 +18,541 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **The chain's `session` slot takes only a `SessionMiddleware`, checks that it set a session, and the CSRF `subject` takes `"session"`.**
+  `createAnonymousSession` and `sessionMiddleware` return the branded `SessionMiddleware` (exported from `@y-core/forge/session`), and
+  `MiddlewareChainOptions.session` and `MiddlewareContribution.session` accept nothing else. A request the slot leaves without a session on
+  `sessionCtx` throws, naming the slot. `CsrfPolicyOptions.subject: "session"` binds every token to the chain session's id, and a chain given
+  it with no session slot throws at registration; `csrfMintStage` mounted by hand throws on `"session"` and still takes a resolver.
+  `SignedCookie` gains a readonly `maxAge`. **Migration:** replace `subject: (c) => sessionCtx.getOptional(c)?.id` on the chain's `csrf`
+  with `subject: "session"`. Pass the session slot what `createAnonymousSession` or `sessionMiddleware` returns, never a hand-written
+  `Middleware`. A hand-built object typed `SignedCookie` adds `maxAge`.
+- **`createUnsignedCookie` moves from `@y-core/forge/session` to `@y-core/forge/http`, with its types.** `UnsignedCookie`,
+  `UnsignedCookieOptions` and `CookieAttributes` move with it, and `session` exports none of them. `http` also exports
+  `COOKIE_ATTRIBUTES_DEFAULT` (`Path=/`, `SameSite=Lax`, `HttpOnly`, `Secure`), which `createSignedCookie`, `createFlash` and the `d1Sessions`
+  bookmark cookie use, so the cookies they set are unchanged. **Migration:** import `createUnsignedCookie`, `UnsignedCookie`,
+  `UnsignedCookieOptions` and `CookieAttributes` from `@y-core/forge/http` instead of `@y-core/forge/session`.
+- **The app root owns the CSRF policy: `MiddlewareContribution` has no `csrf`.** The policy is `MiddlewareChainOptions.csrf` alone, so a
+  contribution that carries one no longer compiles, and one that reaches the chain anyway throws at registration, naming the root `csrf`
+  option. The "two sources each supply a csrf policy" throw is gone. **Migration:** move the
+  `csrf` a contribution carried to the `csrf` option of `applyMiddlewareChain`, beside `session`. Where two sources each carried one, merge
+  them into one policy: its `paths` and `exclude` cover what both did.
+- **The auth guards take the services resolver as `services`, not a `sessions` resolver of their own.** `AuthGuardOptions.sessions` is
+  gone, so `requireAuth`, `resolveAuth` and `createAuthGuards`' `auth` take `services: AuthRequestServicesResolver`, the resolver
+  `authRequestServices` returns, and resolve the session through the one store it builds per request. `requireAuth` and `resolveAuth` built
+  without one throw rather than admit every visitor as anonymous. **Migration:** replace `sessions: resolveServices.sessions`, or a resolver
+  that built its own `createAuthSessionStore`, with `services: resolveServices`. Set the session bounds once, as `sessionOptions` on
+  `authRequestServices`, and drop any second store built only for the guards.
+- **`createAuthGuards` returns a `MiddlewareContribution`, and the chain refuses a session cookie that ends before the auth session.** It
+  returned `MiddlewareGuardGroup[]`; it now returns `{ guards, sessionMaxAgeAtLeastMs }`, the lifetime read off `auth.services`, which gains
+  `absoluteLifetimeMs`: `sessionOptions.absoluteLifetimeMs`, or `AUTH_SESSION_MAX_MS`. `MiddlewareContribution` gains
+  `sessionMaxAgeAtLeastMs`, and `applyMiddlewareChain` throws at registration, naming both values, where the largest one contributed exceeds
+  the session slot's cookie `maxAge`, where that cookie sets no `maxAge`, or where there is no session slot. An app whose session cookie sets
+  no `maxAge` now fails at registration; `createAnonymousSession`'s 365-day default passes. **Migration:** move `guards: createAuthGuards({ … })`
+  to `contributions: [createAuthGuards({ … })]`, beside any other contribution, and read `.guards` where the result was used as an array. Give
+  the session cookie a `maxAge` of at least the auth session's absolute lifetime in seconds — 604800 for the default 7 days. A hand-built
+  `AuthRequestServicesResolver` adds `absoluteLifetimeMs`.
+- **`rateLimit` names its binding, and the chain checks the name at registration.** `RateLimitOptions.limiter` is gone; `binding: string`
+  names the binding, read from `c.env` per request. `RateLimitBinding` is gone; the binding's type is `RateLimit`, Cloudflare's own shape and
+  the name `forge cf gen env` emits. `MiddlewareChainOptions` gains `rateLimits`, the generated `RATELIMITS` table, which the chain publishes
+  on every request. `applyMiddlewareChain` throws at registration, naming the group's paths, where a group's binding is declared neither in
+  `bindings` nor in a contribution's binding specs, or is not a key of `rateLimits`, and where `bindings` is not a valibot object schema to
+  find it in. A route-level `rateLimit` whose binding is missing from a published `rateLimits` throws on the request. A group's `rateLimit`
+  also takes an array, run in order, and `RateLimitOptions` gains `methods`, every method by default; a request by any other passes without
+  calling the binding. **Migration:** replace `limiter: (c) => c.env.MAIN_LIMITER` with `binding: "MAIN_LIMITER"`, and `RateLimitBinding`
+  with `RateLimit`. Run `forge cf gen env` and pass the generated `RATELIMITS` to `applyMiddlewareChain` as `rateLimits`. Declare each
+  group's binding in the chain's `bindings`, as a `v.object` entry, or as a contribution's `BindingSpec`: required to fail every path when it
+  is absent, optional to answer `503` on its own paths only, and there only for the methods its limit counts. A `bindings` schema that is not a valibot object schema, such as a
+  `v.intersect`, moves the rate-limit binding to a contribution's `BindingSpec`.
+- **Sign-out destroys the session.** `clearAuthSession` deletes the D1 row, then calls `destroy()`, so the cookie is cleared and the next
+  request starts a fresh session: visitor data set before sign-out is gone. A store failure still answers its error and leaves the session
+  intact. `AuthWebOptions.signOut: { keepVisitorData: true }` keeps the old behaviour, dropping only the auth keys and rotating the id, and
+  `clearAuthSession` takes the same value as its third argument. With `signoutClearsSiteData`, the storage clear a sign-out owes is marked by
+  a five-minute `__Host-auth-site-data-owed` cookie instead of a session key, because the session is destroyed; `signoutSiteData` and the next
+  sign-in clear it. Under `keepVisitorData` the mark stays on the session.
+  **Migration:** move visitor data that must outlive a sign-out into the browser, such as a form draft in `sessionStorage`, or pass
+  `signOut: { keepVisitorData: true }` to the auth options. A caller of `clearAuthSession` that writes to the session afterwards passes the
+  same option, or writes before the call, because a destroyed session throws on `set`.
+- **A step-up refused for a spent attempt budget answers `429`, not `422`.** The verify page and its failure panel re-render as before, at `429`,
+  with `Retry-After` set to the factor's `attemptWindowMs` in whole seconds: an emailed code's `guessWindowMs`, an authenticator app's or a
+  recovery code's `lockoutMs`. A factor that reports no window answers `429` without it. The primary sign-in keeps `422` for a throttle, the
+  same answer as a code that did not match, so the status cannot tell an attacker the address has an account. **Migration:** a client or
+  test that read `422` as a step-up throttle reads `429`, and may honour `Retry-After`.
+- **`createAuthGuards` recovers a CSRF-refused sign-out itself, takes `onRefuse` for its HTML groups, and its JSON groups answer in
+  problem+json.** A sign-out `POST` refused for its token answers a `303` to the confirm page (a `204` with `HX-Redirect` under htmx) on every
+  mount, with no hook passed. `createAuthGuards`' `onRefuse` answers its HTML groups' origin, rate-limit, CSRF and `require-admin` refusals,
+  and one it declines passes to the chain's. The `ceremony` and `passkeyCeremony` groups answer every origin, rate-limit and CSRF refusal with
+  `refuseAsProblem()` whatever is passed. The passkey client reads that `application/problem+json` on a `400`, `403`, `413`, `429` or `503`
+  and reports its status as `PasskeyOutcomeDetail.status`. `authCsrfRefusal(paths)` stays exported as a `RefuseHook` that answers only the
+  sign-out refusal and declines every other. **Migration:** delete `onForbidden: authCsrfRefusal(paths.auth)` from the CSRF policy and pass no
+  hook for sign-out recovery. Pass `createAuthGuards({ …, onRefuse })` only for the refusals your pages render, returning `undefined` for the
+  rest. A client of the ceremony endpoints that read a plain-text refusal body reads `application/problem+json`.
+- **Every chain guard refuses through one hook, `onRefuse(c, refusal)`, and the per-guard hooks are removed.** The CSRF policy's
+  `onForbidden`, `rateLimit`'s `onLimit` and `requireAdmin`'s and `createAuthGuards`' `onForbidden` are gone. `applyMiddlewareChain`, each
+  guard group, `originProtection`, `rateLimit` and `requireAdmin` take `onRefuse`, which receives a `Refusal` (exported from
+  `@y-core/forge/context`) narrowed by `guard`. A hook returns `Response | undefined`: `undefined` declines, passing the refusal to the next
+  hook out — the guard's own, its group's, the chain's — and then to forge's plain-text default, and `Retry-After` is kept whichever answers.
+  A CSRF body over `maxBytes` now goes through the hook as `413` reason `too-large`, and a body the policy cannot parse answers `400` reason
+  `unreadable-body` where it answered `403` `missing-token`. Every `503` from `rateLimit` — absent binding, failed key, failed binding — goes
+  through the hook too. Every refusal is logged as `security.<guard>.refused`, at `warn` for a 4xx and `error` for a 5xx, an absent binding
+  in a strict build included, except that a guard writes one line per minute for repeated identical `429`s, and the next line it writes
+  carries the count it held back as `collapsed`; the `rate-limit` source's own key and binding failure lines are replaced by it. A
+  hand-wired `csrfVerifyStage` takes the answer to refuse with. **Migration:** move `csrf.onForbidden: (c, reason) => …` to `applyMiddlewareChain`'s `onRefuse: (c, refusal) => …`,
+  reading `refusal.reason`, or onto the guard group whose paths it served; replace `onLimit: (c) => …` with `onRefuse: (c, refusal) => …`;
+  replace `onForbidden` on `requireAdmin` and `createAuthGuards` with `onRefuse`. Return `undefined` from a hook for a refusal it does not
+  render, and handle an `undefined` result where code calls a `RefuseHook` itself. A client that branched on `403` for an unparseable CSRF
+  body branches on `400`. A log query on `form.refused` or the `rate-limit` source's failure lines reads `security.csrf.refused` and
+  `security.rate-limit.refused`.
+- **`authNav` mints its sign-out token through the app's CSRF policy, and `csrfMinter`, `CsrfMinterOptions` and `authNav`'s `ring` are
+  removed.** `authNav` bound its token to the session id with a ring of its own, so under a policy with any other `subject` its sign-out token
+  never verified. It now calls `mintCsrf`, under the policy's ring and subject; on a request the policy does not cover, a signed-in viewer
+  gets a link to the sign-out confirm page in place of the form. **Migration:** drop `ring` from `authNav({…})`. Replace
+  `csrfMinter({ ring, subject })(c, path)` with `mintCsrf(c, path)` on a request the policy covers, and put a target that was minted with
+  `subject: false` in the policy's `unboundPaths`.
+- **`testing/d1` no longer re-exports `sql`, and `explainPlan` takes the query's text and parameters** where it took a fragment. A fragment
+  is only ever read by the copy of `storage/db` that minted it, so its brand is a private `Symbol()` again. **Migration:** import `sql` from
+  `@y-core/forge/storage/db`, and rewrite `explainPlan(db, fragment)` as `explainPlan(db, fragment.text, fragment.params)`.
+- **A resolver forge caches per `env` is handed the `env`, not the request context.** `KeyRingResolver` is now `(env: Bindings) => KeyRing |
+  Promise<KeyRing>`, and so is every `ring` built on it: `csrfMintStage`, the chain's `csrf` policy, `createAnonymousSession`, `createFlash`,
+  `defineApproval`, `signedObjectLink`, `resolveAuthServices` and `createKeyRingResolver`, each resolved once per `env`.
+  `createAnonymousSession`'s `kv` is now `(env: Bindings) => SessionKVBinding` as well. The cached value is keyed on `env`, so a
+  resolver that read `c.url.host` or the session answered every later request with the first one's result. **Migration:** rewrite
+  `ring: (c) => importKeyRing([c.env.SECRET])` as `ring: (bindings) => importKeyRing([bindings.SECRET])` and `kv: (c) => c.env.KV` as
+  `kv: (bindings) => bindings.KV`, and drop a `getAppContext(c).env` inside one. Neither a ring nor a session KV binding can differ per host; a
+  secret that does must be resolved per request outside it. Drop a `createKeyRingResolver(…)` wrapper around a `ring` and pass the
+  `(bindings) => importKeyRing(…)` function itself: a `ring` option now refuses the wrapper in its type and throws at construction when handed
+  one. Keep `createKeyRingResolver` only for a ring you resolve yourself inside a handler. A resolver still written over the request
+  context now throws on its first request, naming that rewrite, instead of failing on an opaque `TypeError`.
+- **A `ring` reads only the bindings it is typed over.** `KeyRingResolver`'s default `Bindings` is `Record<string, unknown>`, where it was
+  `any`. `AuthOptions`, `CsrfPolicyOptions` and `MiddlewareCsrfPolicy` take a `Bindings` parameter, and `ring` on `authRequestServices`'
+  `auth`, `resolveAuthServices`, `csrfMintStage`, the chain's `csrf` policy and `defineApproval` is typed over the bindings the call names.
+  A binding the app's `Bindings` does not declare is a compile error. So is a stale `(c) => configStore.get(c.env)`, which used to compile and
+  then answer `500` on its first request. Under the default bindings each binding reads as `unknown`. **Migration:** name the app's bindings
+  where the ring is passed: `applyMiddlewareChain<AppEnv>(app, …)`, `authRequestServices<AppEnv>(…)`, `defineApproval<AppEnv>(…)`, or
+  `AuthOptions<AppEnv>` on a standalone object. Rewrite a stale ring as `(env) => …configStore.get(env)…`. A value typed as the bare
+  `KeyRingResolver` or `AuthOptions` that reads a binding becomes `KeyRingResolver<AppEnv>` or `AuthOptions<AppEnv>`.
+- **Trust in Cloudflare headers is declared once, on the chain: `RateLimitOptions.trustCfHeaders` is gone, and `buildGuardChain` is no
+  longer exported.** `applyMiddlewareChain`'s `trustCfHeaders` is published on the request, and every rate limit's client-IP key, by default
+  or with `keySuffix`, reads it: a guard group's, a route's and an approval's. A guard group's or an approval's limit with no `key` under a
+  chain without `trustCfHeaders: true` throws at registration, naming the group's paths. A route-level `rateLimit` with no `key` where no
+  chain published trust answers `503` with reason `key-failed` through the refusal hook, logged, instead of throwing at construction.
+  `buildGuardChain` leaves `@y-core/forge/app`. **Migration:** delete `trustCfHeaders` from every `rateLimit` and set `trustCfHeaders: true`
+  once on `applyMiddlewareChain`; off Cloudflare, or in an app that wires `app.use` without the chain, pass a custom `key`. Move a group
+  mounted with `buildGuardChain` to the chain's `guards`. A custom `key` replaces the client-IP key whatever the trust, so to extend the IP
+  key pass `keySuffix` instead.
+- **An approval's guards are a chain contribution, and `registerApproval` takes no `trustCfHeaders`.** `defineApproval` returns
+  `approval.contribution`, which carries the prompt's origin check and rate limit as a guard group; `registerApproval(app, approval)` only
+  maps the prompt. A chain group covering the approval's path used to verify the CSRF token before the approval's origin check and rate
+  limit ran; both now run first. The approval's limit keys under the chain's `trustCfHeaders`. A prompt whose contribution never reached the
+  chain answers 500 rather than serving unguarded. A `trustCfHeaders` on an approval's or a group's `rateLimit` is now a type error.
+  **Migration:** replace `registerApproval(app, approval, { trustCfHeaders: true })` with `registerApproval(app, approval)`, add `approval.contribution` to `applyMiddlewareChain`'s `contributions`, and set `trustCfHeaders: true`
+  on the chain. Delete `trustCfHeaders` from the approval's `rateLimit`.
+- **`createAuthGuards` refuses a `rateLimit` key that names no group, or one no group holds or inherits.** It throws at construction
+  instead of dropping the limit silently. A key on the bare `admin` group is held by `admin.users` and `admin.elevate` through inheritance.
+  **Migration:** remove a key the error names.
+- **`createAuthGuards` gives a keyless group its nearest keyed ancestor's `rateLimit`, keyed per route, and refuses a group with neither.**
+  A group with no key of its own takes the options of the nearest ancestor `rateLimit` keys, every limit in an array included, with the
+  matched route pattern appended to its key (`routeKeySuffix`, or `${key(c)}:<pattern>` for a custom `key`), so two routes never share a
+  budget and a request is charged once; an ancestor keyed `keySuffix: routeKeySuffix` already carries the pattern, so its key is inherited
+  unchanged as `<ip>:<pattern>`. `false` mounts a group, and every keyless group under it, with no limit. A group holding routes of
+  its own with no keyed ancestor throws at construction, naming every such group, where it mounted with no limit. Omitting `rateLimit`
+  altogether still mounts no limits. **Migration:** key each named group, or an ancestor of it, a limit, or set it to `false` to mount it
+  without one. A subgroup keyed only to repeat its parent's options can drop its key, which moves it to per-route budgets.
+- **`csrfProtection` is removed from `@y-core/forge/form`: an app has one CSRF policy, supplied by the chain.** `applyMiddlewareChain`
+  mints it right after the session and verifies a mutation once, after the request's origin check and rate limit, and forge's router
+  verifies anything still unchecked after every `app.use` registration. There is no inline verifier, so a route's own `middleware` array
+  no longer carries one. `CsrfProtectionOptions` is renamed `CsrfPolicyOptions`. **Migration:** pass its options as `csrf: {…}`, or put a
+  route with its own guards in a guard group; rename `CsrfProtectionOptions` to `CsrfPolicyOptions`. An app wiring `app.use` by hand
+  mounts `csrfMintStage(options)` where it mounted `csrfProtection`.
+- **`applyMiddlewareChain` runs every matching guard group's origin check and rate limit before any group's `guards`.** It registered each
+  group whole in turn, so an earlier group's guards ran ahead of a later group's rate limit on a URL both match. **Migration:** a rate-limit
+  `key` must not read what a group's guards set; take identity from a `globals` middleware such as `resolveAuth` instead.
+- **`createPrimaryNav` takes the app's contributions as a list, and `contribute` is removed.** Call
+  `createPrimaryNav<Key, Ctx, State>([homeNav, notebooksNav])` from the app root, where each slice exports its `NavContribution` as a plain
+  const; the bar renders in list order. Every bar-level menu and megamenu now carries a required `key`, and menus that share a `key` render as
+  one, keeping the first one's position and listing children in list order. A nested submenu is never merged. `createPrimaryNav` throws when:
+  - menus sharing a `key` have different `label`s;
+  - a joining menu declares `filters` that differ, as a set, from the first one's, or a joining megamenu declares a different `align`;
+  - a menu and a megamenu share a `key`;
+  - a bar or footer link, at any depth, names a key no contribution gives an href;
+  - two contributions carry one `hrefs` key, or an entry is labelled "Menu", as `contribute` did.
+
+  **Migration:** replace each `nav.contribute(x)` with `export const x: NavContribution<…> = …` in the slice, and pass the list of them to
+  `createPrimaryNav` in the app root. Give every menu and megamenu a `key`, the same one on menus meant to merge.
+- **A caller can no longer change `createPrimaryNav`'s bar or footer after it is built.** `createPrimaryNav` freezes the copies it stores, so
+  pushing into a menu's `items`, a megamenu's `groups` or a group's `group` taken from `definition()` throws a `TypeError`. It copies footer
+  links too, so changing a footer object the caller kept no longer changes what `footer()` returns. Before, either change reached every later
+  request and got around the refusals. `NavDefinition` and the types it holds (`NavSection`, `NavSectionItem`, `NavItem`, `NavLink`,
+  `NavMenu`, `NavMegaMenu`, `NavSlot`, `NavGroup`) are now readonly all the way down, so such a write does not compile either.
+  **Migration:** build a new definition in place of code that writes into one.
+- **`readPdfFontPack` and `readPdfEmbeddedFonts` validate the pack and return a `PdfResult`.** Each takes the parsed JSON as `unknown` and
+  refuses a pack whose fields are missing, non-finite, outside the style picklist, with a non-positive `unitsPerEm`, or whose `advances`,
+  `glyphs` or `kerning` keys are not code points, as the new `PdfRenderError` kind `"font-pack"`. A code point key is a decimal from `0` to
+  `1114111` (U+10FFFF) with no leading zero, so `"065"` is refused rather than read as `65`. The message names the field, cut at the record,
+  so no input key reaches it. Before, either reader trusted the caller's cast, so a malformed pack reached the engine unchecked.
+  **Migration:** replace `packs.map(readPdfFontPack)` with a map that collects each `ok` result's `data` and refuses on the first `error`,
+  and drop the `as PdfFontPackData[]` cast on the parsed `packs.json`.
+- **`oxlint.base.json` refuses a global `Bun`, `Buffer` or `process` in Worker source**, through `eslint/no-restricted-globals`, and
+  `globalThis.process` too. Through `eslint/no-restricted-imports` it also refuses an import of `node:process`, `process`, `node:buffer` or
+  `buffer`, since an imported name is out of the global ban's reach. So an app whose Worker source names or imports one now fails `lint`. Both
+  bans are off for `config/`, `scripts/`, `tests/`, `playwright.config.ts`, `*.workerd.ts` and `*.browser.ts`, and a `*.test.ts` keeps only the
+  `Bun` ban. To match, `testing/bun` now declares `"bun"`'s `file`, `write` and `spawnSync`, the `bun:test` modifiers and `.each`, and
+  `expect`'s statics and asymmetric matchers, and `testing/node` declares `node:buffer`. **Migration:** in Worker source, use `Uint8Array` for
+  `Buffer` and the env binding for `process.env`; import `Bun` as `import { file } from "bun"` in a spec; or move the code into build-time
+  tooling, where `import process from "node:process"` and `import { Buffer } from "node:buffer"` pass. An app that kept `bun-types` for these
+  calls can then remove it.
+- **A rate-limit `503` answers `Service Unavailable` by default, not `Service unavailable`**, the spelling `auth/web`'s guards already use.
+  **Migration:** a test or client that matched the default `503` body exactly reads `Service Unavailable`.
+- **`AuthNav` is removed from `@y-core/forge/auth/web`; `authNav` returns `NavState` from `@y-core/forge/ui/chrome`**, whose slots are typed
+  `JSXNode | NavSlotRender`. **Migration:** replace `AuthNav` with `import type { NavState } from "@y-core/forge/ui/chrome"`, and where you
+  call the sign-out slot yourself, check `typeof slot === "function"` before calling it.
+- **The error boundary's records go through the request logger when one exists, once each, as `Unhandled error`.** A request logger's
+  `unhandled error` record is now `Unhandled error`, tagged `data.source: "app"`, and `onError override threw` reaches the chain's
+  `logging.channels` too. `createApp({ logger })` takes neither record then, and keeps them only where no request logger is on the context,
+  such as a throw before `requestLogger` runs. **Migration:** match `Unhandled error` where a log query or test matched `unhandled error`,
+  and drop a `createApp({ logger })` built only to route these records into the app's channels.
+- **`createChallengeStore` and `createNonceStore` refuse a `prefix` that holds `||` or ends in `|`**, throwing at the call, because a key under
+  it could match another prefix's. **Migration:** choose a prefix without either. The new prefix sees no challenge or spent nonce stored under
+  the old one, so a ceremony in flight at the deploy fails, and a single-use token spent just before it can be spent once more within its
+  lifetime.
+- **Every prebuilt node bundle is named `<stem>.node.mjs`.** A bundle beside its source as `<stem>.mjs` shadowed it under bun, which
+  resolves an extensionless relative import inside `node_modules` to the `.mjs` first. The export map names the new files, so every subpath
+  imports as before. Forge's own gate gains a `validate-bundle-shadows` row, which refuses a `.mjs`, `.js` or `.cjs`, or an `index` of one,
+  that an extensionless relative import reaches. No preset emits it: a consumer that ships `.mjs` beside `.ts` adds `bundleShadowStep` to its
+  own gate. **Migration:** a path that names a bundle file directly, such as
+  `node_modules/@y-core/forge/src/tooling/lint/plugin.mjs` in an oxlint `jsPlugins` entry, adds `.node` before `.mjs`. An app extending
+  `oxlint.base.json` needs no change.
+- **`cloudflareWorkerSteps()` adds `validate-consumer-css-sources` whenever `assetConfig` is set, so an app rendering forge markup without its
+  classes fails the gate.** The row fails when no `css[].input` reaches `@import "@y-core/forge/<ns>/sources.css"` for a forge namespace whose
+  markup the app's non-test source imports: a value import whose subpath's source entry reaches, through the installed forge's own value
+  imports, a module under `<ns>` that declares classes. So `@y-core/forge/logging` and `@y-core/forge/auth` require nothing,
+  `logging/viewer` requires `logging/sources.css`, and `app` requires `app/sources.css` and `render/htmx/sources.css`, whose fragment markup
+  its error page renders. An entry reaches the import directly or through the relative `@import`s it follows, so a print or email sheet
+  without it passes beside a main sheet that has it. The source scanned is `src`, or the `consumerCssSources.sources` the preset is given.
+  `consumerCssSourcesStep` and `checkConsumerCssSources` are exported from `@y-core/forge/tooling/gate`. **Migration:** add each `@import`
+  the row names to the app's main stylesheet.
+- **`cloudflareWorkerSteps()` adds `validate-service-worker` whenever `assetConfig` is set, so a stale built `sw.js` fails before `test`.**
+  An asset build with a `js.serviceWorker` writes `sw.inputs.json` beside the generated assets module. It records the worker's entry, the
+  SHA-256 of `sw.js` and of its build options, the SHA-256 of every file its bundle read, and of the files that steered resolution:
+  `tsconfig.json` and what it extends, each supplying package's `package.json`, the app's own `package.json` or its absence and, with none
+  at the root, the nearest one above it, and the nearest `package.json` of every input outside `node_modules`, a symlinked workspace
+  package's included. Its paths are relative to the app root, so the row reads the same record from a subdirectory. The row, on `static`
+  after `validate-asset-manifest`, rehashes those files without building. It fails on every tier when one changed or is gone, when `sw.js` is
+  missing or was rewritten, or when the config builds another entry or with other options, naming the file and the rebuild. With no record,
+  it passes `static` and fails above. `serviceWorkerStep`, `checkServiceWorker` and `ServiceWorkerCheckConfig` are exported from
+  `@y-core/forge/tooling/gate`. **Migration:** run `build:assets` once after upgrading, since a worker built before has no record.
+- **`context.url` is read-only once forge has the request.** Once an `app.use` or route middleware changes its `href` in place, the
+  fragment included, or assigns it a new `URL`, forge runs no later middleware or handler: it throws an error naming the resolved and
+  rewritten paths, and the error boundary answers `500`. So does a handler that does either and then returns a `405`. An in-place rewrite used to dispatch the original path's route, and a
+  reassignment the new one, while the guards and `matchedRoutePattern` judged whichever URL they read. **Migration:** strip a prefix or
+  mount a subpath in the Worker's `fetch` export, passing `app.fetch` a `Request` rebuilt on the rewritten URL.
+
+- **A CSRF policy that leaves an auth route or the approval prompt uncovered throws at registration.** `MiddlewareContribution` and
+  `MiddlewareGuardGroup` gain `csrfCovers`, sample URLs of the routes an owner mints tokens on: every group `createAuthGuards` returns lists
+  one for each route its `routes` maps, so a group spread into another contribution keeps them, and `approval.contribution` lists the
+  prompt's `path`. `applyMiddlewareChain` refuses a chain with no `csrf` policy, `paths` that miss one, or an `exclude` entry that matches
+  one, naming the URL, the contribution or guard group listing it, and the `paths` or the entry. An `exclude` covering the mount used to
+  register and answer `500` on the sign-out confirm page. **Migration:** pass a `csrf` policy whose `paths` cover the auth mount and whose
+  `exclude` stays beside it.
+### Added
+
+- **`attemptWindowMs` on the factor contract**, the longest a spent attempt budget goes on refusing. `createEmailOtpFactor` reports its
+  `guessWindowMs`, and `createTotpAppFactor` and `createRecoveryCodeFactor` their `lockoutMs`; a passkey reports none. The field is
+  optional, so a factor written outside forge keeps compiling and sends no `Retry-After`.
+- **A rate-limit `429` carries `Retry-After`, the binding's `period` in seconds.** The `rate-limit` `429` `Refusal` gains `retryAfter`, read
+  from the `rateLimits` table the chain publishes, and forge sets `Retry-After` on the default answer and on a hook's response unless the hook
+  set its own. A `rateLimit` on a request no chain published `rateLimits` for knows no period, so its refusal carries no `retryAfter` and its
+  `429` no `Retry-After`. No `RateLimit` or `RateLimit-Policy` header is sent.
+- **`defineAction` and `definePage` take `rateLimit`, a limit keyed by identity or a route param.** It takes `RateLimitOptions` or an array
+  of them and runs first in the submission pipeline's guard step: after the chain's CSRF verify and the route's own middleware, with
+  `c.params` resolved, and ahead of Turnstile and the schema. Each limit spends in order, and a refusal answers through the hook with the
+  `429` and `503`s a `rateLimit` middleware answers. `definePage` refuses `rateLimit` without a `schema`, as it refuses the other pipeline
+  options. A `GET` page or a route without a `schema` keeps `rateLimit` in its controller `middleware`.
+
+- **`originProtection({ missing: "allow" })`, also a guard group's `origin: { …, missing: "allow" }`**, admits a mutating request carrying
+  no `Origin`, `Referer` or `Sec-Fetch-Site`, for an endpoint called by a server or a tool such as an MCP endpoint or a CSP report receiver.
+  A disallowed `Origin` or `Referer`, a `cross-site` or `same-site` `Sec-Fetch-Site`, and a WebSocket upgrade without `Origin` are still
+  refused. The default stays `"refuse"`.
+- **`refuseAsFragment` and `refuseAsProblem` in `@y-core/forge/app`**, the two refusal hooks an app passes as `onRefuse`.
+  `refuseAsProblem()` answers RFC 9457 `application/problem+json` (`type` `about:blank`, the status phrase as `title`, the `status`, no
+  detail and never the reason). `refuseAsFragment({ target, swap?, render })` answers the panel `render(c, refusal)` returns, marked with
+  `ANNOUNCE_FAILURE_ATTR` so the announcer speaks its message, keeping the refusal's status; under htmx it sets `HX-Retarget` and
+  `HX-Reswap` (default `innerHTML`), and a plain request gets the same panel as an HTML body.
+- **The chain's CSRF policy takes `unboundPaths`: path patterns whose tokens carry no subject, beside `paths` and `exclude`.** The token's
+  target path decides, at mint and at verify, so a page can carry an unbound contact token beside a bound sign-out token, and a contact `POST`
+  with no session passes. The patterns compile when the chain is built, so a malformed one throws at registration. `csrfMintStage` takes the
+  same decision as an optional second argument, `isUnbound(target: URL)`.
+- **`tagsOf`, `elementsOf` and `attrValuesOf` in `testing/markup` and `testing` read every match**, in document order, where `tagOf`,
+  `elementOf` and `attrOf` read the first. A nested element of the same name is an entry of its own, and `attrValuesOf` skips a matched
+  element that does not carry the attribute.
+- **`fakeAssetsFetcher` serves bytes and content types, and records requests.** An entry is a string, a `Uint8Array` or
+  `{ body, type }`. The content type comes from `type`, or else from the file extension, and every path asked for is listed on `requests`.
+- **`forge db standby reset --empty` empties the standby database and stops**, applying no migration and no seed, so `forge db restore` can
+  restore into it with `--target standby --into standby:<binding>`. It implies `--no-seed`, and passing both is accepted.
+- **`originProtection` takes an `onRefuse(c, refusal)` hook and logs every refusal.** Each refusal records a `security.origin.refused`
+  warning through the request logger with its reason (`cross-site`, `same-site`, `disallowed` or `missing`), then answers through the hook,
+  falling to the chain's and then a bare `403` when it declines or none is given. A guard group's `origin` option takes the hook too.
+- **`rateLimit` takes a `keySuffix` option that extends the client-IP key**, keying by `<ip>:<suffix>` through forge's own
+  `CF-Connecting-IP` read, so an absent IP still answers `503`. It keys only under the chain's `trustCfHeaders: true` and excludes `key`;
+  `rateLimit` throws at construction when given both.
+- **`@y-core/forge/testing/markup` imports under node.** It carries `elementOf`, `innerOf`, `attrOf`, `attrsOf`, `tagOf`, `classesOf` and
+  `variantClasses` as a prebuilt bundle, so a Playwright or workerd spec run by node can read one element out of a page without a local copy.
+  `@y-core/forge/testing` still exports them.
+- **`@y-core/forge/testing/zone` exports `zoneAllows(expression, path)`**, which answers whether a `buildAllowExpression` predicate admits a
+  request path, bounded-wildcard clauses included, and throws on syntax it does not evaluate. An app tests its zone allow-list against forge's
+  output without a parser of its own. It imports under node.
+- **`createHealthChecks(list)` merges the health checks each feature slice exports.** Each slice exports its checks as a plain object, and
+  the app root passes the list; the route maps `handler()`, which reports the checks in list order. A name two slices both use throws, and
+  the result is frozen.
+- **`createContributionSlots<Shape>(list)` gives an app typed, ordered slots**, such as home-page sections, that feature slices fill by
+  exporting a plain object of item lists. Each slot holds its items in list order and is frozen; an unfilled slot reads as an empty list, and
+  one item object listed twice throws.
+- **`applyMiddlewareChain` takes `contributions`, a list of `MiddlewareContribution`**, each carrying `bindings`, a `session`, `globals` and
+  `guards` that join the chain after the options' own, in array order. A second session, a binding name contributed twice, or a contribution
+  carrying a `csrf` policy throws at registration; the policy comes from the options alone.
+- **`matchedRoutePattern` is set before the first `app.use` middleware runs**, so a guard reads the pattern of the route a request matched
+  before `next()`. It stays unset when no route matches the URL and method.
+- **`routeKeySuffix` keys a rate limit per route rather than per URL.** Passed as `keySuffix`, it keys by `<ip>:<pattern>`, so
+  `/admin/users/1` and `/admin/users/2` share the budget of `/admin/users/:id`; every request no route matches shares `<ip>:<unmatched>`.
+- **`applyMiddlewareChain` takes `csrf`, the app's one `MiddlewareCsrfPolicy`.** It takes `CsrfPolicyOptions` plus `paths`, which
+  defaults to `["*"]`, and `exclude`. The chain mints on
+  the policy's paths right after the session, and verifies a mutation once, after every matching guard group's shape, origin check and
+  rate limit and before any group's guards; a group with an origin check, a rate limit or guards carries the verify. Forge's router
+  verifies anything still unchecked after every `app.use` registration. The `ring` and `subject` are resolved only when a token is minted
+  or verified.
+- **A guard group takes `shape`**, request-shape guards such as method and content-type checks, which run ahead of its `origin`.
+- **`csrfMintStage(options)`** publishes the CSRF minter, field and header, and on a mutation arms the verification forge runs later.
+- **`readPdfArtwork(json)`** checks a parsed mark artifact and returns it as `PdfArtwork`, or refuses it with the new `PdfRenderError` kind
+  `"artwork"`, naming the malformed field but never its value. Use it in place of `JSON.parse(...) as PdfArtwork`.
+- **`@y-core/forge/tooling/assets/types` carries the asset pipeline's config types without Node**, so a Worker app's tests compiled under
+  `"types": []` can import `AssetsConfig` and the rest, which the `tooling/assets` barrel's Node-only modules break.
+- **`TURNSTILE_TEST_KEYS` carries Cloudflare's Turnstile testing keys**, exported by `@y-core/forge/testing/form` and `@y-core/forge/testing`:
+  the `site` keys `pass`, `block`, `invisible` and `interactive`, the `secret` keys `pass`, `fail` and `spent`, and the dummy `token`. A test
+  imports them instead of copying the literals.
+- **`captureLogs()` in `@y-core/forge/testing` collects log records in memory for a test to assert on.** It returns `{ logger, channel,
+  records }`; records are redacted as a production logger's are, and a `child` of the logger writes to the same `records`. Pass `logger` to
+  `createTestContext`, or to a constructor that takes one, such as `createD1Client`.
+- **`quietChannel()` in `@y-core/forge/testing` returns a `LogChannel` that drops every record**, for a spec that drives the app through its
+  composition root and asserts on no log. The app takes its channels as a parameter and the spec passes this one, or `captureLogs().channel`
+  to assert; `src/testing/README.md` shows the wiring. Forge has no process-wide channel to swap.
+- **`openBunD1()` in `@y-core/forge/testing/d1/bun` opens a migrated D1 on `bun:sqlite` for `bun test`**, with no workerd process. It takes
+  `openTestD1`'s options and returns its `TestD1`: migrations apply in wrangler's numeric order, foreign keys are on, a `batch` is one
+  transaction that rolls back whole and answers each statement's rows, `first(column)` refuses a missing column as D1 does, and `reset` drops
+  every object the app made and migrates again. An app deletes its own `bun:sqlite` adapter.
+- **`SecurityEventListView` in `@y-core/forge/auth/web`** renders an account's security events from `AuthSecurityEventStore.listByUser`,
+  newest first. Each row names the event and the factor it concerned, dates it, and says "by an administrator" where one made the change;
+  it never shows a session or administrator id. It is mounted on no route and does not page. Exported beside it:
+  `AUTH_SECURITY_EVENT_LIST_ID` and `SecurityEventListViewProps`.
+- **`cors` takes an origins resolver.** `origins` accepts `(env) => readonly string[] | Promise<readonly string[]>` beside a static list. It
+  resolves once per `env` object, reuses the compiled matcher until the env changes, and retries after a rejection, so an allowlist read from
+  validated config no longer needs a wrapper that rebuilds `cors` on every request. In resolver mode `Vary: Origin` is always sent. A resolved
+  `"*"` with `credentials: true` throws at first resolution and answers that request with a `500`.
+- **`memoizePerEnv` in `@y-core/forge/context`** wraps `(env) => T` so it runs once per `env` object, and retries after a rejection
+  instead of caching it. It hands the computation the `env` alone, so no request can leak into a value every later request shares.
+  `createKeyRingResolver` is built on it.
+- **`signedObjectLink({ ring, onRefuse? })` in `@y-core/forge/storage/r2`** verifies a signed object URL and exposes the verified key
+  through `signedObjectKey`. A bad link gets a bare `403` that does not reveal the reason; the reason is logged, and `onRefuse` can replace
+  the answer. An app deletes its hand-written `verifySignedObjectUrl` wrapper.
+- **`exclude` on `MiddlewareGuardGroup`, and a `{ middleware, exclude }` entry (`MiddlewareGlobal`) for `globals`** in
+  `applyMiddlewareChain`'s options and in contributions, so a guard group or a global skips a subtree such as `/api/*` without testing the
+  path inside the middleware. Each group's patterns compile into one matcher that its stages share per request, and a bad pattern throws
+  before anything is registered.
+- **`createWebhookSigningResolver((env) => options)` in `@y-core/forge/security`** builds a `createWebhookSigning` instance once per
+  `env`, so an app-level signer can read its secrets from a Worker secret; a build that throws is retried by the next request. Beside it, `WebhookSecretSchema`
+  validates a comma-joined list of `whsec_` secrets, each base64 of at least 32 bytes, and `parseWebhookSecrets` splits that list for
+  `createWebhookSigning`'s `secrets`.
+- **`NavState` and `resolveNavState(nav, c)` in `@y-core/forge/ui/chrome`.** `resolveNavState` runs every resolver a `createPrimaryNav`
+  contribution supplied and merges the results, in registration order, into the `activeFilters` and `slots` a `Navbar` takes. Each filter
+  token appears once, and a slot filled by two contributions throws instead of the later one silently winning.
+- **`definePage` validates the query string.** A `query` schema is parsed from `c.url.searchParams` before the action and the loader, on every
+  method, and the loader receives its output as a typed third argument, `(c, config, query)`; a two-argument loader still compiles. A refused
+  query answers `400` naming the failing field, under the page's `cache` and `headers`, and neither the action, the loader nor the view runs.
+  `onQueryError` receives the issues and replaces that refusal.
+- **`isSafeMethod(method)` in `@y-core/forge/security`** reports whether a method is safe by RFC 9110 — GET, HEAD, OPTIONS or TRACE — in
+  any letter case, the same answer as the predicate forge's own pipeline uses. CSRF verification is deliberately narrower: it exempts GET
+  and HEAD only, so an OPTIONS or TRACE request an app routes to a handler is still verified.
+- **`authRequestServices` in `@y-core/forge/auth/web` builds a request's whole `AuthRequestServices` from one D1 client**, once per request
+  however often guards, loaders and actions ask. It hands one `FactorStore` to the registry, `enrolments` and every second factor.
+  `secondFactors` declares `passkey` and `"totp-app"` with their `requirement`; any one brings recovery codes. `address` defaults to the
+  account's email. `defer`, `notifier` and `confirmUrl` stay yours to supply.
+  - **`.sessions(c)`, the guards' path, builds the session store alone**, under one `sessionOptions` lifetime, so a request through
+    `resolveAuth`, `requireAuth` or the other guards builds no factor and no flow, and does not ask for the `notifier`, `defer` or `logger`.
+    The factors and flows are built when the services are first asked for, once per request.
+  - **`prefixes: { challenge, nonce }` names the KV prefixes of its challenge and nonce stores**, `auth:challenge` and `auth:nonce` by
+    default. An app moving to it from hand-built stores restates their prefixes: under new ones its in-flight ceremonies are lost, and a
+    single-use token spent just before the deploy can be spent once more within its lifetime. A prefix that is not a string, is empty, holds
+    `||` or ends in `|` throws at the call.
+  - **Its factors and flows log through the request logger**, under `data.source: "auth"`, or to the console without one.
+    `logger: (c) => Logger` chooses another.
+  - **`AuthPasskeyOffer.rpName` and `AuthTotpAppOffer.issuer` take a function of the request**, as `rpId` and `origin` do, so either can be
+    read off `c.env`; a plain string still works, and `AuthTotpAppOffer` gains a `Bindings` parameter. An empty, whitespace-only or non-string
+    `rpName` or `issuer`, or an `issuer` holding `:`, is refused, naming the field: a literal throws at the call, and a resolver's value rejects
+    `await resolve(c)` and leaves the guards' session store standing. An authenticator splits the `otpauth://` label at the first colon, so
+    such an issuer would disagree with its own `issuer=` parameter. `createTotpAppFactor` and `createPasskeyFactor` called directly do not
+    check.
+- **`attachPrecache(scope, plan)` in the new browser-tier `@y-core/forge/assets/client`** registers a service worker's precache handlers.
+  Given `{ urls: PRECACHE_URLS, version: PRECACHE_VERSION, fallback }`, it precaches the shell (and `fallback`) on install under
+  `forge-precache {registration.scope} {version}`, fetched with `credentials: "omit"` so no signed-in page outlives sign-out in the cache. On
+  activate it drops older precaches of its own scope only, leaving another same-origin worker's and the app's own caches alone. It serves a
+  precached URL from the cache, and answers a navigation the network cannot reach with `fallback`. `ServiceWorkerScope` declares only what it
+  uses, `registration.scope` included, so the worker typechecks under the app's own `tsconfig`; the `js.serviceWorker` README snippet is now
+  one `attachPrecache` call.
+- **`fakeCacheStorage()` in `@y-core/forge/testing`** stands in for `caches` under `attachPrecache`. Its `addAll` takes URLs or `Request`s, fetches
+  through the `fetch` it is given and stores nothing unless every response is ok.
+- **`buildRequest` takes `mode` and `credentials`**, set only when given. Both are Bun-only: a browser's `Request` refuses
+  `mode: "navigate"`, and Bun reports `"include"` whatever `credentials` it is given, so `buildRequest` pins the requested value.
+- **`docFencesStep` in `@y-core/forge/warden/steps` compiles the `ts` fences of the markdown it lists**, as the `validate-doc-fences` row, so
+  a README example written against a removed or reshaped API fails the gate at its line. A fence tagged `ts nocheck` is skipped, for a
+  deliberately wrong example. `checkDocFences` is exported from `@y-core/forge/warden/checks`.
+- **`forge cf gen env` emits `RATELIMITS`, `{ NAME: { limit, period } }`, from `wrangler.jsonc`'s `ratelimits`**, beside `EnvSchema`, so
+  a rate limit's window is the one wrangler declares. A `simple.period` missing or other than 10 or 60 fails generation naming the
+  binding, and so does an `env.<name>` that changes a binding's `period`, naming the environment too. An `env.<name>` may set a different
+  `limit`; `RATELIMITS` carries the top-level one. `validate-env-schema` fails a committed module whose table no longer matches
+  `wrangler.jsonc`.
+
+### Changed
+
+- **The error boundary records every unhandled error, and a `createApp` `onError` override only renders.** The boundary writes its
+  `Unhandled error` record, carrying `serializeError(err)`, before it calls the override, where an override's `Response` used to skip the
+  record. An app passing `onError: createErrorPage(...)` now gets one error record per unhandled error rather than none. A throwing
+  override still adds its own `onError override threw` record, and a disconnected client's `499` is still unlogged. **Migration:** an
+  override that logs the error itself drops that line, or every unhandled error is recorded twice.
+- **A CSRF refusal is answered by the last-registered matching guard group that verifies and declares `onRefuse`, not by the group whose
+  verify stage ran it.** The check still runs once, in the first matching group that verifies. A slice's group on a narrower path, such as
+  one passing `refuseAsFragment`, now answers its CSRF refusal where a broader group registered first also covers the path; a group whose
+  `exclude` matches, or one with no origin check, rate limit or `guards[]`, takes none. `auth/web`'s groups now answer their own CSRF
+  refusals under an app's overlapping `/account/*` group, so a forged passkey-ceremony token gets problem+json, not plain `Forbidden`.
+- **The chain publishes its `onRefuse` and `rateLimits` ahead of `before[]`, beside `trustCfHeaders`.** A rate limit in `before[]` now
+  answers through the chain's hook, checks its binding name and sets `Retry-After`, as one anywhere else in the chain does.
+- **A CSRF token verifies for 24 hours by default, not one, and the policy takes `maxAgeMs`.** `CSRF_MAX_AGE_MS_DEFAULT` (`86_400_000`,
+  exported from `@y-core/forge/form`) is the default for the chain's `csrf` policy, `csrfMintStage` and `verifyCsrfToken`, past WCAG
+  2.2.1's 20-hour exemption and equal to the auth session's idle bound. `CsrfPolicyOptions.maxAgeMs` sets it per app, and a value that is
+  not a whole number of at least one millisecond throws at registration. An app lowering it below 20 hours owes the visitor a warning
+  before expiry and a way to extend.
+- **`auth/web` throws one message on a request no session middleware ran on**, from its guards, its actions and the approval prompt alike,
+  where each threw its own. `AUTH_KV_MIN_TTL_SECONDS` now takes its value from session storage's floor rather than restating it.
+- **`forge/exact-markup-assertion` traces markup read with an awaited `.text()`**, or a `.text()` a helper or a `.then` callback returns,
+  or a markup helper passed by name to `.then`, `.map` or `.flatMap`, as it traces a `render*` call. It does so in forge's markup trees,
+  `src/ui` and `src/auth/web`. `oxlint.base.json` sets the new `responseText: false` option, so in an app the rule reports a `render*`
+  call's output in every spec but not a response body, which may be plain text: `expect(await res.text()).toContain("Too many requests")`
+  on a `429` passes. An `.includes(` whose slot in a tuple or record `toEqual` / `toStrictEqual` expects `false` counts as an absence claim
+  and stays allowed; one expecting `true` is reported.
+- **`metaTags` renders no canonical link when `robots` is or includes `noindex`**, where it rendered one whenever `canonical` was set. A site
+  canonical merged under a `noindex` page by `mergeMeta` no longer needs stripping in the layout.
+- **`request.completed` logs `routePattern` on a request a guard refused**, such as a `429` or a `403`, where it logged `null`.
+- **The zone allow-list's over-limit error counts the surface's dynamic routes** and advises splitting the surface across rules that each
+  scope to one path prefix. A dynamic route costs about 110 to 160 characters, so one rule holds roughly 25 to 35 of them.
+- **`elementOf` in `testing/markup` reads an element through nested children of the same name** to its matching closing tag, where it stopped
+  at the first closing tag of that name and returned the outer element cut short.
+- **`asyncDialogTrigger` emits `command="show-modal"` and `commandfor` in place of `data-dialog-open`**, so spread on a `<button
+  type="button">` it opens the dialog as well as loading its content. Nothing in forge read `data-dialog-open`; an app's CSS or JS keyed on it
+  must key on `commandfor` instead.
+- **`forge db migrate compose` rewrites `config/db/tables.ts`** with what `forge db types` generates, unless `--dry-run`. It generates the
+  row types before writing anything, so a schema whose row types cannot be generated writes no migration, snapshot or `tables.ts`. A `forge curate`
+  copy whose `db` regenerates with compose no longer keeps the row types of a dropped feature's tables.
+- **With `logging` configured, `definePage`, `defineAction`, the Turnstile screen and `rateLimit` log through the request logger.** Their
+  records carry the request's bindings and `data.source`, and reach the app's channels, where each was a bare console line. Without a request
+  logger they still write to the console. A test context built by `createTestContext` therefore keeps them quiet.
+- **`@y-core/forge/storage/db` imports under node**, through a `node` export condition that loads a prebuilt bundle, while Workers and Bun keep
+  loading the source. A node spec can import an app service built on `sql`, `createD1Client` and `createRowLoader` and run it against
+  `openTestD1().binding`; a module a node spec imports still reaches forge only through the subpaths `forge.node` lists. Bun now loads
+  `@y-core/forge/testing/d1` from source too. Every node bundle is request-free: handed a request, `defineD1Binding`'s monitor and `client`,
+  `validateD1Binding`, `d1Sessions` and `resolveD1Client` throw an error named `RequestFreeBundleError` rather than run blind to the
+  request's state. A spec that serves a request imports the source ([`TEST_RUNNERS.md`](docs/TEST_RUNNERS.md) §7f).
+- `CorsOptions.origins` and `matchOrigin`'s `patterns` take `readonly string[]`. `CorsOptions` and `cors` take a `Bindings` type parameter
+  for the resolver.
+- `requireFormContentType` passes the safe methods (GET, HEAD, OPTIONS, TRACE) without checking the content type, where it answered
+  `415`, so one guard group's `shape` can cover a page and its form POST ahead of the CSRF verify.
+
+### Fixed
+
+- **Forge's auth and approval form actions answer a body over `FORM_MAX_BYTES_DEFAULT` with `413`, whatever the CSRF policy's
+  `maxBytes`.** They re-checked the shared parse against the default cap but answered the refusal as a `422` field error, so an app
+  raising the policy's cap for one route had sign-in, sign-up, verify, resend, approval and every account form read the larger body
+  and answer `422`. They now re-render the page at `413`. The policy still reads the body under its own cap first.
+- **A CORS preflight behind a guard group answers `204`, not `403`.** The chain's CSRF policy armed every `OPTIONS`, so a group with an
+  `origin`, a `rateLimit` or `guards` refused a preflight before `app.use("/api/*", cors(...))` could answer it. `csrfMintStage` no longer arms
+  an `OPTIONS` carrying both `Origin` and `Access-Control-Request-Method`; every other `OPTIONS` still needs a token. `app.use` after
+  `applyMiddlewareChain` is `cors`'s one placement.
+- **`tagOf`, `tagsOf`, `attrValuesOf`, `attrOf` and `innerOf` in `@y-core/forge/testing/markup` match camelCase tag names.** Tag
+  names were matched as lowercase only, so an inline SVG `linearGradient`, `clipPath` or `feGaussianBlur` was skipped and an absence
+  assertion over one passed without checking it. Tag names now match as render/jsx accepts them; lowercase ones behave as before.
+- **`forge db types` writes a `Tables` map the preset's lint accepts when the schema declares no tables.** It wrote
+  `export interface Tables {}`, which `typescript/no-empty-object-type` rejects, so an app with `db` and no tables failed its own lint. It
+  now writes `export interface Tables extends Record<never, never> {}`, the same empty type. **Migration:** run `forge db types` again.
+- **`@y-core/forge/result`, `@y-core/forge/validation` and `@y-core/forge/ui/contracts` import under node**, through the same `node`
+  export condition and prebuilt bundle as `storage/db`, so a node spec can import an app service that returns a `Result`, parses with a
+  forge schema or reads a contract constant. Under node they
+  failed to load, because node does not strip types under `node_modules`.
+- **Forge's D1 and KV records reach the app's channels, and their warnings are written when no `logger` is given.**
+  - **A `defineD1Binding` given no `logger` logs its schema monitor and client through the request logger**, with the request's bindings and
+    `data.source: "storage/db"`, the client's at `warn` and above; `resolveD1Client` given no `client.logger` does the same, and without a
+    request logger both write to the console. `d1.schema.health` went to a console logger fixed at definition, out of reach of the channels
+    the composition root takes, so an app wired with `quietChannel()` still printed it.
+  - **A binding's `logger` reaches its client too**, where it took only the schema monitor's records; `client.logger` still wins.
+  - **A `createD1Client` or `createKVStore` given no `logger` writes `warn` and above to the console.** Each defaulted to a logger with no
+    channels, so `d1.request.budget`, a slow `d1.query` and `kv.decode-error` were never written. The per-query `debug` record and `kv.miss`
+    stay unwritten unless you pass a `logger`.
+- **`applyMiddlewareChain` refuses a malformed `paths` before it registers anything.** A bad pattern in a guard group's or the CSRF policy's
+  `paths` threw from inside `app.use`, after the earlier stages had registered, leaving a partial chain on the app.
+- **`fakeAssetsFetcher` accepts a string or `URL`, and answers `HEAD` without a body.** It read `req.url`, so a string or `URL` threw, and
+  `HEAD` returned the body. `AssetsFetcher.fetch` now takes `(input: RequestInfo | URL, init?: RequestInit)`, as the real binding does.
+- **The app canon no longer describes a debug predicate `createApp` does not take.** `APP_ARCHITECTURE.md` §1a's example drops `isDebug`, and
+  §1b's first step names config integration only, matching `AppOptions`. `ERROR_HANDLING.md` §3b permits an exception-derived message only in a
+  development build, through the relaxation module §1c describes, rather than under a runtime flag.
+- **`buildAllowExpression` no longer lets a `:param` match across `/`.** Cloudflare's wildcard `*` matches `/`, so `/admin/users/:id` allowed
+  every path under `/admin/users/`. A route with no `*splat` is now paired with a refusal of any path holding more `/` than it, so each `:param`
+  matches within one segment and a trailing slash the route does not write is refused. A `*splat` still matches across segments. An empty
+  whole-segment param, as in `/admin/users/` or `/admin/users//edit`, is refused too, as is any path holding `//` against a dynamic route; a
+  param that is part of a segment, as in `/files/.pdf` for `/files/:name.pdf`, still matches. A route the router cannot parse, such as
+  `/x/:a-:b`, is refused with `ZonePatternError` as `"malformed"`. **Migration:** run the zone sync again, and add to `paths` any deeper route
+  the old allow-list was letting through by accident.
+- **A markdown viewport's dialect `theme` now wins over the viewport's own theme.** CodeMirror let the earlier of two equal-specificity
+  rules win, so the viewport's base theme overrode a dialect rule such as a callout's `borderInlineStartColor`. The dialect theme now mounts at
+  high precedence.
+- **The `types:assets` gate row now passes `--root`.** `cloudflareWorkerSteps` ran `forge assets gen types` without the preset's `root`, so
+  an app whose `root` is not the working directory had its asset config and `--out` resolved against the wrong directory. The row now passes
+  `--root` with the same `root` the asset-manifest check reads.
+- **`forge db restore`, `backup`, `reset` and `migrate --rehearse` on `--target standby` now open the app's own dump bucket.** They opened it
+  through the standby's generated config, which binds no R2 bucket, so every one of them failed naming the missing `BACKUPS` binding. The
+  database they read and write is still the standby's.
+- **The gate's `importBoundary` row with `features: true` passes a root that has no `config/features.config.ts`**, checking it as an app
+  with no features, where it failed. A manifest that exists but is malformed still fails the row.
+- **`dev:forge` prints how to undo it**: `bun i` restores the pinned release. `BUILD_TOOLING.md` §2k no longer names a `forge dev sync`
+  command, which does not exist, and the app canon's `dev:forge` row in `CONFIG_BASELINE.md` names the undo.
+- **A PDF container takes JSX children.** `Stack`, `Row`, `Box`, `KeepTogether`, `Panel` and `Link` typed `children` as `PdfElement[]`, so
+  `<Stack><Text>One</Text><Text>Two</Text></Stack>` failed to typecheck under the `render/pdf` JSX source, and a single child failed too. Their
+  `children` is now `PdfContent`, lowered through `toPdfElements`, so a nested layout no longer needs `toPdfElements` by hand.
+- **A render refuses a malformed letterhead mark instead of writing a corrupt PDF.** A mark with a zero width, a non-finite number, an ink
+  outside 0–1 or an unknown op, or a `markWidth` that is not a positive number, wrote `Infinity` or `NaN` into the page. The render now
+  refuses it with kind `"artwork"` before writing anything. `svgToMark` now throws on a `stroke-width` with a unit or one that is not a
+  number, which it wrote as `null`, on a coordinate that is not a finite number, such as `1e999`, and on a `viewBox`, width or height that is
+  not above 0.
+- **`@y-core/forge/testing/d1/bun` typechecks in an app without `wrangler`**, as it already ran without it. Its types reached `wrangler`
+  through `testing/d1` and `tooling/db`'s `getPlatformProxy` type, so even `import type { TestD1 }` failed with TS2307 where the optional
+  peer was not installed. The specifiers are unchanged.
+- **The `createErrorPage` example in the `@y-core/forge/app` README** resolves its stylesheet through `assets.path("css/main.css")`, where a
+  hardcoded `/assets/css/main.css` broke under hashed asset names.
+- **An app without `exactOptionalPropertyTypes` typechecks an import that reaches `@y-core/forge/config`**, directly or through
+  `@y-core/forge/auth/web`. `EnvMapping`'s record arm failed there with TS2411 on `__env`, and forge ships raw TypeScript, so `skipLibCheck`
+  could not hide it. A record carrying `__env` is still refused. An `undefined` entry in a mapping is now skipped as an absent key.
+- **`renderError` and `renderValidationErrors` mark their banner with `ANNOUNCE_FAILURE_ATTR`, so `defineAction`'s failures are announced.**
+  `defineAction`'s `422`, `413`, `400` and `500` fragments were swapped in and never spoken. `renderError`'s banner now holds its message
+  in the marker, and `renderValidationErrors`' holds its lead, "Please correct the following fields.", so forge's client runtime speaks each
+  once on the `failure` channel, as it does `refuseAsFragment`'s panel. The error page's banner is spoken on load. An app that announces
+  these failures itself now announces them twice; remove its own call.
+- **A `503` panel from `refuseAsFragment` and `defineAction`'s `500` fragment are swapped in and announced under `ui/client/htmx`.** The
+  client never swapped a 5xx, so both were dropped and never spoken. Both now carry `FAILURE_FRAGMENT_HEADER` (`Forge-Failure-Fragment`,
+  exported from `@y-core/forge/ui/contracts`), and the client swaps a 5xx that carries it: into `HX-Retarget` with `HX-Reswap` when sent,
+  else into the request's own target. The panel is announced once on the `failure` channel. `refuseAsFragment` sets the header at every
+  status. A 5xx without it still never swaps, even with an `HX-Reswap`, except where the element sets `hx-status:5xx`, which htmx used to
+  ignore for a 5xx and now honours.
+
+### Upgrading
+
+Work through [`UPGRADING.md`](docs/UPGRADING.md) from 0.7.7: it orders the breaking changes above into the edits an app makes, with the
+symptom of each, and lists which items each consuming app takes.
 
 ---
 

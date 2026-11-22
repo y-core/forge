@@ -52,6 +52,8 @@ such as `/favicon.ico`, you list yourself.
 ## Emitting robots.txt and sitemap.xml
 
 ```ts
+import { renderRobotsTxt, renderSitemapXml, resolveSiteConfig } from "@y-core/forge/site";
+
 const config = resolveSiteConfig(siteConfig);
 await Bun.write("public/robots.txt", renderRobotsTxt(config));
 await Bun.write("public/sitemap.xml", renderSitemapXml(config));
@@ -70,6 +72,9 @@ decorated with its configured `changefreq`, `priority` and `lastmod`.
 `buildAllowRule` turns the served surface into a Cloudflare custom rule that actions everything the surface does _not_ account for.
 
 ```ts
+import { routePaths } from "@y-core/forge/router";
+import { buildAllowRule, buildRedirectRule } from "@y-core/forge/site";
+
 const rule = buildAllowRule(
   {
     apex: "example.com", // in a config, omit `zone.apex` — it defaults to the origin's hostname
@@ -83,9 +88,14 @@ const rule = buildAllowRule(
 const redirect = buildRedirectRule({ from: ["www.example.com"], apex: "example.com" });
 ```
 
-A dynamic route is matched by its shape: each `:param` or `*wildcard` becomes a `strict wildcard` `*` and an optional `(…)` is allowed both ways,
-while a route whose first segment is dynamic (`/:slug`, `/:a/:b`) or names a host or search part is refused with `ZonePatternError`. So is any
-path, prefix or file a browser would percent-encode, such as `/café/`: write it percent-encoded (`/caf%C3%A9/`) and it passes unchanged.
+A dynamic route is matched by its shape: each `:param` or `*wildcard` becomes a `strict wildcard` `*` and an optional `(…)` is allowed both ways.
+Cloudflare's `*` also matches `/`, so a route with no `*wildcard` is paired with a refusal of any path holding more `/` than it: a `:param` then
+matches within one segment, and a trailing slash the route does not write is refused. A `*wildcard` still matches across segments. No path holding
+`//` matches a dynamic route, and a route ending in a whole-segment `:param` refuses a trailing `/`, so an empty param is refused as the router
+refuses it. **A param that is part of a segment can still match empty:** `/files/:name.pdf` lets `/files/.pdf` through, since only a regex could
+refuse it. A route whose first segment is dynamic (`/:slug`, `/:a/:b`), or that the router cannot parse (`/x/:a-:b`), or that names a host or search
+part is refused with `ZonePatternError`. So is any path, prefix or file a browser would percent-encode, such as `/café/`: write it percent-encoded
+(`/caf%C3%A9/`) and it passes unchanged.
 
 **Start on `managed_challenge` rather than `block`.** A legitimate path caught by mistake then gets a challenge a human can pass. Cloudflare's `log`
 action is Enterprise-only, so this is the available shakedown, and either action ends the request at the edge — the saved Worker invocation is
@@ -113,9 +123,10 @@ since the rule is deployed to the apex's own zone, and a source equal to the ape
 `http_request_firewall_custom` runs several phases later, so a `www` request is answered with its 301 and never reaches the WAF.
 
 **Expression length is the ceiling that binds first.** Cloudflare caps a rule expression at 4096 characters on every plan, failing the write with
-error 20127 rather than truncating. `buildAllowExpression` checks this before the request and names the ways out — collapse exact paths into a
-prefix, or move the surface into a Cloudflare list. Rule _count_ is not the binding limit, since a generated allow-list is a single
-rule.
+error 20127 rather than truncating. A dynamic route costs about 110 to 160 characters, so one rule holds roughly 25 to 35 of them.
+`buildAllowExpression` checks this before the request, names how many dynamic routes the surface holds, and names the ways out — collapse exact
+paths into a prefix, or split the surface across rules that each scope to one path prefix. Rule _count_ is not the binding limit, since a generated
+allow-list is a single rule.
 
 ---
 

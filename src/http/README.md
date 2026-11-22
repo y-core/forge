@@ -40,14 +40,16 @@ option of its own: build it with `ContentDisposition` ([Setting a header][header
 ```ts
 import { ContentDisposition, pdfResponse } from "@y-core/forge/http";
 
-return pdfResponse(bytes, 200, { "content-disposition": new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString() });
+function download() {
+  return pdfResponse(bytes, 200, { "content-disposition": new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString() });
+}
 ```
 
 **If you are rendering JSX, you want `renderPage` from [`@y-core/forge/render/jsx`][jsx-readme] instead** — it calls `htmlResponse` for you. Reach
 for `htmlResponse` when you already hold a markup string, and build that string with [`@y-core/forge/html`][html-readme] so every value in it is
 escaped. For a fragment, `renderToString` returns `SafeHtml` that `fragmentResponse` takes directly.
 
-```ts
+```tsx
 import { fragmentResponse } from "@y-core/forge/http";
 import { renderToString } from "@y-core/forge/render/jsx";
 
@@ -81,8 +83,10 @@ A `?next=` value, a hidden form field or a stored return target is attacker-cont
 ```ts
 import { createRedirectResponse, safeRedirectPath } from "@y-core/forge/http";
 
-const next = safeRedirectPath(url.searchParams.get("next"), "/dashboard");
-return createRedirectResponse(next, 303);
+function returnTo(url: URL) {
+  const next = safeRedirectPath(url.searchParams.get("next"), "/dashboard");
+  return createRedirectResponse(next, 303);
+}
 ```
 
 | Candidate | Result |
@@ -106,7 +110,9 @@ instead of a hand-written string. Construct one with `new`, then stringify it:
 ```ts
 import { CacheControl, fragmentResponse } from "@y-core/forge/http";
 
-return fragmentResponse(body, 200, { "cache-control": new CacheControl({ maxAge: 3600, public: true }).toString() });
+function cached(body: string) {
+  return fragmentResponse(body, 200, { "cache-control": new CacheControl({ maxAge: 3600, public: true }).toString() });
+}
 ```
 
 They produce a value, not a `Headers` object, so the result goes wherever a header string goes — a builder's `headers` argument, a `ResponseInit`,
@@ -114,8 +120,32 @@ or `headers.set(…)`. Each also has a static `from(value)` that parses an exist
 off an inbound request and change a single field.
 
 What they cannot do for you: **the body builders each pin their own `content-type`**, so use a raw `Response` on the rare occasion you
-need to set it explicitly. For application cookies prefer `createSignedCookie` / `createUnsignedCookie` from
-[`@y-core/forge/session`][session-readme], which handle signing and parsing; `SetCookie` is the low-level builder underneath, for raw header values.
+need to set it explicitly. For application cookies prefer `createUnsignedCookie` ([below][cookie-section]) or `createSignedCookie` from
+[`@y-core/forge/session`][session-readme], which handle encoding, signing and parsing; `SetCookie` is the low-level builder underneath.
+
+---
+
+## Storing a non-sensitive cookie
+
+`createUnsignedCookie` gives a cookie a `parse`/`serialize` pair, base64 on the wire and no authentication. Use it for a theme or a locale — never
+for anything a client must not forge, which is `createSignedCookie`'s job in [`@y-core/forge/session`][session-readme].
+
+```ts
+import { createUnsignedCookie } from "@y-core/forge/http";
+
+const themeCookie = createUnsignedCookie("theme", { maxAge: 60 * 60 * 24 * 365 });
+
+const theme = await themeCookie.parse(c.request.headers.get("cookie")); // string | null
+const header = await themeCookie.serialize("dark");
+```
+
+`parse` never throws on malformed input: a missing header, an absent name, malformed base64 and malformed UTF-8 all answer `null`. `serialize`
+throws only on a lone surrogate, which UTF-8 cannot represent and which would therefore not survive a round trip.
+
+**`COOKIE_ATTRIBUTES_DEFAULT` is the shape every framework-set cookie takes:** `Path=/`, `SameSite=Lax`, `HttpOnly` and `Secure`. The signed
+cookie, the flash cookie and the `d1Sessions` bookmark cookie all use it. An unsigned cookie takes its `Path` and `SameSite` and leaves `HttpOnly`
+and `Secure` off, so a theme stays readable from script; a `__Host-` or `__Secure-` name is `Secure` regardless, and a `__Host-` name given a
+`domain` or a `path` other than `/` throws ([`ROUTING_AND_MIDDLEWARE.md`][ram-3h] §3h).
 
 ---
 
@@ -142,10 +172,12 @@ token, in any casing and anywhere in a list, so the route can answer `426` to a 
 ```ts
 import { isWebSocketUpgrade } from "@y-core/forge/http";
 
-if (!isWebSocketUpgrade(context.request)) {
-  return new Response("Upgrade Required", { status: 426, headers: { upgrade: "websocket" } });
+function connect() {
+  if (!isWebSocketUpgrade(context.request)) {
+    return new Response("Upgrade Required", { status: 426, headers: { upgrade: "websocket" } });
+  }
+  return context.env.ROOM.get(id).fetch(context.request); // the 101 and its socket pass back through forge's middleware intact
 }
-return context.env.ROOM.get(id).fetch(context.request); // the 101 and its socket pass back through forge's middleware intact
 ```
 
 The check is about the request's shape and nothing else. Whether a foreign page may open the socket is the origin guard's call in
@@ -169,8 +201,9 @@ that genuinely contains a space must arrive percent-encoded.
 - [`src/html/README.md`][html-readme] — the escaping primitives and the `SafeHtml` type the body builders take
 - [`src/render/htmx/README.md`][htmx-readme] — the status banners and `HX-*` directives a fragment response carries
 - [`src/render/jsx/README.md`][jsx-readme] — `renderPage` and `renderToString`, the usual producers of the bodies these builders send
-- [`src/session/README.md`][session-readme] — signed and unsigned cookies, preferred over the raw `SetCookie` builder
+- [`src/session/README.md`][session-readme] — signed cookies, preferred over the raw `SetCookie` builder for anything a client must not forge
 
+[cookie-section]: #storing-a-non-sensitive-cookie
 [eh]: ../../docs/FORGE_ERRORS.md
 [header-section]: #setting-a-header-other-than-content-type
 [html-readme]: ../html/README.md
@@ -178,5 +211,6 @@ that genuinely contains a space must arrive percent-encoded.
 [jsx-readme]: ../render/jsx/README.md
 [namespaces-5d]: ../../docs/NAMESPACES.md#5d-http--responses-headers-and-paths
 [pdf-readme]: ../render/pdf/README.md
+[ram-3h]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
 [security-readme]: ../security/README.md
 [session-readme]: ../session/README.md

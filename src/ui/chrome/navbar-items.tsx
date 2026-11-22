@@ -29,7 +29,7 @@ const DISCLOSURE_CLASS: Record<NavCollapsible, string> = { mobile: "md:hidden", 
 const BAR_DISCLOSURE = cn(`${BAR_LINK} w-full list-none justify-between [&::-webkit-details-marker]:hidden`);
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). @internal */
-export function filterAttrs(item: { filters?: string[] | undefined }, activeFilters: string[]): Record<string, unknown> {
+export function filterAttrs(item: { readonly filters?: readonly string[] | undefined }, activeFilters: string[]): Record<string, unknown> {
   // An absent list is "not filtered"; an empty one is "no token can ever match", which must hide.
   const filters = item.filters;
   if (filters === undefined) return {};

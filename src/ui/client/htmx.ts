@@ -3,6 +3,7 @@ import htmx from "htmx.org";
 import { ANNOUNCE_BUSY_CHANNEL, ANNOUNCE_FAILURE_CHANNEL } from "../contracts/announcer-contract";
 import { announce, announceFailure, announceFieldError, announceSpinner } from "./announce";
 import { asElement, eventTarget } from "./dom";
+import { suppressesSwap } from "./failure-swap";
 import { registerHtmxSecurity } from "./htmx-security";
 import { resumeScope, sweepDetachedScopes } from "./resume";
 
@@ -10,9 +11,7 @@ import { resumeScope, sweepDetachedScopes } from "./resume";
 // point has no node to derive a realm from, so the realm it is imported into is the one it belongs to.
 registerHtmxSecurity(htmx, window);
 
-// htmx's d.ts types `noSwap` as `number[]`, but htmx matches a status-class string such as "5xx" too.
-const swapPolicy: { noSwap: Array<number | string> } = htmx.config;
-swapPolicy.noSwap = [204, 304, "5xx"];
+htmx.config.noSwap = [204, 304];
 htmx.config.morphIgnore = [...htmx.config.morphIgnore, "style"];
 
 document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => {
@@ -43,6 +42,7 @@ interface HtmxResponseContext {
   swap?: string;
   text?: string;
   response?: { status: number; headers: Headers };
+  hx?: { reswap?: string };
 }
 
 const isHtmlResponse = (headers: Headers) => headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() === "text/html";
@@ -54,6 +54,14 @@ document.addEventListener("htmx:after:request", (event) => {
   if (!ctx?.response || ctx.response.status < 400 || isHtmlResponse(ctx.response.headers)) return;
   ctx.swap = "none";
   announce(ctx.text ?? "", { channel: ANNOUNCE_FAILURE_CHANNEL, politeness: "assertive", repeat: true, within: document });
+});
+
+// htmx applies `HX-Reswap` after this event, so it would revive an unmarked 5xx's swap; an `hx-status:` still wins.
+document.addEventListener("htmx:after:request", (event) => {
+  const ctx = (event as CustomEvent<{ ctx?: HtmxResponseContext }>).detail?.ctx;
+  if (!ctx?.response || !suppressesSwap(ctx.response.status, ctx.response.headers)) return;
+  ctx.swap = "none";
+  if (ctx.hx) delete ctx.hx.reswap;
 });
 
 document.addEventListener("htmx:finally:swap", () => sweepDetachedScopes());

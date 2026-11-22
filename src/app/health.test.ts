@@ -3,7 +3,8 @@ import { describe, expect, it } from "bun:test";
 import type { AppContext } from "../context/types";
 import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
-import { healthCheck } from "./health";
+import { createHealthChecks, healthCheck } from "./health";
+import type { HealthChecks } from "./types";
 
 function makeApp(checks: Parameters<typeof healthCheck>[0], options?: Parameters<typeof healthCheck>[1]) {
   const app = new Forge();
@@ -91,5 +92,123 @@ describe("healthCheck", () => {
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, checks: { slow: true } });
+  });
+});
+
+describe("createHealthChecks", () => {
+  it("reports every contribution's checks in array order", async () => {
+    const health = createHealthChecks([{ db: () => true }, { cache: () => true, queue: () => true }]);
+    const app = new Forge();
+    mapHandler(app, "GET", "/health", health.handler());
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    expect(Object.keys(((await res.json()) as { checks: Record<string, boolean> }).checks)).toEqual(["db", "cache", "queue"]);
+    expect(Object.keys(createHealthChecks([{ cache: () => true }, { db: () => true }]).checks())).toEqual(["cache", "db"]);
+  });
+
+  describe("a check name two contributions share", () => {
+    it("throws, naming the check", () => {
+      expect(() => createHealthChecks([{ db: () => true }, { cache: () => true, db: () => false }])).toThrow(
+        'createHealthChecks: the check "db" is already contributed.',
+      );
+    });
+
+    it("names the first clashing check when a contribution repeats several", () => {
+      expect(() =>
+        createHealthChecks([
+          { db: () => true, cache: () => true },
+          { queue: () => true, cache: () => true, db: () => true },
+        ]),
+      ).toThrow('createHealthChecks: the check "cache" is already contributed.');
+    });
+
+    it("is not raised by distinct names", () => {
+      expect(Object.keys(createHealthChecks([{ db: () => true }, { cache: () => true }]).checks())).toEqual(["db", "cache"]);
+    });
+  });
+});
+
+describe("createHealthChecks — the route it answers", () => {
+  async function answer(health: HealthChecks, options?: Parameters<typeof healthCheck>[1]) {
+    const app = new Forge();
+    mapHandler(app, "GET", "/health", health.handler(options));
+    const res = await app.request("/health");
+    return { status: res.status, cacheControl: res.headers.get("cache-control"), body: (await res.json()) as unknown };
+  }
+
+  it("answers 200 with no checks when nothing is contributed", async () => {
+    expect(await answer(createHealthChecks([]))).toEqual({ status: 200, cacheControl: "no-store", body: { ok: true, checks: {} } });
+  });
+
+  it("answers 503 when one contributed check fails, reporting the others' own results", async () => {
+    const health = createHealthChecks([{ db: () => true }, { cache: () => false }]);
+    expect(await answer(health)).toEqual({ status: 503, cacheControl: "no-store", body: { ok: false, checks: { db: true, cache: false } } });
+  });
+
+  it("reports a contributed check still pending at the handler's deadline as false", async () => {
+    const health = createHealthChecks([{ hung: () => new Promise<boolean>(() => {}), up: () => true }]);
+    expect(await answer(health, { timeoutMs: 10 })).toEqual({
+      status: 503,
+      cacheControl: "no-store",
+      body: { ok: false, checks: { hung: false, up: true } },
+    });
+  });
+
+  it("reports a contributed check that throws as false", async () => {
+    const health = createHealthChecks([
+      {
+        db: () => {
+          throw new Error("conn refused");
+        },
+      },
+    ]);
+    expect(await answer(health)).toEqual({ status: 503, cacheControl: "no-store", body: { ok: false, checks: { db: false } } });
+  });
+
+  it("hands each check this request's context", async () => {
+    type Env = { MY_VAR?: string };
+    const health = createHealthChecks<Env>([{ myVar: (c) => c.env.MY_VAR === "present" }]);
+    const app = new Forge<Env>();
+    mapHandler(app, "GET", "/health", health.handler());
+    expect((await app.request("/health", {}, { MY_VAR: "present" })).status).toBe(200);
+    expect((await app.request("/health", {}, {})).status).toBe(503);
+  });
+});
+
+describe("createHealthChecks — what it holds", () => {
+  it("returns a frozen result whose checks are frozen and the same on every read", async () => {
+    const db = () => true;
+    const health = createHealthChecks([{ db }]);
+    expect(Object.isFrozen(health)).toBe(true);
+    expect(Object.isFrozen(health.checks())).toBe(true);
+    expect(health.checks()).toBe(health.checks());
+    expect(() => {
+      (health.checks() as Record<string, () => boolean>)["injected"] = () => false;
+    }).toThrow(TypeError);
+
+    expect(Object.keys(health.checks())).toEqual(["db"]);
+    expect(health.checks()["db"]).toBe(db);
+    const app = new Forge();
+    mapHandler(app, "GET", "/health", health.handler());
+    expect(await (await app.request("/health")).json()).toEqual({ ok: true, checks: { db: true } });
+  });
+
+  it("keeps its checks when a caller later changes a record it passed", () => {
+    const passed: Record<string, () => boolean> = { db: () => true };
+    const health = createHealthChecks([passed]);
+    passed["late"] = () => false;
+    expect(Object.keys(health.checks())).toEqual(["db"]);
+  });
+
+  it("accepts an empty contribution and adds nothing", () => {
+    expect(createHealthChecks([{}]).checks()).toEqual({});
+  });
+
+  it("accepts a readonly record of checks, the shape a binding's mount hands out", () => {
+    const mounted: Readonly<Record<string, (c: AppContext) => boolean | Promise<boolean>>> = Object.freeze({
+      DB: () => true,
+      "DB:schema": async () => true,
+    });
+    expect(Object.keys(createHealthChecks([mounted]).checks())).toEqual(["DB", "DB:schema"]);
   });
 });

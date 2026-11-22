@@ -149,7 +149,7 @@ same bytes. Firefox and WebKit are not a preset option. An application that runs
 | `test` | `bun test` |
 | `test:browser` | `playwright test --project=chromium` |
 | `dev` | The asset build, then `forge cf dev` |
-| `dev:forge` | The local library sync |
+| `dev:forge` | The local library sync, `bun run <library checkout>/src/tooling/dev/sync.ts`; `bun i` undoes it, restoring the pinned release |
 | `build:assets` | `forge assets build all` |
 | `types:assets` | `forge verify --only types:assets` |
 

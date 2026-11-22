@@ -465,5 +465,5 @@ export type PasskeyMode = "registration" | "authentication";
 /** Why a ceremony ended without a signed-in visitor. @public */
 export type PasskeyFailureReason = "unsupported" | "declined" | "already-enrolled" | "options-failed" | "ceremony-failed" | "verification-failed";
 
-/** `detail` of `PASSKEY_OUTCOME_EVENT`; `reason` is absent exactly when the ceremony succeeded. @public */
-export type PasskeyOutcomeDetail = { mode: PasskeyMode; reason?: PasskeyFailureReason };
+/** `detail` of `PASSKEY_OUTCOME_EVENT`; `reason` is absent exactly when the ceremony succeeded, and `status` is the status a guard refused a step with. @public */
+export type PasskeyOutcomeDetail = { mode: PasskeyMode; reason?: PasskeyFailureReason; status?: number };

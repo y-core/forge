@@ -43,6 +43,10 @@ describe("applyMapping", () => {
     expect(result).toEqual({ x: { y: { z: "1" } }, p: "2", q: "3" });
   });
 
+  it("skips an undefined entry as an absent key", () => {
+    expect(applyMapping({}, { a: undefined, b: "x" })).toEqual({ b: "x" });
+  });
+
   it("mixes env refs and literal values in nested maps", () => {
     const result = applyMapping({ API_KEY: "secret" }, { apiKey: env("API_KEY"), apiUrl: "https://api.example.com" });
     expect(result).toEqual({ apiKey: "secret", apiUrl: "https://api.example.com" });
@@ -317,6 +321,12 @@ describe("Config", () => {
     expect(result.dbUrl).toBe("postgres://factory");
   });
 
+  it("createConfig() resolves a mapping nested two levels deep", () => {
+    const schema = v.object({ site: v.object({ origin: v.object({ url: v.string() }) }) });
+    const cfg = createConfig({ site: { origin: { url: env("SITE_URL") } } }, schema);
+    expect(cfg.get({ SITE_URL: "https://example.com" })).toEqual({ site: { origin: { url: "https://example.com" } } });
+  });
+
   it("get() resolves and returns typed config", () => {
     const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
     const result = cfg.get({ DB_URL: "postgres://singleton" });
@@ -458,6 +468,24 @@ describe("EnvVarName and EnvMapping — at compile time", () => {
     // @ts-expect-error -- "X" is not a declared name
     const map: EnvMapping<"A"> = env("X");
     expect(applyMapping({ X: "x" }, map)).toBe("x");
+  });
+
+  it("refuses a nested record carrying __env", () => {
+    // @ts-expect-error -- a record node may not carry __env alongside its keys
+    const map: EnvMapping<"A"> = { db: { __env: "A", url: "x" } };
+    expect(Object.keys(map)).toEqual(["db"]);
+  });
+
+  it("refuses an undeclared name smuggled as a bare __env record", () => {
+    // @ts-expect-error -- "UNDECLARED" is not a declared name
+    const map: EnvMapping<"A"> = { db: { __env: "UNDECLARED" } };
+    expect(Object.keys(map)).toEqual(["db"]);
+  });
+
+  it("refuses a nested record carrying __env passed to createConfig", () => {
+    // @ts-expect-error -- a record node may not carry __env alongside its keys
+    const cfg = createConfig({ db: { __env: "A", url: "x" } }, v.unknown());
+    expect(cfg).toBeDefined();
   });
 
   it("refuses a binding name in a mapping keyed by EnvVarName", () => {

@@ -163,6 +163,7 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
     codeDigits: digits,
     codePeriodSeconds: null,
     reissueAfterMs: cooldownMs,
+    attemptWindowMs: guessWindowMs,
     createChallenge,
     verifyChallenge,
     listEnrolments: (): Promise<AuthStoreResult<readonly never[]>> => Promise.resolve(ok([])),

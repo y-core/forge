@@ -79,7 +79,7 @@ declare module "node:path" {
 }
 
 declare module "node:module" {
-  export function createRequire(path: string | URL): { (id: string): unknown; resolve(id: string): string };
+  export function createRequire(path: string | URL): { (id: string): unknown; resolve(id: string): string; cache: Record<string, unknown> };
 }
 
 declare module "node:url" {

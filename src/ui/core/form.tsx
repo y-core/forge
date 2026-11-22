@@ -11,7 +11,7 @@ type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx
   children?: JSXNode | undefined;
   csrfToken?: string | undefined;
   csrfField?: string | undefined;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. Defaults to `CSRF_HEADER_DEFAULT`. */
+  /** The header the app's CSRF policy checks the token on, when the app renamed it. Defaults to `CSRF_HEADER_DEFAULT`. */
   csrfHeader?: string | undefined;
 };
 
@@ -43,7 +43,7 @@ function submitMethod(props: Record<string, unknown>, method: string): string {
 }
 
 // htmx and the browser serialise a GET or DELETE form's fields into the query string, so a hidden token
-// there would reach every log that records URLs; the `hx-headers` copy is the one `csrfProtection` reads.
+// there would reach every log that records URLs; the `hx-headers` copy is the one the CSRF policy reads.
 function sendsFieldsInUrl(props: Record<string, unknown>, method: string): boolean {
   return URL_FIELD_METHODS.has(submitMethod(props, method));
 }

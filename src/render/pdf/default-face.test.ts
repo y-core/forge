@@ -19,11 +19,13 @@ const COVERED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz 0123456789
 async function face(weight: string, name: string): Promise<PdfEmbeddedFont> {
   const from = `node_modules/@expo-google-fonts/oswald/${weight}/Oswald_${weight}.ttf`;
   const built = await buildFontPacks([{ family: "Oswald", from, to: `fonts/${name}.ttf`, covering: COVERED }]);
-  return readPdfEmbeddedFonts(
-    built.packs[0]!,
+  const read = readPdfEmbeddedFonts(
+    built.packs[0],
     (path) => built.sfnt.get(path) ?? new Uint8Array(),
     () => name,
-  )[0]!;
+  );
+  if (!read.ok) throw new Error(read.error.message);
+  return read.data[0]!;
 }
 
 const REGULAR = await face("400Regular", "oswald");

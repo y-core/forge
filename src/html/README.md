@@ -33,6 +33,8 @@ The result is a `SafeHtml`, and interpolating one into another `html` template i
 templates compose:
 
 ```ts
+import { html } from "@y-core/forge/html";
+
 const rows = items.map((item) => html`<li>${item.label}</li>`); // an array is flattened and joined with no separator
 const list = html`<ul>${rows}</ul>`;
 ```
@@ -50,7 +52,7 @@ html`<div>${rawHtml(trustedMarkupFromAnotherRenderer)} ${userInput}</div>`; // o
 escaping a child corrupts it and `JSON.parse(el.textContent)` throws; `rawHtml` has the opposite problem, emitting a `</script>` in your data byte
 for byte and ending the element early.
 
-```ts
+```tsx
 import { scriptJson, styleText } from "@y-core/forge/html";
 
 <script type='application/json'>{scriptJson(payload)}</script>; // every `<` becomes `\u003c`

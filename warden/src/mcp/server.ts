@@ -1,3 +1,5 @@
+import { stdin } from "bun";
+
 import type { Knowledge } from "../index/open";
 import { openIndex } from "../index/open";
 import { resolveRepoRoot } from "../paths";
@@ -119,5 +121,5 @@ export async function serveStdio(options: { root?: string; kind?: string; depend
 
 async function* stdinLines(): AsyncIterable<string> {
   const decoder = new TextDecoder();
-  for await (const chunk of Bun.stdin.stream()) yield decoder.decode(chunk as Uint8Array, { stream: true });
+  for await (const chunk of stdin.stream()) yield decoder.decode(chunk as Uint8Array, { stream: true });
 }

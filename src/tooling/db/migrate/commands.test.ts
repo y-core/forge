@@ -302,9 +302,96 @@ describe("forge db migrate compose", () => {
     wire(io);
     const result = await drive(io, ["migrate", "compose", "--root", root], {});
     expect(result).toEqual({
-      out: ["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"],
+      out: [
+        "config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose",
+        `wrote ${join(root, "config", "db", "tables.ts")}`,
+      ],
       err: [],
       code: null,
+    });
+  });
+
+  describe("refreshing the row types", () => {
+    const USERS_DDL = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT";
+    const NOTES_DDL = "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT) STRICT";
+    const USERS_COLUMNS = [{ tbl: "users", cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1, hidden: 0 }];
+    const NOTES_COLUMNS = [
+      { tbl: "notes", cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1, hidden: 0 },
+      { tbl: "notes", cid: 1, name: "body", type: "TEXT", notnull: 0, dflt_value: null, pk: 0, hidden: 0 },
+    ];
+    const tableRow = (name: string, sql: string) => ({ type: "table", name, tbl_name: name, sql });
+    const BOTH = { inventory: [tableRow("users", USERS_DDL), tableRow("notes", NOTES_DDL)], columns: [...USERS_COLUMNS, ...NOTES_COLUMNS] };
+    const USERS_ONLY = { inventory: [tableRow("users", USERS_DDL)], columns: USERS_COLUMNS };
+    const BOTH_SCHEMAS = { schemas: ["users.sql", "notes.sql"] };
+    const USERS_SCHEMA = { schemas: ["users.sql"] };
+
+    /** An app whose migrations create users and notes, declared by two schemas, with the scratch homes answering as SQLite would. */
+    function composeIo(root: string): FakeDbIo {
+      const io = fakeDbIo(
+        {
+          [join(root, "config", "db", "migrations", "0001_init.sql")]: `${USERS_DDL};\n${NOTES_DDL};\n`,
+          [join(root, "users.sql")]: `${USERS_DDL};\n`,
+          [join(root, "notes.sql")]: `${NOTES_DDL};\n`,
+        },
+        { now: NOW },
+      );
+      const ran = (file: string) => io.d1Calls.some((call) => call.source?.endsWith(file) === true);
+      const declared = () => {
+        const loads = io.d1Calls.filter((call) => call.home === "scratch:compose-desired" && call.source !== null);
+        return loads.at(-1)?.source?.endsWith("notes.sql") === true ? BOTH : USERS_ONLY;
+      };
+      io.d1Rules.push(
+        { match: (_statement, home) => home.label === "scratch:compose-desired", reply: (statement) => schemaModelRows(statement, declared()) },
+        { match: (statement, home) => home.label === "scratch:compose-baseline" && statement.startsWith("INSERT"), reply: [] },
+        {
+          match: (statement, home) => home.label === "scratch:compose-baseline" && statement.startsWith("SELECT quote("),
+          reply: (statement) => [Object.fromEntries([...statement.matchAll(/ AS "([^"]+)"/g)].map(([, column]) => [column, "'forge-seed'"]))],
+        },
+        {
+          match: (_statement, home) => home.label === "scratch:compose-baseline",
+          reply: (statement) => schemaModelRows(statement, ran("proof.sql") ? USERS_ONLY : BOTH),
+        },
+      );
+      return io;
+    }
+
+    it("writes the row types `forge db types` generates, so its --check passes", async () => {
+      const root = appRoot();
+      const io = composeIo(root);
+      const tables = join(root, "config", "db", "tables.ts");
+
+      const written = await drive(io, ["migrate", "compose", "--root", root], BOTH_SCHEMAS);
+      const checked = await drive(io, ["types", "--check", "--root", root], BOTH_SCHEMAS);
+
+      expect([written.code, written.out.at(-1)]).toEqual([null, `wrote ${tables}`]);
+      expect(io.files.get(tables)).toContain("export interface NotesRow {");
+      expect([checked.code, checked.out]).toEqual([null, [`${tables} matches users.sql, notes.sql`]]);
+    });
+
+    it("rewrites the row types without a table whose schema is no longer declared", async () => {
+      const root = appRoot();
+      const io = composeIo(root);
+      const tables = join(root, "config", "db", "tables.ts");
+      await drive(io, ["migrate", "compose", "--root", root], BOTH_SCHEMAS);
+
+      const refused = await drive(io, ["migrate", "compose", "--root", root], USERS_SCHEMA);
+      const digest = /--allow-destructive (\S+) to compose/.exec(refused.err.join("\n"))?.[1] ?? "";
+      const dropped = await drive(io, ["migrate", "compose", "--root", root, "--allow-destructive", digest], USERS_SCHEMA);
+
+      expect([dropped.code, dropped.err]).toEqual([null, []]);
+      expect(io.files.has(join(root, "config", "db", "migrations", "0002_schema.sql"))).toBe(true);
+      expect(io.files.get(tables)).not.toContain("NotesRow");
+      expect(io.files.get(tables)).toContain("export interface UsersRow {");
+    });
+
+    it("writes no row types under --dry-run", async () => {
+      const root = appRoot();
+      const io = composeIo(root);
+
+      const result = await drive(io, ["migrate", "compose", "--dry-run", "--root", root], BOTH_SCHEMAS);
+
+      expect(result.code).toBe(null);
+      expect(io.files.has(join(root, "config", "db", "tables.ts"))).toBe(false);
     });
   });
 

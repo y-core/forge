@@ -414,6 +414,65 @@ describe("renderEnvSchema()", () => {
     ]);
   });
 
+  function rateLimitFlags(dir: string, period: number, env = ""): Record<"wrangler" | "dev-vars" | "out" | "config", string> {
+    const flags = fixtureFlags(dir);
+    writeFileSync(
+      flags.wrangler,
+      `{
+        "name": "app",
+        "secrets": { "required": ["API_KEY"] },
+        "ratelimits": [
+          { "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": ${period} } },
+          { "name": "API_LIMITER", "namespace_id": "1002", "simple": { "limit": 100, "period": 10 } },
+        ],${env}
+      }`,
+    );
+    return flags;
+  }
+
+  const devLoginLimiter = (limit: number, period: number) =>
+    ` "env": { "dev": { "ratelimits": [{ "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": ${limit}, "period": ${period} } }] } },`;
+
+  it("renders the top-level limit in RATELIMITS when env.dev sets its own", async () => {
+    const dir = tempDir();
+    const { text } = await renderEnvSchema(dir, rateLimitFlags(dir, 60, devLoginLimiter(500, 60)), mockSpawnSync);
+
+    expect(text.slice(text.indexOf("export const RATELIMITS"), text.indexOf("declare module"))).toBe(`export const RATELIMITS = {
+  LOGIN_LIMITER: { limit: 5, period: 60 },
+  API_LIMITER: { limit: 100, period: 10 },
+} as const;
+
+`);
+  });
+
+  it("refuses an env.dev that changes a binding's period, naming the binding and the env", async () => {
+    const dir = tempDir();
+
+    await expect(renderEnvSchema(dir, rateLimitFlags(dir, 60, devLoginLimiter(5, 10)), mockSpawnSync)).rejects.toThrow(
+      'ratelimits "LOGIN_LIMITER": env.dev declares period 10, the top level 60',
+    );
+  });
+
+  it("renders RATELIMITS from wrangler.jsonc's ratelimits, both names with their limits and periods", async () => {
+    const dir = tempDir();
+    const { text } = await renderEnvSchema(dir, rateLimitFlags(dir, 60), mockSpawnSync);
+
+    expect(text.slice(text.indexOf("export const RATELIMITS"), text.indexOf("declare module"))).toBe(`export const RATELIMITS = {
+  LOGIN_LIMITER: { limit: 5, period: 60 },
+  API_LIMITER: { limit: 100, period: 10 },
+} as const;
+
+`);
+  });
+
+  it("refuses a ratelimits period Cloudflare does not enforce, naming the binding", async () => {
+    const dir = tempDir();
+
+    await expect(renderEnvSchema(dir, rateLimitFlags(dir, 30), mockSpawnSync)).rejects.toThrow(
+      'ratelimits "LOGIN_LIMITER": simple.period must be 10 or 60, got 30',
+    );
+  });
+
   const failures: { name: string; outcome: SpawnOutcome }[] = [
     { name: "exits non-zero", outcome: { status: 1, stdout: "partial" } },
     { name: "exits 0 with a spawn error", outcome: { status: 0, stdout: "partial", error: new Error("spawnSync bun ENOBUFS") } },

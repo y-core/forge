@@ -1,4 +1,5 @@
 import type { AppContext } from "../../context/types";
+import type { KeyRingResolver } from "../../crypto/keyring/types";
 import type { Result } from "../../result/types";
 
 /** Options for serveObject. @public */
@@ -17,6 +18,13 @@ export type SignedUrlFailure = "expired" | "invalid-signature" | "invalid-format
 
 /** A verified signed URL's object key, or the reason it was refused. @public */
 export type SignedUrlVerdict = Result<string, SignedUrlFailure>;
+
+/** Options for the `signedObjectLink` middleware. @public */
+export interface SignedObjectLinkOptions<Bindings = Record<string, unknown>> {
+  ring: KeyRingResolver<Bindings>;
+  /** Answers a refused link; defaults to a bare 403 "Forbidden". */
+  onRefuse?: (c: AppContext<Bindings>, reason: SignedUrlFailure) => Response | Promise<Response>;
+}
 
 /** Neutral stored object — metadata only (from put/head). @public */
 export interface StoredObject {

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { createAdminUserStore } from "../../src/auth/stores/admin-users";
 import { createD1Client } from "../../src/storage/db/client";
 import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import type { TestD1 } from "../../src/testing/d1";
+import type { TestD1 } from "../../src/testing/d1/mod";
 import { openAuthD1, signedUp, tokenHash } from "./auth-d1.fixture";
 import { expect, harnessTest } from "./harness.fixture";
 

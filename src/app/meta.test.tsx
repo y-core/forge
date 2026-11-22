@@ -23,13 +23,51 @@ describe("metaTags", () => {
   });
 
   it("renders each typed field as its own tag, in a fixed order", async () => {
-    const markup = await head({ title: "Account", description: "Your account", canonical: "https://example.com/account", robots: "noindex" });
+    const markup = await head({ title: "Account", description: "Your account", canonical: "https://example.com/account", robots: "index" });
     expect(markup).toBe(
       "<title>Account</title>" +
         '<meta name="description" content="Your account">' +
         '<link rel="canonical" href="https://example.com/account">' +
-        '<meta name="robots" content="noindex">',
+        '<meta name="robots" content="index">',
     );
+  });
+
+  it("renders no canonical link beside a noindex directive", async () => {
+    const markup = await head({ title: "Account", canonical: "https://example.com/account", robots: "noindex" });
+    expect(markup).toBe('<title>Account</title><meta name="robots" content="noindex">');
+  });
+
+  it("renders no canonical link when a compound directive includes noindex", async () => {
+    const markup = await head({ title: "Account", canonical: "https://example.com/account", robots: ["nofollow", "noindex"] });
+    expect(markup).toBe('<title>Account</title><meta name="robots" content="nofollow, noindex">');
+  });
+
+  it("renders no canonical link for a site canonical merged under a noindex page", async () => {
+    const meta = mergeMeta({ title: "Acme", canonical: "https://example.com/" }, { title: "Sign in", robots: "noindex" });
+    expect(await head(meta)).toBe('<title>Sign in</title><meta name="robots" content="noindex">');
+  });
+
+  it("keeps the canonical link when a page states no robots directive", async () => {
+    expect(await head({ title: "Account", canonical: "https://example.com/account" })).toBe(
+      '<title>Account</title><link rel="canonical" href="https://example.com/account">',
+    );
+  });
+
+  it("keeps the canonical link beside a compound directive without noindex", async () => {
+    expect(await head({ title: "Account", canonical: "https://example.com/account", robots: ["index", "nofollow"] })).toBe(
+      '<title>Account</title><link rel="canonical" href="https://example.com/account"><meta name="robots" content="index, nofollow">',
+    );
+  });
+
+  it("keeps the canonical link beside noimageindex, which bars the images and not the page", async () => {
+    expect(await head({ title: "Account", canonical: "https://example.com/account", robots: "noimageindex" })).toBe(
+      '<title>Account</title><link rel="canonical" href="https://example.com/account"><meta name="robots" content="noimageindex">',
+    );
+  });
+
+  it("keeps the canonical link when noindex arrives only as an extra tag, which metaTags renders verbatim", async () => {
+    const markup = await head({ title: "Account", canonical: "https://example.com/account", extra: [{ name: "robots", content: "noindex" }] });
+    expect(markup).toBe('<title>Account</title><link rel="canonical" href="https://example.com/account"><meta name="robots" content="noindex">');
   });
 
   it("joins a compound robots directive into the one value the tag carries", async () => {

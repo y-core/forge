@@ -13,6 +13,7 @@ import type { DbConfig, DbHostConfig, DbRunContext, FakeDbIo } from "../types";
 import { composeMigration, refuseWideTables } from "./compose";
 import { destructivePlanDigest } from "./diff";
 import { formatComposeHeader, parseMigrationHeader } from "./header";
+import { emitRowTypes } from "./row-types";
 import { buildSchemaSnapshot, formatSchemaSnapshot } from "./snapshot";
 import type { ComposeOptions, SchemaDiff } from "./types";
 
@@ -35,6 +36,8 @@ const ROOT = "/app";
 const MIGRATIONS = `${ROOT}/config/db/migrations`;
 const SCHEMA = `${ROOT}/schema.sql`;
 const SNAPSHOT = `${ROOT}/config/db/schema.snapshot.json`;
+const TYPES = `${ROOT}/config/db/tables.ts`;
+const WROTE_TYPES = `wrote ${TYPES}`;
 const BASELINE_STATE = `${ROOT}/.forge/scratch/compose/baseline/.wrangler/state`;
 const DESIRED_STATE = `${ROOT}/.forge/scratch/compose/desired/.wrangler/state`;
 
@@ -210,12 +213,30 @@ describe("composeMigration()", () => {
     );
   });
 
-  it("composes nothing and writes nothing when config/db.config.ts names no schemas and there is no history, as `schema check` passes it", async () => {
+  it("composes nothing and writes only the empty row types when config/db.config.ts names no schemas and there is no history, as `schema check` passes it", async () => {
     const { run, io, out } = context({}, {});
 
     const outcome = await composeMigration(run, OPTIONS);
 
     expect(outcome).toEqual({ path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun: false });
+    expect(out).toEqual(["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose", WROTE_TYPES]);
+    expect([...io.files.keys()]).toEqual([TYPES]);
+  });
+
+  it("replaces row types left from schemas config/db.config.ts no longer names with the ones an empty schema generates", async () => {
+    const { run, io } = context({ [TYPES]: "export interface UsersRow {\n  id: number;\n}\n" }, {});
+
+    await composeMigration(run, OPTIONS);
+
+    expect(io.files.get(TYPES)).toBe(emitRowTypes({ tables: [], indexes: [], triggers: [], views: [] }));
+  });
+
+  it("writes no row types under --dry-run when config/db.config.ts names no schemas", async () => {
+    const { run, io, out } = context({}, {});
+
+    const outcome = await composeMigration(run, { ...OPTIONS, dryRun: true });
+
+    expect(outcome.dryRun).toBe(true);
     expect(out).toEqual(["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"]);
     expect([...io.files.keys()]).toEqual([]);
   });
@@ -265,10 +286,55 @@ describe("composeMigration()", () => {
     expect(outcome.path).toBe(null);
     expect(outcome.snapshotPath).toBe(SNAPSHOT);
     expect(outcome.plan).toEqual([]);
-    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`]);
+    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`, WROTE_TYPES]);
     const snapshot = JSON.parse(io.files.get(SNAPSHOT) ?? "{}");
     expect(snapshot.desired).toEqual({ "schema.sql": sha256(schemaText([USERS])) });
     expect(snapshot.migrationsDigest).toBe(migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]));
+  });
+
+  it("writes the declared tables' row types when the migrations already produce the desired state", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) });
+    wire(io, { baseline: [USERS], desired: [USERS] });
+
+    await composeMigration(run, OPTIONS);
+
+    expect(io.files.get(TYPES)).toContain("export interface UsersRow {");
+  });
+
+  it("writes neither the snapshot nor the row types under --dry-run when the migrations already produce the desired state", async () => {
+    const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) });
+    wire(io, { baseline: [USERS], desired: [USERS] });
+
+    const outcome = await composeMigration(run, { ...OPTIONS, dryRun: true });
+
+    expect(outcome.dryRun).toBe(true);
+    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`]);
+    expect(io.files.has(SNAPSHOT)).toBe(false);
+    expect(io.files.has(TYPES)).toBe(false);
+  });
+
+  it("writes the row types of the table a composed migration creates", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, NOTES]) });
+    wire(io, { baseline: [USERS], desired: [USERS, NOTES] });
+
+    await composeMigration(run, OPTIONS);
+
+    expect(io.files.get(TYPES)).toContain("export interface NotesRow {");
+  });
+
+  it("writes nothing when the row types cannot be emitted for the composed schema", async () => {
+    const userNotes: Shape = { name: "user_notes", columns: NOTES.columns };
+    const userNotesAgain: Shape = { name: "user__notes", columns: NOTES.columns };
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, userNotes, userNotesAgain]) });
+    wire(io, { baseline: [USERS], desired: [USERS, userNotes, userNotesAgain] });
+    const before = new Map(io.files);
+
+    await expect(composeMigration(run, OPTIONS)).rejects.toThrow("tables user__notes and user_notes both name the row interface UserNotesRow");
+
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+    expect(io.files.has(SNAPSHOT)).toBe(false);
+    expect(io.files.has(TYPES)).toBe(false);
+    expect([...io.files.keys()].filter((path) => !before.has(path) && !path.startsWith(`${ROOT}/.forge/`))).toEqual([]);
   });
 
   it("refuses a declared object in a reserved space, naming the file, the object and the prefixes", async () => {
@@ -291,7 +357,7 @@ describe("composeMigration()", () => {
     const path = `${MIGRATIONS}/0002_schema.sql`;
     expect(outcome.path).toBe(path);
     expect(outcome.plan).toEqual(["create table notes"]);
-    expect(out).toEqual([`wrote ${path}`, "  create table notes"]);
+    expect(out).toEqual([`wrote ${path}`, "  create table notes", WROTE_TYPES]);
 
     const written = io.files.get(path) ?? "";
     const header = parseMigrationHeader(written);
@@ -347,6 +413,7 @@ describe("composeMigration()", () => {
     expect(out).toEqual([`would write ${MIGRATIONS}/0002_schema.sql:`, "  create table notes"]);
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
     expect(io.files.has(SNAPSHOT)).toBe(false);
+    expect(io.files.has(TYPES)).toBe(false);
   });
 
   it("refuses a diff that discards data, printing the digest of the plan and the line it would write", async () => {
@@ -530,7 +597,7 @@ describe("composeMigration()", () => {
     const outcome = await composeMigration(run, OPTIONS);
 
     expect(outcome.warnings).toEqual([NICK_WARNING]);
-    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  rebuild table users (column-changed)", NICK_WARNING]);
+    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  rebuild table users (column-changed)", WROTE_TYPES, NICK_WARNING]);
     expect(io.logs).toEqual([]);
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(true);
   });
@@ -561,7 +628,7 @@ describe("composeMigration()", () => {
     const outcome = await composeMigration(run, OPTIONS);
 
     expect(outcome.warnings).toEqual([NICK_WARNING, fallback]);
-    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  rebuild table users (column-changed)", NICK_WARNING, fallback]);
+    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  rebuild table users (column-changed)", WROTE_TYPES, NICK_WARNING, fallback]);
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(true);
   });
 
@@ -850,7 +917,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.con
 
     expect(outcome.path).toBe(`${MIGRATIONS}/0002_schema.sql`);
     expect(outcome.causes).toEqual([CAUSE]);
-    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  drop table posts", CAUSE]);
+    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  drop table posts", CAUSE, WROTE_TYPES]);
     expect(JSON.parse(io.files.get(SNAPSHOT) ?? "{}").declared).toEqual({ "schema.sql": ["users"] });
   });
 
@@ -863,7 +930,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.con
     const warning = `warning: ${LIB} is in ${SNAPSHOT} and config/db.config.ts no longer declares it`;
     expect(outcome.causes).toEqual([]);
     expect(outcome.warnings).toEqual([warning]);
-    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`, warning]);
+    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`, WROTE_TYPES, warning]);
     expect(JSON.parse(io.files.get(SNAPSHOT) ?? "{}").declared).toEqual({ "schema.sql": ["users"] });
   });
 });

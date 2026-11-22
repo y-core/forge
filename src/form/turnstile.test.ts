@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import * as formBarrel from "./mod";
 import { verifyTurnstile, verifyTurnstileWith } from "./turnstile";
+import { TURNSTILE_TEST_KEYS } from "./turnstile-keys";
 import { isTurnstileTestingSecret } from "./turnstile.dev";
 
 const SECRET = "test-secret-key";
-const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+const TESTING_SECRET = TURNSTILE_TEST_KEYS.secret.pass;
 const HOSTNAME = "example.com";
 const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
@@ -179,15 +180,15 @@ describe("verifyTurnstile", () => {
   it("skips the hostname comparison when both locks are open — a development build and a testing secret", async () => {
     mockFetch({ hostname: "example.com", success: true });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     expect(await verifyInDevelopment(fd, TESTING_SECRET, { expectedHostname: "localhost" })).toEqual({ ok: true });
   });
 
   it("skips it under each of the three published testing secrets", async () => {
     mockFetch({ hostname: "example.com", success: true });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
-    for (const secret of ["1x0000000000000000000000000000000AA", "2x0000000000000000000000000000000AA", "3x0000000000000000000000000000000AA"]) {
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
+    for (const secret of Object.values(TURNSTILE_TEST_KEYS.secret)) {
       expect(await verifyInDevelopment(fd, secret, { expectedHostname: "localhost" })).toEqual({ ok: true });
     }
   });
@@ -195,7 +196,7 @@ describe("verifyTurnstile", () => {
   it("does not skip on the testing secret alone, so a build not armed for development never skips it", async () => {
     mockFetch({ hostname: "example.com", success: true });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     expect(await verifyTurnstile(fd, TESTING_SECRET, { expectedHostname: "localhost" })).toEqual({ ok: false, error: "hostname-mismatch" });
   });
 
@@ -216,14 +217,14 @@ describe("verifyTurnstile", () => {
   it("still fails a success:false answer with both locks open", async () => {
     mockFetch({ success: false });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     expect(await verifyInDevelopment(fd, TESTING_SECRET, { expectedHostname: "localhost" })).toEqual({ ok: false, error: "verification-failed" });
   });
 
   it("skips the action and cdata comparisons with both locks open", async () => {
     mockFetch({ success: true, hostname: HOSTNAME, metadata: { result_with_testing_key: true } });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     const options = { expectedHostname: HOSTNAME, expectedAction: "contact", expectedCData: "contact-form" };
     expect(await verifyInDevelopment(fd, TESTING_SECRET, options)).toEqual({ ok: true });
   });
@@ -231,7 +232,7 @@ describe("verifyTurnstile", () => {
   it("still compares the action under a testing secret alone", async () => {
     mockFetch({ success: true, hostname: HOSTNAME, metadata: { result_with_testing_key: true } });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     expect(await verifyTurnstile(fd, TESTING_SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact" })).toEqual({
       ok: false,
       error: "action-mismatch",
@@ -255,7 +256,7 @@ describe("verifyTurnstile", () => {
       return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
     });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     expect(await verifyInDevelopment(fd, TESTING_SECRET, { expectedHostname: "" })).toEqual({ ok: false, error: "hostname-mismatch" });
     expect(fetchCalled).toBe(false);
   });
@@ -263,7 +264,7 @@ describe("verifyTurnstile", () => {
   it("takes no `dev` option, so only a development build relaxes it", async () => {
     mockFetch({ hostname: "example.com", success: true });
     const fd = new FormData();
-    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    fd.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
     // @ts-expect-error — `TurnstileVerifyOptions` has no `dev` field
     expect(await verifyTurnstile(fd, TESTING_SECRET, { expectedHostname: "localhost", dev: true })).toEqual({
       ok: false,

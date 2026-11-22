@@ -16,8 +16,21 @@ function attribute(attributes: string, name: string): string | undefined {
   return new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i").exec(attributes)?.[1];
 }
 
+function finite(text: string): number {
+  const value = Number(text);
+  if (Number.isFinite(value)) return value;
+  throw new Error(`svgToMark: ${text} is not a finite number — write the mark's coordinates as plain numbers in range`);
+}
+
 function numbers(text: string): number[] {
-  return (text.match(NUMBERS) ?? []).map(Number);
+  return (text.match(NUMBERS) ?? []).map(finite);
+}
+
+function strokeWeight(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const weight = value.trim() === "" ? Number.NaN : Number(value);
+  if (Number.isFinite(weight) && weight >= 0) return weight;
+  throw new Error(`svgToMark: stroke-width ${value} is not a plain number — write it without a unit, in the viewBox's own coordinates`);
 }
 
 function ink(value: string | undefined, fallback: [number, number, number] | undefined): [number, number, number] | undefined {
@@ -135,7 +148,7 @@ function polygon(points: number[]): MarkCommandData[] {
 
 function commandsFor(element: string, attributes: string): MarkCommandData[] {
   if (element === "path") return svgPathCommands(attribute(attributes, "d") ?? "");
-  const at = (name: string): number => Number(attribute(attributes, name) ?? 0);
+  const at = (name: string): number => finite(attribute(attributes, name) ?? "0");
   if (element === "circle") return ellipse(at("cx"), at("cy"), at("r"), at("r"));
   if (element === "ellipse") return ellipse(at("cx"), at("cy"), at("rx"), at("ry"));
   if (element === "polygon") return polygon(numbers(attribute(attributes, "points") ?? ""));
@@ -154,10 +167,18 @@ function viewBox(svg: string): { width: number; height: number } {
   // would size the artwork to whichever shape happened to be written first.
   const root = /<svg\b([^>]*)>/i.exec(svg)?.[1] ?? "";
   const box = numbers(attribute(root, "viewBox") ?? "");
-  if (box.length === 4) return { width: box[2] ?? 0, height: box[3] ?? 0 };
-  const sized = { width: Number(attribute(root, "width") ?? 0), height: Number(attribute(root, "height") ?? 0) };
-  if (sized.width > 0 && sized.height > 0) return sized;
-  throw new Error("svgToMark: the SVG declares neither a viewBox nor a width and height, so it has no coordinate space");
+  if (box.length === 4) {
+    const spanned = { width: box[2] ?? 0, height: box[3] ?? 0 };
+    if (spanned.width > 0 && spanned.height > 0) return spanned;
+    throw new Error("svgToMark: the viewBox has no area — give it a width and a height above 0");
+  }
+  const [width, height] = [attribute(root, "width"), attribute(root, "height")];
+  if (width === undefined || height === undefined) {
+    throw new Error("svgToMark: the SVG declares neither a viewBox nor a width and height, so it has no coordinate space");
+  }
+  const sized = { width: Number(width), height: Number(height) };
+  if (Number.isFinite(sized.width) && Number.isFinite(sized.height) && sized.width > 0 && sized.height > 0) return sized;
+  throw new Error("svgToMark: the SVG's width and height must be plain numbers above 0 — or give it a viewBox");
 }
 
 /** An SVG as the paths a renderer draws, so no Worker ever parses XML to put a mark on a page. @public */
@@ -171,7 +192,7 @@ export function svgToMark(svg: string): MarkData {
   for (const [, element = "", attributes = ""] of svg.matchAll(ELEMENTS)) {
     const fill = ink(attribute(attributes, "fill"), [0, 0, 0]);
     const stroke = ink(attribute(attributes, "stroke"), undefined);
-    const weight = attribute(attributes, "stroke-width");
+    const weight = strokeWeight(attribute(attributes, "stroke-width"));
     // `fill="none"` with no stroke draws nothing in SVG, and a renderer choosing its paint mode from
     // the stroke alone would fill it. Dropping it here is what the source already means.
     if (fill === undefined && stroke === undefined) continue;
@@ -179,7 +200,7 @@ export function svgToMark(svg: string): MarkData {
       commands: commandsFor(element.toLowerCase(), attributes),
       ...(fill === undefined ? {} : { fill }),
       ...(stroke === undefined ? {} : { stroke }),
-      ...(weight === undefined ? {} : { weight: Number(weight) }),
+      ...(weight === undefined ? {} : { weight }),
     });
   }
   if (paths.length === 0) throw new Error("svgToMark: the SVG carries no shape this step converts");

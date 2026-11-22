@@ -151,7 +151,7 @@ const INLINE_HREF = /\]\(([^)\s]+)\)/g;
 const ABSOLUTE_HREF = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/)/;
 const ATX_HEADING = /^#{1,6}[ \t]+(.+?)[ \t]*$/;
 const FENCE_DELIMITER = /^\s*```/;
-const FENCE_INFO = /^\s*```\s*(\S*)/;
+const FENCE_INFO = /^\s*```\s*(.*)$/;
 
 /** Every `[id]: destination` a document defines, keyed by the id a reference use writes. @public */
 export function linkDefinitions(lines: readonly string[]): Map<string, { destination: string; line: number }> {
@@ -199,6 +199,8 @@ export function stripFences(source: string): string[] {
 /** One fenced code block and the markdown line its body starts on. @internal */
 export interface CodeFence {
   lang: string;
+  /** The info-string words after `lang`, such as `nocheck`. */
+  flags: string[];
   line: number;
   body: string;
 }
@@ -206,17 +208,18 @@ export interface CodeFence {
 /** Every fenced block, toggled on the same lines `stripFences` blanks. @internal */
 export function findCodeFences(source: string): CodeFence[] {
   const fences: CodeFence[] = [];
-  let open: { lang: string; line: number; lines: string[] } | undefined;
+  let open: { lang: string; flags: string[]; line: number; lines: string[] } | undefined;
   source.split("\n").forEach((text, index) => {
     if (!FENCE_DELIMITER.test(text)) {
       open?.lines.push(text);
       return;
     }
     if (open === undefined) {
-      open = { lang: FENCE_INFO.exec(text)?.[1] ?? "", line: index + 2, lines: [] };
+      const [lang = "", ...flags] = (FENCE_INFO.exec(text)?.[1] ?? "").split(/\s+/).filter((word) => word !== "");
+      open = { lang, flags, line: index + 2, lines: [] };
       return;
     }
-    fences.push({ lang: open.lang, line: open.line, body: open.lines.join("\n") });
+    fences.push({ lang: open.lang, flags: open.flags, line: open.line, body: open.lines.join("\n") });
     open = undefined;
   });
   return fences;

@@ -22,7 +22,7 @@ audience: consumer
 - §1 Signup: address in, code out, why an address already taken is challenged rather than refused, and when an unanswered account is deleted
 - §2 Sign-in: the request/verify pair and what each second factor's requirement demands
 - §2a What Each Requirement Demands: one way in, each second factor mandatory or optional, and the minimum read per factor
-- §2b What the Visitor Is Told: the closed set of notices, and the reasons folded into them
+- §2b What the Visitor Is Told: the closed set of notices, the reasons folded into them, and the status each answers
 - §2c Where a Resolution Sends the Visitor: the first owed enrolment page, step-up, or the return path, and a 503 for a failed read
 - §3 Passkeys: the two-endpoint ceremony both halves share
 - §3a Enrolment: owed kinds in offer order, the registration ceremony, the pending-enrolment gate, and the account's own ceremony
@@ -120,6 +120,11 @@ not match" is the same membership answer, so `complete` reports both `too-many-a
 `requestStepUp` keep the true reason: the visitor is already signed in, so there is no membership left to leak, and being told to wait is what makes
 a lockout comprehensible.
 
+**A throttle the visitor is told about answers `429`; one folded into "that did not match" answers what that notice answers.** The status is part
+of the membership answer as much as the copy is, so the primary path's folded throttle keeps the `422` an unrecognised code gets. The step-up's
+reported throttle answers `429` with the same re-rendered page and `Retry-After` set from the factor's `attemptWindowMs` ([`FORGE_ERRORS.md`][eh-3e]
+§3e): an emailed code's `guessWindowMs`, which a new code does not reopen, or an authenticator app's or recovery code's `lockoutMs`.
+
 ### 2c. Where a Resolution Sends the Visitor
 
 A resolution that is not `satisfied` is **a successful outcome of a correct sign-in**, not a refusal of one, so it is a page to visit rather than a
@@ -155,7 +160,7 @@ A passkey enrols a visitor and steps one up; it never starts a sign-in (§3b). O
 under `capabilities` because TypeScript narrows a union only on a direct discriminant.
 
 Every ceremony is two endpoints and two CSRF tokens. The server half stamps a contract onto the scope root; the browser half reads it off that
-element and runs the ceremony ([`NAMESPACES.md`][namespaces-5h] §5h). **A token each, because `csrfProtection` binds a token to one path** — a
+element and runs the ceremony ([`NAMESPACES.md`][namespaces-5h] §5h). **A token each, because the app's CSRF policy binds a token to one path** — a
 ceremony spanning `begin` and `finish` cannot share one, and naming them apart is what stops either being sent to the wrong endpoint.
 
 The controller checks WebAuthn support **at mount, not at the press**: an unsupported browser reveals the fallback line and disables the trigger,
@@ -259,8 +264,7 @@ waiting for a first step-up.
 
 ## 4. Authenticator App (TOTP)
 
-TOTP is **step-up only**: an authenticator app proves possession, it does not say who you are, so the registry refuses it as a primary factor at
-construction.
+TOTP is **step-up only**: an authenticator app proves possession, not who you are, so the registry refuses it as a primary factor at construction.
 
 The page is mounted **twice**, and the two are not interchangeable. `authRoutes`' `enrol.totp` sits in `auth.enrol` behind
 `require-pending-enrolment` and is where a visitor who _owes_ the enrolment clears it, because `require-enrolment` refuses the whole `account` group
@@ -439,7 +443,8 @@ that fails is logged as `auth.security-notice.failed`, and is neither retried no
 each run deletes a bounded number. Deleting the account deletes its rows. An administrator's factor reset keeps them.
 
 **Some changes sign out every session, the acting one included:** a completed address change (§5), a deactivation (§6) and the administrator's
-reset (§9e). A factor change spares the acting session (§3c).
+reset (§9e). A factor change spares the acting session (§3c). Signing out destroys the session and the visitor's data with it, unless the app
+passes `signOut: { keepVisitorData: true }` ([`AUTH_MOUNTING.md`][am-1] §1).
 
 ---
 
@@ -448,8 +453,8 @@ reset (§9e). A factor change spares the acting session (§3c).
 Stated here rather than left to be discovered, because each changes what a consumer must build.
 
 **Rate limiting is yours to configure, and forge ships no numbers.** The seam exists — `AuthGuardChainOptions.rateLimit`, keyed by group path,
-[`AUTH_MOUNTING.md`][am-1] §1 — and nothing is mounted until you fill it. The OTP and TOTP counters bound the guesses against one identity and say
-nothing about how often a caller may ask across identities, so outbound email is triggerable by anyone until you attach a limit.
+[`AUTH_MOUNTING.md`][am-1] §1 — and nothing is mounted until you fill it. The OTP and TOTP attempt budgets bound the guesses against one
+identity and say nothing about how often a caller may ask across identities, so outbound email is triggerable by anyone until you attach a limit.
 
 **No mutation is held across a re-authentication.** When `requireFreshStepUp` refuses a state-changing request, the visitor steps up, lands on the
 settled page and repeats the action — forge keeps no pending write to replay for them.
@@ -468,7 +473,7 @@ of the codes. That it is never offered as a download is a ruling rather than a l
 **Federated identity is not here.** An OIDC relying party or OAuth2 provider is a subpath of its own under the same one-way rule
 ([`NAMESPACES.md`][namespaces-5h] §5h).
 
-**Anyone who knows an address can spend its emailed-code guesses.** A code is bound to the browser that asked for it (§1), but the guess budget
+**Anyone who knows an address can spend its emailed-code guesses.** A code is bound to the browser that asked for it (§1), but the attempt budget
 belongs to the account. So an attacker can ask for a code for someone else's address, which binds it to the attacker's browser, and spend the
 account's guesses there. Until the guess window (`AUTH_OTP_GUESS_WINDOW_MS`) reopens, the owner's own code is refused, and sign-in tells them only
 that it did not match (§2b). A request made once the cooldown (`AUTH_OTP_COOLDOWN_MS` by default) has run also replaces the live code with a new
@@ -586,6 +591,7 @@ reset takes an administrator rather than anything the user can do.
 [am-6]: ./AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [auth-readme]: ../src/auth/README.md
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[eh-3e]: ./FORGE_ERRORS.md#3e-one-refusal-contract-for-every-guard
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ./ROUTING_AND_MIDDLEWARE.md#6-the-page-shell

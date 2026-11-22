@@ -1,18 +1,28 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
+import type { Middleware } from "@remix-run/fetch-router";
+
+import { contextVar } from "../context/accessor";
+import type { Refusal, RefuseHook } from "../context/types";
 import { importKeyRing } from "../crypto/keyring/ring";
 import type { KeyRing } from "../crypto/keyring/types";
 import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
-import { createCsrfToken, csrfProtection } from "../form/csrf";
+import { createCsrfToken, csrfMintStage } from "../form/csrf";
 import { parseFormData } from "../form/parse-form-data";
+import { TURNSTILE_TEST_KEYS } from "../form/turnstile-keys";
+import { requestLog } from "../logging/request-logger";
 import { post } from "../router/mod";
+import type { RateLimit, RateLimitOptions } from "../security/types";
 import { mockExecutionContext } from "../testing/context";
+import { captureLogs } from "../testing/logs";
+import { attrOf, elementOf, innerOf } from "../testing/markup";
 import { mapHandler } from "../testing/route";
-import type { TestAction } from "../testing/types";
+import type { CapturedLogs, TestAction } from "../testing/types";
 import { v } from "../validation/validation";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
 import { createHandlerFactory } from "./handler-factory";
+import { applyMiddlewareChain } from "./middleware-chain";
 
 const { defineAction } = createHandlerFactory();
 const TEST_ROUTE = post("/test");
@@ -21,8 +31,14 @@ const CSRF_HEX_KEY = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae082
 
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
-function makeApp(action: TestAction<"/test">) {
-  const app = new Forge();
+function makeApp(action: TestAction<"/test">, capture?: CapturedLogs) {
+  const app = new Forge(capture?.logger);
+  if (capture) {
+    app.use("*", (context, next) => {
+      requestLog.set(context, capture.logger);
+      return next();
+    });
+  }
   mapHandler(app, "POST", "/test", action);
   return app;
 }
@@ -38,7 +54,7 @@ function submit(app: Requestable, body: string, path = "/test"): Promise<Respons
 
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
-  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5">${items}</ul></div>`;
+  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5">${items}</ul></div>`;
 }
 
 let savedFetch: typeof globalThis.fetch | undefined;
@@ -53,18 +69,6 @@ afterEach(() => {
 function fakeSiteverify(respond: (init: RequestInit | undefined) => Promise<Response>): void {
   savedFetch = globalThis.fetch;
   globalThis.fetch = ((_url: URL | RequestInfo, init?: RequestInit) => respond(init)) as typeof globalThis.fetch;
-}
-
-async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
-  const lines: string[] = [];
-  const originalLog = console.log;
-  console.log = (msg: string) => lines.push(msg);
-  try {
-    await run();
-  } finally {
-    console.log = originalLog;
-  }
-  return lines;
 }
 
 describe("defineAction", () => {
@@ -82,7 +86,7 @@ describe("defineAction", () => {
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=" });
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
     );
   });
 
@@ -95,6 +99,9 @@ describe("defineAction", () => {
       body: JSON.stringify({ name: "Jane" }),
     });
     expect(res.status).toBe(400);
+    expect(await res.text()).toBe(
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Unable to process the form data. Please try again."><p>Unable to process the form data. Please try again.</p></div>',
+    );
   });
 
   it("calls onValidationError when provided", async () => {
@@ -136,6 +143,73 @@ describe("defineAction", () => {
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString() });
     expect(res.status).toBe(500);
+  });
+
+  it("marks its generic 500 fragment as a failure fragment, so the client runtime swaps it", async () => {
+    const app = makeApp(
+      defineAction(TEST_ROUTE, {
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("downstream failure");
+        },
+      }),
+    );
+
+    const res = await submit(app, VALID_FORM.toString());
+
+    expect({ status: res.status, marker: res.headers.get("Forge-Failure-Fragment") }).toEqual({ status: 500, marker: "1" });
+  });
+
+  it("leaves the marker off a 500 its onError returns, and off a 422, which swaps unmarked", async () => {
+    const recovered = makeApp(
+      defineAction(TEST_ROUTE, {
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("oops");
+        },
+        onError: () => new Response("custom 500", { status: 500 }),
+      }),
+    );
+    const invalid = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("ok") }));
+
+    const answers = [await submit(recovered, VALID_FORM.toString()), await submit(invalid, "name=")];
+
+    expect(answers.map((res) => [res.status, res.headers.has("Forge-Failure-Fragment")])).toEqual([
+      [500, false],
+      [422, false],
+    ]);
+  });
+
+  it("passes on the marker an onError sets on its own 500, so an app opts its fragment into the swap", async () => {
+    const app = makeApp(
+      defineAction(TEST_ROUTE, {
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("oops");
+        },
+        onError: () =>
+          new Response("<p>We could not save that.</p>", { status: 500, headers: { "content-type": "text/html", "Forge-Failure-Fragment": "1" } }),
+      }),
+    );
+
+    const res = await submit(app, VALID_FORM.toString());
+
+    expect({ status: res.status, marker: res.headers.get("Forge-Failure-Fragment"), body: await res.text() }).toEqual({
+      status: 500,
+      marker: "1",
+      body: "<p>We could not save that.</p>",
+    });
+  });
+
+  it("leaves the marker off the uncaught-error page the boundary answers", async () => {
+    const app = createApp();
+    mapHandler(app, "POST", "/test", () => {
+      throw new Error("kaboom");
+    });
+
+    const res = await submit(app, VALID_FORM.toString());
+
+    expect({ status: res.status, marker: res.headers.has("Forge-Failure-Fragment") }).toEqual({ status: 500, marker: false });
   });
 
   it("calls onError when handler throws and onError is provided", async () => {
@@ -202,7 +276,7 @@ describe("defineAction", () => {
 
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="The submitted form is too large. Please reduce its size and try again."><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
   });
 
@@ -223,25 +297,60 @@ describe("defineAction", () => {
     expect(res.status).toBe(413);
   });
 
-  it("logs server-side when the handler throws", async () => {
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (msg: string) => logs.push(msg);
-    try {
-      const app = makeApp(
-        defineAction(TEST_ROUTE, {
-          schema: NameSchema,
-          handle: () => {
-            throw new Error("boom downstream");
-          },
-        }),
-      );
-      await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString() });
-    } finally {
-      console.log = originalLog;
-    }
-    expect(logs.some((l) => l.includes("Action threw"))).toBe(true);
+  it("logs to the context's request logger, as the action, when the handler throws", async () => {
+    const capture = captureLogs();
+    const app = makeApp(
+      defineAction(TEST_ROUTE, {
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("boom downstream");
+        },
+      }),
+      capture,
+    );
+    await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString() });
+    expect(capture.records.map(({ message, data }) => ({ message, source: data?.source }))).toStrictEqual([
+      { message: "Action threw", source: "action" },
+    ]);
   });
+});
+
+describe("defineAction — every failure fragment is marked for the announcer", () => {
+  const throwing = () => {
+    throw new Error("boom downstream");
+  };
+  const cases = [
+    {
+      name: "an unparseable body",
+      status: 400,
+      init: { headers: { "content-type": "application/json" }, body: '{"name":"Jane"}' },
+      handle: () => new Response("success"),
+    },
+    {
+      name: "an oversized body",
+      status: 413,
+      init: { headers: FORM_HEADERS, body: `name=${"x".repeat(200_000)}` },
+      handle: () => new Response("success"),
+    },
+    { name: "a schema refusal", status: 422, init: { headers: FORM_HEADERS, body: "name=" }, handle: () => new Response("success") },
+    { name: "a throwing handler", status: 500, init: { headers: FORM_HEADERS, body: VALID_FORM.toString() }, handle: throwing },
+  ];
+
+  for (const { name, status, init, handle } of cases) {
+    it(`announces exactly the lead it shows on ${name} (${status})`, async () => {
+      const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle }));
+
+      const res = await app.request("/test", { method: "POST", ...init });
+      const body = await res.text();
+      const announced = attrOf(body, "data-announce-failure");
+
+      expect({ status: res.status, marked: announced !== "", announced }).toEqual({
+        status,
+        marked: true,
+        announced: innerOf(elementOf(body, "p")),
+      });
+    });
+  }
 });
 
 describe("defineAction — a throwing schema or hook", () => {
@@ -266,7 +375,7 @@ describe("defineAction — a throwing schema or hook", () => {
     const res = await submit(app, "payload=notjson");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -291,9 +400,10 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("logs a throwing v.transform, because a schema defect is the operator's to see", async () => {
-    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingTransform, handle: () => new Response("success") }));
-    const logs = await captureLogs(() => submit(app, "payload=notjson"));
-    expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
+    const capture = captureLogs();
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingTransform, handle: () => new Response("success") }), capture);
+    await submit(app, "payload=notjson");
+    expect(capture.records.map((record) => record.message)).toContain("Action threw");
   });
 
   it("answers 500 when a v.check predicate throws", async () => {
@@ -302,7 +412,7 @@ describe("defineAction — a throwing schema or hook", () => {
     const res = await submit(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -325,9 +435,10 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("logs a throwing v.check", async () => {
-    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingCheck, handle: () => new Response("success") }));
-    const logs = await captureLogs(() => submit(app, "name=Jane"));
-    expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
+    const capture = captureLogs();
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingCheck, handle: () => new Response("success") }), capture);
+    await submit(app, "name=Jane");
+    expect(capture.records.map((record) => record.message)).toContain("Action threw");
   });
 
   it("absorbs a throwing onValidationError into the same 500 path, deliberately and symmetrically", async () => {
@@ -366,7 +477,7 @@ describe("defineAction — a throwing schema or hook", () => {
     const res = await submit(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -506,7 +617,7 @@ describe("defineAction — what reaches the schema", () => {
   });
 });
 
-describe("defineAction behind csrfProtection — body size cap", () => {
+describe("defineAction behind a CSRF policy — body size cap", () => {
   const RAISED = 300 * 1024;
 
   function echoAction(maxBytes?: number) {
@@ -525,10 +636,8 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   it("accepts a body over the default cap when the route and its guard both raise maxBytes", async () => {
     const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/upload", {
-      middleware: [csrfProtection({ ring: () => ring, subject: false, maxBytes: RAISED })],
-      handler: echoAction(RAISED),
-    });
+    app.use("/upload", csrfMintStage({ ring: () => ring, subject: false, maxBytes: RAISED }));
+    mapHandler(app, "POST", "/upload", echoAction(RAISED));
 
     const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", ring, 200_000) });
     expect(res.status).toBe(200);
@@ -538,7 +647,8 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   it("answers 413 rather than a misleading 403 when the body exceeds the guard's cap", async () => {
     const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
+    app.use("/upload", csrfMintStage({ ring: () => ring, subject: false }));
+    mapHandler(app, "POST", "/upload", echoAction());
 
     const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", ring, 200_000) });
     expect(res.status).toBe(413);
@@ -548,7 +658,8 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   it("keeps a genuine token failure on 403 when the body is within the cap", async () => {
     const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
+    app.use("/upload", csrfMintStage({ ring: () => ring, subject: false }));
+    mapHandler(app, "POST", "/upload", echoAction());
 
     const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: "name=Jane" });
     expect(res.status).toBe(403);
@@ -558,11 +669,9 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   it("keeps two routes with different caps independent within the same isolate", async () => {
     const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/big", {
-      middleware: [csrfProtection({ ring: () => ring, subject: false, maxBytes: RAISED })],
-      handler: echoAction(RAISED),
-    });
-    mapHandler(app, "POST", "/small", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
+    app.use("*", csrfMintStage({ ring: () => ring, subject: false, maxBytes: RAISED }));
+    mapHandler(app, "POST", "/big", echoAction(RAISED));
+    mapHandler(app, "POST", "/small", echoAction());
 
     const first = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", ring, 200_000) });
     expect(first.status).toBe(200);
@@ -598,7 +707,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
 });
 
 describe("defineAction — bot guards", () => {
-  function turnstileApp(tokenField?: string) {
+  function turnstileApp(tokenField?: string, capture?: CapturedLogs) {
     return makeApp(
       defineAction(TEST_ROUTE, {
         schema: NameSchema,
@@ -609,6 +718,7 @@ describe("defineAction — bot guards", () => {
         },
         handle: (data) => new Response(Object.keys(data).join(",")),
       }),
+      capture,
     );
   }
 
@@ -748,8 +858,11 @@ describe("defineAction — bot guards", () => {
       throw new Error("connection refused");
     });
 
-    const logs = await captureLogs(() => submit(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
-    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("network-error"))).toBe(true);
+    const capture = captureLogs();
+    await submit(turnstileApp(undefined, capture), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    expect(capture.records.find((record) => record.message === "Submission refused by a bot guard")?.data).toMatchObject({
+      reason: "network-error",
+    });
   });
 
   it("fails closed on a siteverify timeout and carries the reason in the rejection", async () => {
@@ -818,10 +931,8 @@ describe("defineAction — injected field derivation", () => {
   async function guardedApp(tokenField?: string) {
     const ring = await importKeyRing([SECRET]);
     const app = new Forge();
-    mapHandler(app, "POST", "/guarded", {
-      middleware: [csrfProtection({ ring: () => ring, subject: false, ...(tokenField !== undefined ? { tokenField } : {}) })],
-      handler: keysAction(),
-    });
+    app.use("/guarded", csrfMintStage({ ring: () => ring, subject: false, ...(tokenField !== undefined ? { tokenField } : {}) }));
+    mapHandler(app, "POST", "/guarded", keysAction());
     return { app, token: await createCsrfToken(ring, "/guarded") };
   }
 
@@ -844,10 +955,8 @@ describe("defineAction — injected field derivation", () => {
   it("strips only the name the guard actually consumed, so a stray default field is still refused", async () => {
     const ring = await importKeyRing([SECRET]);
     const app = new Forge();
-    mapHandler(app, "POST", "/guarded", {
-      middleware: [csrfProtection({ ring: () => ring, subject: false, tokenField: "xsrf" })],
-      handler: issueTypesAction(),
-    });
+    app.use("/guarded", csrfMintStage({ ring: () => ring, subject: false, tokenField: "xsrf" }));
+    mapHandler(app, "POST", "/guarded", issueTypesAction());
     const token = await createCsrfToken(ring, "/guarded");
 
     const res = await submit(app, `xsrf=${token}&name=Jane&${CSRF_FIELD_DEFAULT}=stray`, "/guarded");
@@ -894,7 +1003,7 @@ describe("defineAction — the one refusal", () => {
 
   it("renders exactly this markup, which is the literal every other case here is asserted against", () => {
     expect(refusal("name")).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Please correct the following fields."><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>name</li></ul></div>',
     );
   });
 
@@ -1084,9 +1193,8 @@ describe("defineAction — the one refusal", () => {
 });
 
 describe("defineAction — error reporting", () => {
-  const parse = (lines: string[]): Record<string, unknown>[] => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-
   it("logs the generic 500 at error level, in the serialized shape", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(TEST_ROUTE, {
         schema: NameSchema,
@@ -1094,21 +1202,23 @@ describe("defineAction — error reporting", () => {
           throw new Error("handle exploded");
         },
       }),
+      capture,
     );
 
-    const records = parse(await captureLogs(() => submit(app, VALID_FORM.toString())));
-    expect(records.length).toBe(1);
-    const record = records[0]!;
-    expect(record.prefix).toBe("action");
+    await submit(app, VALID_FORM.toString());
+    expect(capture.records.length).toBe(1);
+    const record = capture.records[0]!;
+    expect(record.data?.source).toBe("action");
     expect(record.level).toBe("error");
     expect(record.message).toBe("Action threw");
-    const error = record.error as { type: string; detail: string; stack?: string };
+    const error = record.data?.error as { type: string; detail: string; stack?: string };
     expect(error.type).toBe("Error");
     expect(error.detail).toBe("handle exploded");
     expect(typeof error.stack).toBe("string");
   });
 
   it("logs at warn when onError recovers, since the client got a normal response", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(TEST_ROUTE, {
         schema: NameSchema,
@@ -1117,15 +1227,15 @@ describe("defineAction — error reporting", () => {
         },
         onError: () => new Response("recovered", { status: 200 }),
       }),
+      capture,
     );
 
-    const records = parse(await captureLogs(() => submit(app, VALID_FORM.toString())));
-    expect(records.length).toBe(1);
-    expect(records[0]!.level).toBe("warn");
-    expect(records[0]!.message).toBe("Action threw");
+    await submit(app, VALID_FORM.toString());
+    expect(capture.records.map(({ level, message }) => ({ level, message }))).toStrictEqual([{ level: "warn", message: "Action threw" }]);
   });
 
   it("attributes a throwing onError to the hook and still answers the generic fragment", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(TEST_ROUTE, {
         schema: NameSchema,
@@ -1136,30 +1246,26 @@ describe("defineAction — error reporting", () => {
           throw new Error("hook exploded");
         },
       }),
+      capture,
     );
 
-    let res: Response | undefined;
-    const records = parse(
-      await captureLogs(async () => {
-        res = await submit(app, VALID_FORM.toString());
-      }),
-    );
+    const res = await submit(app, VALID_FORM.toString());
 
-    expect(res!.status).toBe(500);
-    expect(await res!.text()).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe(
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground" data-announce-failure="Something went wrong. Please try again."><p>Something went wrong. Please try again.</p></div>',
     );
-    expect(records.length).toBe(1);
-    const record = records[0]!;
+    expect(capture.records.length).toBe(1);
+    const record = capture.records[0]!;
     expect(record.message).toBe("defineAction onError threw");
     expect(record.level).toBe("error");
-    expect((record.error as { detail: string }).detail).toBe("hook exploded");
-    expect((record.original as { detail: string }).detail).toBe("handle exploded");
+    expect(record.data).toMatchObject({ error: { detail: "hook exploded" }, original: { detail: "handle exploded" } });
   });
 });
 
 describe("defineAction — a client that disconnects", () => {
   it("renders no fragment and logs nothing, leaving the boundary its 499", async () => {
+    const capture = captureLogs();
     const app = makeApp(
       defineAction(TEST_ROUTE, {
         schema: NameSchema,
@@ -1167,24 +1273,22 @@ describe("defineAction — a client that disconnects", () => {
           throw new Error("handle exploded");
         },
       }),
+      capture,
     );
 
-    let res: Response | undefined;
-    const logs = await captureLogs(async () => {
-      res = await app.fetch(
-        new Request("http://localhost/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString(), signal: AbortSignal.abort() }),
-        {},
-        mockExecutionContext(),
-      );
-    });
+    const res = await app.fetch(
+      new Request("http://localhost/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString(), signal: AbortSignal.abort() }),
+      {},
+      mockExecutionContext(),
+    );
 
-    expect(res!.status).toBe(499);
-    expect(logs).toEqual([]);
+    expect(res.status).toBe(499);
+    expect(capture.records).toEqual([]);
   });
 });
 
 describe("defineAction — Turnstile under a testing secret", () => {
-  const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+  const TESTING_SECRET = TURNSTILE_TEST_KEYS.secret.pass;
   // Siteverify's fixed answer under a testing secret names its own hostname and carries no action.
   const TESTING_ANSWER = { success: true, hostname: "example.com" };
 
@@ -1218,5 +1322,162 @@ describe("defineAction — Turnstile under a testing secret", () => {
     const res = await postWith(guardedApp(), TESTING_SECRET);
 
     expect(res.status).toBe(422);
+  });
+});
+
+describe("defineAction — route rate limits keyed by identity and params", () => {
+  const NOTEBOOK_ROUTE = post("/notebooks/:nb/entries");
+  const userIdVar = contextVar<string>("action-test.userId");
+  type LimitedEnv = { NOTEBOOK_WRITES?: RateLimit; USER_WRITES?: RateLimit };
+
+  const identify: Middleware = (context, next) => {
+    const user = context.request.headers.get("x-user");
+    if (user === null) return new Response("Unauthorized", { status: 401 });
+    userIdVar.set(context, user);
+    return next();
+  };
+
+  function budgetLimiter(name: string, perKey: number, spent: string[]): RateLimit {
+    const used = new Map<string, number>();
+    return {
+      limit: async ({ key }) => {
+        spent.push(`${name}:${key}`);
+        const count = (used.get(key) ?? 0) + 1;
+        used.set(key, count);
+        return { success: count <= perKey };
+      },
+    };
+  }
+
+  function notebookApp(rateLimit: RateLimitOptions | readonly RateLimitOptions[], onRefuse?: RefuseHook) {
+    const handled: string[] = [];
+    const app = new Forge<LimitedEnv>();
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      rateLimits: { NOTEBOOK_WRITES: { limit: 1, period: 60 }, USER_WRITES: { limit: 2, period: 3600 } },
+      ...(onRefuse === undefined ? {} : { onRefuse }),
+    });
+    mapHandler(app, "POST", "/notebooks/:nb/entries", {
+      middleware: [identify],
+      handler: defineAction(NOTEBOOK_ROUTE, {
+        schema: NameSchema,
+        rateLimit,
+        handle: (data, c) => {
+          handled.push(`${c.params.nb}:${data.name}`);
+          return new Response(`saved to ${c.params.nb}`);
+        },
+      }),
+    });
+    return { app, handled };
+  }
+
+  function write(app: Forge<LimitedEnv>, env: LimitedEnv, user: string, nb: string): Promise<Response> {
+    return app.request(`/notebooks/${nb}/entries`, { method: "POST", headers: { ...FORM_HEADERS, "x-user": user }, body: "name=Entry" }, env);
+  }
+
+  const perUserPerNotebook: RateLimitOptions = { binding: "NOTEBOOK_WRITES", key: (c) => `${userIdVar.get(c)}:${c.params.nb}` };
+
+  it("spends a separate budget per notebook and per user, answering the spent one 429 through the chain's hook", async () => {
+    const spent: string[] = [];
+    const refusals: Refusal[] = [];
+    const { app, handled } = notebookApp(perUserPerNotebook, (_c, received) => {
+      refusals.push(received);
+      return new Response(`refused by ${received.guard}`, { status: received.status });
+    });
+    const env: LimitedEnv = { NOTEBOOK_WRITES: budgetLimiter("NOTEBOOK_WRITES", 1, spent) };
+
+    const answers: [number, string, string | null][] = [];
+    for (const [user, nb] of [
+      ["alice", "n1"],
+      ["alice", "n1"],
+      ["alice", "n2"],
+      ["bob", "n1"],
+    ] as const) {
+      const res = await write(app, env, user, nb);
+      answers.push([res.status, await res.text(), res.headers.get("Retry-After")]);
+    }
+
+    expect({ answers, spent, refusals, handled }).toEqual({
+      answers: [
+        [200, "saved to n1", null],
+        [429, "refused by rate-limit", "60"],
+        [200, "saved to n2", null],
+        [200, "saved to n1", null],
+      ],
+      spent: ["NOTEBOOK_WRITES:alice:n1", "NOTEBOOK_WRITES:alice:n1", "NOTEBOOK_WRITES:alice:n2", "NOTEBOOK_WRITES:bob:n1"],
+      refusals: [{ guard: "rate-limit", status: 429, retryAfter: 60 }],
+      handled: ["n1:Entry", "n2:Entry", "n1:Entry"],
+    });
+  });
+
+  it("answers with the limit's own onRefuse in place of the chain's hook", async () => {
+    const chainHook: RefuseHook = () => new Response("chain hook", { status: 429 });
+    const { app, handled } = notebookApp({ ...perUserPerNotebook, onRefuse: () => new Response("route hook", { status: 429 }) }, chainHook);
+    const env: LimitedEnv = { NOTEBOOK_WRITES: budgetLimiter("NOTEBOOK_WRITES", 0, []) };
+
+    const res = await write(app, env, "alice", "n1");
+
+    expect({ status: res.status, body: await res.text(), handled }).toEqual({ status: 429, body: "route hook", handled: [] });
+  });
+
+  describe("two stacked limits", () => {
+    const stacked: readonly RateLimitOptions[] = [
+      { binding: "USER_WRITES", key: (c) => userIdVar.get(c) },
+      { binding: "NOTEBOOK_WRITES", key: (c) => `${userIdVar.get(c)}:${c.params.nb}` },
+    ];
+
+    const cases: { name: string; userBudget: number; notebookBudget: number; expected: { status: number; spent: string[]; handled: number } }[] = [
+      {
+        name: "spends both, in order, on a submission each admits",
+        userBudget: 1,
+        notebookBudget: 1,
+        expected: { status: 200, spent: ["USER_WRITES:alice", "NOTEBOOK_WRITES:alice:n1"], handled: 1 },
+      },
+      {
+        name: "answers 429 when the second refuses, having spent the first",
+        userBudget: 1,
+        notebookBudget: 0,
+        expected: { status: 429, spent: ["USER_WRITES:alice", "NOTEBOOK_WRITES:alice:n1"], handled: 0 },
+      },
+      {
+        name: "answers 429 when the first refuses, without spending the second",
+        userBudget: 0,
+        notebookBudget: 1,
+        expected: { status: 429, spent: ["USER_WRITES:alice"], handled: 0 },
+      },
+    ];
+
+    for (const { name, userBudget, notebookBudget, expected } of cases) {
+      it(name, async () => {
+        const spent: string[] = [];
+        const { app, handled } = notebookApp(stacked);
+        const env: LimitedEnv = {
+          USER_WRITES: budgetLimiter("USER_WRITES", userBudget, spent),
+          NOTEBOOK_WRITES: budgetLimiter("NOTEBOOK_WRITES", notebookBudget, spent),
+        };
+
+        const res = await write(app, env, "alice", "n1");
+
+        expect({ status: res.status, spent, handled: handled.length }).toEqual(expected);
+      });
+    }
+
+    it("answers each limit's 429 with its own declared period as Retry-After", async () => {
+      const { app } = notebookApp(stacked);
+      const refusedByUser = await write(
+        app,
+        { USER_WRITES: budgetLimiter("USER_WRITES", 0, []), NOTEBOOK_WRITES: budgetLimiter("NOTEBOOK_WRITES", 1, []) },
+        "alice",
+        "n1",
+      );
+      const refusedByNotebook = await write(
+        app,
+        { USER_WRITES: budgetLimiter("USER_WRITES", 1, []), NOTEBOOK_WRITES: budgetLimiter("NOTEBOOK_WRITES", 0, []) },
+        "alice",
+        "n1",
+      );
+
+      expect([refusedByUser.headers.get("Retry-After"), refusedByNotebook.headers.get("Retry-After")]).toEqual(["3600", "60"]);
+    });
   });
 });

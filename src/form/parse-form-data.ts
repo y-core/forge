@@ -28,7 +28,7 @@ function tooLarge(maxBytes: number): Error & { status: number } {
 function capConflict(meteredAt: number, maxBytes: number): Error & { code: string } {
   return Object.assign(
     new Error(
-      `Form body was metered at ${meteredAt} bytes by an earlier parseFormData caller on this request and refused, so this ${maxBytes}-byte request cannot be served: the stream is gone. Raise the earlier caller's maxBytes — usually csrfProtection's — to at least ${maxBytes}.`,
+      `Form body was metered at ${meteredAt} bytes by an earlier parseFormData caller on this request and refused, so this ${maxBytes}-byte request cannot be served: the stream is gone. Raise the earlier caller's maxBytes — usually the CSRF policy's — to at least ${maxBytes}.`,
     ),
     { code: CAP_CONFLICT_CODE },
   );

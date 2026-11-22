@@ -94,7 +94,7 @@ Group by file, then severity, critical first. **Never write a secret's value int
 | --- | --- |
 | No deprecation shim or backward-compatible path before v1.0.0 | `CLAUDE.md` |
 | No hardcoded secret, key, or credential in source | §3c |
-| Every state-changing route carries its guards in the route's middleware list | [`BOUNDARIES.md`][boundaries-2b] §2b |
+| Every state-changing route is guarded by a covering chain group or its route middleware, never inline | [`BOUNDARIES.md`][boundaries-2b] §2b |
 | Untrusted input is validated at the boundary; services take typed objects | [`BOUNDARIES.md`][boundaries-3a] §3a |
 | Security-critical paths fail closed, and no verification error is swallowed | [`BOUNDARIES.md`][boundaries-5] §5 |
 | No PII reaches a log record | [`BOUNDARIES.md`][boundaries-4] §4 |
@@ -181,11 +181,11 @@ inside a string that is documentation, not markup, is not.
 **Substring assertion on rendered markup**
 
 ```bash
-rg -n 'toContain\(|toMatch\(' --glob '*.test.ts*'
+rg -n 'toContain\(|toMatch\(|\.includes\(' --glob '*.test.ts*'
 ```
 
-_Triage:_ legitimate on non-markup strings — an error message, a log line. **A hit asserting on rendered markup is a defect**
-([`TESTING.md`][testing-3a] §3a).
+_Triage:_ legitimate on non-markup strings — an error message, a log line — and on an array or a `Set`, where `.includes(` and
+`toContain` test membership, not a substring. **A hit asserting on rendered markup is a defect** ([`TESTING.md`][testing-3a] §3a).
 
 **Request headers building an absolute URL**
 
@@ -224,8 +224,10 @@ No command decides these. Read the named files and answer the named question.
 **Hardcoded secrets.** Read every added constant and test fixture. _Does any string look like a key, token, or hex secret that is not obviously a
 test value?_ A 64-character hex literal is fine in a fixture and fatal in a config module ([`TESTING.md`][testing-2c] §2c).
 
-**Guard placement and order.** Read the controller binding, not the handler. _Is every guard in the route's middleware list, and in the order
-[`BOUNDARIES.md`][boundaries-2c] §2c requires?_ An inline guard is invisible to a route-map audit even when it works.
+**Guard placement and order.** Read the chain declaration and the controller binding, not the handler. _Is every check that needs only the
+request — shape, origin, an address-keyed limit — in a chain guard group covering the route, every identity or parameter check in the route's
+middleware list, and the whole in the order [`BOUNDARIES.md`][boundaries-2c] §2c requires?_ A state-changing route guarded by neither is the
+finding; an empty middleware list under a covering group is not. An inline guard is invisible to that audit even when it works.
 
 **Fail-closed posture.** Read every new conditional around a security dependency, and every `try`. _When the binding, key, or header is absent, does
 the code refuse — or continue?_ A `catch` that proceeds is the defect ([`BOUNDARIES.md`][boundaries-5c] §5c).
@@ -350,7 +352,7 @@ reviewer reads both.
 [ag-6c]: ../shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-1]: ./BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1b]: ./BOUNDARIES.md#1b-splitting-a-component-across-the-boundary
-[boundaries-2b]: ./BOUNDARIES.md#2b-guards-live-in-the-routes-middleware-list
+[boundaries-2b]: ./BOUNDARIES.md#2b-guards-are-declared-never-inline
 [boundaries-2c]: ./BOUNDARIES.md#2c-guard-order-within-a-route
 [boundaries-2e]: ./BOUNDARIES.md#2e-a-route-answers-only-the-method-it-declares
 [boundaries-3a]: ./BOUNDARIES.md#3a-the-boundary-rule

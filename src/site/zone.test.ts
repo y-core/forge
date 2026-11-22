@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { zoneAllows } from "../testing/zone";
 import type { ZoneSurface } from "./types";
 import { buildAllowExpression, buildAllowRule, buildRedirectRule, EXPRESSION_MAX_CHARS, ZonePatternError } from "./zone";
 
@@ -23,6 +24,15 @@ const surfaceRefusal = (zone: ZoneSurface): ZonePatternError | undefined => {
 };
 
 const refusal = (source: string): ZonePatternError | undefined => surfaceRefusal({ apex: "example.com", paths: [source], prefixes: [], files: [] });
+
+const STARTER_PATHS = [
+  "/account/passkeys/:id",
+  "/account/passkeys/:id/edit",
+  "/admin/users/:id",
+  "/admin/users/:id/edit",
+  "/admin/users/:id/factors",
+  "/admin/users/:id/factors/reset",
+];
 
 describe("buildAllowExpression", () => {
   it("puts every exact path and root file in one membership set, sorted", () => {
@@ -166,6 +176,113 @@ describe("buildAllowExpression — dynamic routes", () => {
     const error = refusal("/:slug");
     expect(error).toBeInstanceOf(Error);
     expect(error?.name).toBe("ZonePatternError");
+  });
+
+  it("bounds a param to one segment, allowing each route's shape and nothing deeper", () => {
+    const expression = allowPaths("/admin/users/:id", "/admin/users/:id/edit");
+    for (const path of ["/admin/users/1", "/admin/users/1/edit"]) expect(zoneAllows(expression, path)).toBe(true);
+    for (const path of ["/admin/users/1/x", "/admin/users/1/edit/x", "/admin/users/a/b/c", "/admin/users/1/"]) {
+      expect(zoneAllows(expression, path)).toBe(false);
+    }
+  });
+
+  it("bounds every param of a two-param route to its own segment", () => {
+    const expression = allowPaths("/orgs/:org/repos/:repo");
+    expect(zoneAllows(expression, "/orgs/acme/repos/forge")).toBe(true);
+    for (const path of ["/orgs/acme/x/repos/forge", "/orgs/acme/repos/forge/x", "/orgs/acme/repos/a/b"])
+      expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("bounds a param that is part of a segment", () => {
+    const expression = allowPaths("/files/:name.pdf");
+    expect(zoneAllows(expression, "/files/report.pdf")).toBe(true);
+    expect(zoneAllows(expression, "/files/a/b.pdf")).toBe(false);
+    expect(zoneAllows(expression, "/files/report.txt")).toBe(false);
+  });
+
+  it("keeps a splat matching across segments", () => {
+    const expression = allowPaths("/files/*rest", "/admin/:id/*rest");
+    for (const path of ["/files/a", "/files/a/b/c", "/admin/1/x/y/z"]) expect(zoneAllows(expression, path)).toBe(true);
+    expect(expression).not.toContain("and not");
+  });
+
+  it("collapses a param next to a splat into a splat", () => {
+    expect(zoneAllows(allowPaths("/a/:x*y"), "/a/b/c/d")).toBe(true);
+  });
+
+  it("keeps a starter-sized surface within the per-rule limit", () => {
+    const expression = allowPaths(...STARTER_PATHS);
+    expect(zoneAllows(expression, "/admin/users/1/factors/reset")).toBe(true);
+    expect(zoneAllows(expression, "/admin/users/1/unknown/deep")).toBe(false);
+    for (const path of ["/account/passkeys/", "/admin/users//factors/reset"]) expect(zoneAllows(expression, path)).toBe(false);
+    expect(expression.length).toBeLessThanOrEqual(EXPRESSION_MAX_CHARS);
+  });
+
+  it("matches a dynamic route case-sensitively, as the router does", () => {
+    const expression = allowPaths("/admin/users/:id");
+    expect(zoneAllows(expression, "/admin/users/1")).toBe(true);
+    for (const path of ["/ADMIN/users/1", "/Admin/Users/1"]) expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("bounds adjacent params in one segment to that segment", () => {
+    const dotted = allowPaths("/x/:a.:b");
+    expect(zoneAllows(dotted, "/x/1.2")).toBe(true);
+    for (const path of ["/x/1/2.3", "/x/1.2/3", "/x/12"]) expect(zoneAllows(dotted, path)).toBe(false);
+  });
+
+  it("refuses a whole-segment param left empty, as the router does", () => {
+    const expression = allowPaths("/admin/users/:id", "/admin/users/:id/edit");
+    for (const path of ["/admin/users/1", "/admin/users/1/edit"]) expect(zoneAllows(expression, path)).toBe(true);
+    for (const path of ["/admin/users/", "/admin/users//edit"]) expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("keeps a static trailing-slash route, the root and the reserved prefixes matching beside an empty-param refusal", () => {
+    const expression = buildAllowExpression({ apex: "example.com", paths: ["/", "/docs/", "/admin/users/:id"], prefixes: ["/assets/"], files: [] });
+    for (const path of ["/", "/docs/", "/assets/a//b", "/.well-known/x/", "/cdn-cgi//x"]) expect(zoneAllows(expression, path)).toBe(true);
+    expect(zoneAllows(expression, "/admin/users/")).toBe(false);
+  });
+
+  it("refuses a param the router cannot parse, where the next character is not a delimiter it accepts", () => {
+    for (const source of ["/x/:a-:b", "/x/:a:b", "/x/:a\\/b", "/x(/:a)-b", "/x/:a(-b)"]) {
+      const error = refusal(source);
+      expect(error?.reason).toBe("malformed");
+      expect(error?.source).toBe(source);
+    }
+    for (const source of ["/x/:a/b", "/x/:a.:b", "/x/:a\\.b", "/x/:a*b", "/x(/:a)/b"]) expect(refusal(source)).toBeUndefined();
+  });
+
+  it("matches an escaped asterisk in a route only as a literal star", () => {
+    const expression = allowPaths("/files/2\\*3/:id");
+    expect(zoneAllows(expression, "/files/2*3/a")).toBe(true);
+    for (const path of ["/files/2x3/a", "/files/23/a", "/files/2/x/3/a", "/files/2*3/a/b"]) expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("matches an escaped backslash in a route only as a literal backslash", () => {
+    const expression = allowPaths("/a\\\\b/:id");
+    expect(zoneAllows(expression, "/a\\b/1")).toBe(true);
+    for (const path of ["/ab/1", "/a\\b/1/x"]) expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("keeps a mixed param-and-splat route unbounded while still requiring every literal before the splat", () => {
+    const expression = allowPaths("/a/:id/*rest");
+    for (const path of ["/a/1/", "/a/1/x", "/a/1/x/y/z"]) expect(zoneAllows(expression, path)).toBe(true);
+    for (const path of ["/a/1", "/b/1/x"]) expect(zoneAllows(expression, path)).toBe(false);
+  });
+
+  it("emits one clause for two routes of the same shape", () => {
+    const expression = allowPaths("/u/:id", "/u/:slug", "/u(/:name)", "/u");
+    expect(expression.split("strict wildcard").length - 1).toBe(1);
+    expect(expression).toContain('http.request.uri.path in {"/u"}');
+  });
+
+  it("refuses dynamic routes whose clauses together pass the per-rule limit", () => {
+    const paths = Array.from({ length: 60 }, (_, i) => `/route-${i}/:id/edit`);
+    expect(() => allowPaths(...paths)).toThrow(/over Cloudflare's per-rule limit of 4096/);
+  });
+
+  it("names the dynamic-route count when the per-rule limit is passed", () => {
+    const paths = Array.from({ length: 50 }, (_, i) => `/route-${i}/:id/edit`);
+    expect(() => allowPaths(...paths)).toThrow(/holds 50 dynamic routes/);
   });
 
   it("does not refuse a surface whose only path is dynamic as empty", () => {

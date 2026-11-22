@@ -63,6 +63,11 @@
     "typescript/require-array-sort-compare": "off",
     "typescript/no-duplicate-type-constituents": "off",
     "typescript/no-redundant-type-constituents": "off",
+    // forge's own program declares no global `Bun`, so every tree imports it from "bun".
+    "eslint/no-restricted-globals": [
+      "error",
+      { "globals": [{ "name": "Bun", "message": "Import from \"bun\" — forge's program declares no global `Bun`." }], "checkGlobalObject": true }
+    ],
     "eslint/no-restricted-imports": [
       "error",
       {
@@ -80,6 +85,96 @@
     ]
   },
   "overrides": [
+    {
+      // The Worker-globals ban `src/tooling/config/oxlint.base.json` ships; build-time code and the specs keep only the `Bun` ban.
+      "files": ["src/**"],
+      "rules": {
+        "eslint/no-restricted-globals": [
+          "error",
+          {
+            "globals": [
+              { "name": "Bun", "message": "A Worker has no `Bun`: import from \"bun\" in a spec or a build-time module." },
+              {
+                "name": "Buffer",
+                "message": "A Worker has no global `Buffer`: use `Uint8Array`, or import from \"node:buffer\" in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no global `process`: read the env binding, or import from \"node:process\" in build-time code."
+              }
+            ],
+            "checkGlobalObject": true
+          }
+        ],
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
+              },
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // `./testing/harness` and `./testing/d1` are `forge.node` subpaths: they run in Node or Bun, never a Worker.
+      "files": [
+        "src/tooling/**",
+        "src/testing/harness.ts",
+        "src/testing/d1/**",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.browser.ts",
+        "src/**/*.browser.tsx",
+        "src/**/*.workerd.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-globals": [
+          "error",
+          {
+            "globals": [{ "name": "Bun", "message": "Import from \"bun\" — forge's program declares no global `Bun`." }],
+            "checkGlobalObject": true
+          }
+        ],
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
+              },
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       // The type-placement rule (`docs/FORGE_STRUCTURE.md` §8), scoped to the published namespaces under `src/`.
       "files": ["src/**/*.ts", "src/**/*.tsx"],
@@ -112,10 +207,10 @@
     },
     {
       // A file that is itself a published subpath is its own `types.ts`: `./testing/snapshot`,
-      // `./testing/harness`, `./testing/d1`, `./testing/node` and `./testing/bun` are off the `./testing` barrel on purpose, and moving their
+      // `./testing/harness`, `./testing/node` and `./testing/bun` are off the `./testing` barrel on purpose, and moving their
       // shapes into the namespace's `types.ts` would put them on that barrel — the one place `TEST_RUNNERS.md` §7f says
       // they do not belong.
-      "files": ["src/testing/bun.d.ts", "src/testing/d1.ts", "src/testing/harness.ts", "src/testing/node.d.ts", "src/testing/snapshot.ts"],
+      "files": ["src/testing/bun.d.ts", "src/testing/harness.ts", "src/testing/node.d.ts", "src/testing/snapshot.ts"],
       "rules": { "forge/type-import-external": "off" }
     },
     {
@@ -209,6 +304,21 @@
         "eslint/no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
             "patterns": [
               {
                 "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
@@ -235,6 +345,21 @@
         "eslint/no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
             "patterns": [
               {
                 "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
@@ -296,6 +421,21 @@
         "eslint/no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
             "patterns": [
               {
                 "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],

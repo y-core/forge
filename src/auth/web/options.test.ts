@@ -160,7 +160,7 @@ describe("authPasskeyContract", () => {
 });
 
 describe("authCsrfHeader", () => {
-  it("answers nothing for csrfProtection's default header, and the header for a renamed one", () => {
+  it("answers nothing for the CSRF policy's default header, and the header for a renamed one", () => {
     const headerUnder = (header?: string) => {
       const c = context("http://localhost/auth/signin");
       if (header !== undefined) csrfHeaderCtx.set(c, header);

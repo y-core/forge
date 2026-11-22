@@ -81,6 +81,11 @@ describe("createChallengeStore — take", () => {
     const [client] = clientOf();
     expect(() => createChallengeStore(client, { prefix: "" })).toThrow("createChallengeStore: `prefix` must not be an empty string");
   });
+
+  it.each(["a||b", "a|"])("refuses the prefix %s, whose key would split in two places", (prefix) => {
+    const [client] = clientOf();
+    expect(() => createChallengeStore(client, { prefix })).toThrow("createChallengeStore: `prefix` must not hold `||` or end in `|`");
+  });
 });
 
 describe("createChallengeStore — failures", () => {

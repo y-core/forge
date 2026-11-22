@@ -42,7 +42,7 @@ export {
   resolveAuth,
 } from "./guards";
 export type { AuthIdentity } from "./types";
-export type { AuthNav, AuthNavContext, AuthNavOptions } from "./types";
+export type { AuthNavContext, AuthNavOptions } from "./types";
 export { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
 export {
   authCtx,
@@ -91,6 +91,15 @@ export type {
 export type { AuthAccountPaths, AuthAdminPaths, AuthEntryPaths, AuthPathMap } from "./types";
 export { authEnrolmentPaths, authPaths } from "./paths";
 export { registerAccount, registerAdmin, registerAuth } from "./register";
+export type {
+  AuthPasskeyOffer,
+  AuthPerRequest,
+  AuthRequestServicesOptions,
+  AuthRequestServicesResolver,
+  AuthSecondFactorOffers,
+  AuthTotpAppOffer,
+} from "./types";
+export { authRequestServices } from "./services";
 export type { AuthPageOptions, AuthViewName, AuthViewProps, AuthViews } from "./types";
 export { AUTH_VIEWS, renderAuthPage } from "./render";
 export type { AuthViewRequest, AuthViewResolved } from "./types";
@@ -144,5 +153,7 @@ export type { RecoveryCodesViewProps } from "./views/types";
 export { RecoveryCodesView } from "./views/recovery-codes";
 export type { SessionListViewProps } from "./views/types";
 export { AUTH_SESSION_LIST_ID, SessionListView } from "./views/session-list";
+export type { SecurityEventListViewProps } from "./views/types";
+export { AUTH_SECURITY_EVENT_LIST_ID, SecurityEventListView } from "./views/security-events";
 export type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 export { AUTH_TOTP_ID, TotpEnrolView } from "./views/totp-enrol";

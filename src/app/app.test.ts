@@ -5,7 +5,7 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createConfig } from "../config/config";
 import { importKeyRing } from "../crypto/keyring/ring";
-import { csrfProtection } from "../form/csrf";
+import { csrfMintStage } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
 import { get, MatcherResourceError } from "../router/mod";
 import { createSecurityHeaders } from "../security/headers";
@@ -202,7 +202,7 @@ describe("error path carries security headers (F9)", () => {
     const ring = await importKeyRing(["9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf"]);
     const app = new Forge();
     app.use("*", createSecurityHeaders());
-    app.use("*", csrfProtection({ ring: () => ring, subject: false }));
+    app.use("*", csrfMintStage({ ring: () => ring, subject: false }));
     mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
 
     const res = await app.request("/submit", {
@@ -221,7 +221,7 @@ describe("error path carries security headers (F9)", () => {
     type Env = { LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } };
     const app = new Forge<Env>();
     app.use("*", createSecurityHeaders());
-    app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER, trustCfHeaders: true }));
+    app.use("*", rateLimit<Env>({ binding: "LIMITER", key: () => "client" }));
     mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
 
     const res = await app.request(

@@ -1,11 +1,13 @@
 import { pdfContainer, Stack } from "./components";
+import { toPdfElements } from "./tree";
 import type { LinkProps, PdfElement } from "./types";
 
 /** Takes a reader somewhere when they activate the run it wraps, and says so to the structure tree. @public */
 export function Link(props: LinkProps): PdfElement {
-  const inner = Stack({ children: props.children });
+  const children = toPdfElements(props.children);
+  const inner = Stack({ children });
   return {
-    ...pdfContainer(props.children),
+    ...pdfContainer(children),
     measure: (width, set) => inner.measure(width, set),
     fragments(box, set) {
       // The rectangle is measured from where the run is actually painted rather than from the box,

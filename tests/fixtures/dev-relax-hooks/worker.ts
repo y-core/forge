@@ -1,11 +1,12 @@
 import { createApp, createErrorPage } from "../../../src/app/mod";
 import type { Forge } from "../../../src/app/mod";
 import { verifyTurnstile } from "../../../src/form/mod";
+import { TURNSTILE_TEST_KEYS } from "../../../src/form/turnstile-keys";
 import { checkCrossOriginProtection, crossOriginProtection, originGuard, originProtection, rateLimit } from "../../../src/security/mod";
 import { mapHandler } from "../../../src/testing/mod";
 
 const APP_ORIGIN = "https://app.example";
-const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+const TESTING_SECRET = TURNSTILE_TEST_KEYS.secret.pass;
 
 function guarded(middleware: ReturnType<typeof crossOriginProtection>) {
   return createApp({
@@ -30,10 +31,10 @@ export default {
     const status = async (app: Forge, init: RequestInit) => (await app.request("/", init, env)).status;
     const fromPreview = post({ Origin: String(env.PREVIEW_ORIGIN) });
     const token = new FormData();
-    token.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    token.append("cf-turnstile-response", TURNSTILE_TEST_KEYS.token);
 
     return Response.json({
-      rateLimit: await status(guarded(rateLimit({ limiter: () => undefined })), post()),
+      rateLimit: await status(guarded(rateLimit({ binding: "LIMITER" })), post()),
       checkCrossOriginProtection: checkCrossOriginProtection(new Request(APP_ORIGIN, post())).ok,
       crossOriginProtection: await status(guarded(crossOriginProtection()), post()),
       originGuard: await status(guarded(originGuard([APP_ORIGIN])), fromPreview),

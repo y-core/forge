@@ -32,10 +32,15 @@ export function syncForge(root: string, spawn?: SpawnSync): void {
   }
 }
 
+/** What the sync prints: what it replaced, and the command that undoes it. */
+export function syncReport(root: string): string {
+  return `synced ${PACKAGE} into ${root} from ${CHECKOUT}\nRestore the pinned release:\n  bun i`;
+}
+
 if (import.meta.main) {
   const root = process.cwd();
   const name = (JSON.parse(readFileSync(join(CHECKOUT, "package.json"), "utf-8")) as { name: string }).name;
   if (name !== PACKAGE) throw new Error(`${CHECKOUT} is ${name}, not ${PACKAGE}`);
   syncForge(root);
-  console.log(`synced ${PACKAGE} into ${root} from ${CHECKOUT}`);
+  console.log(syncReport(root));
 }

@@ -39,6 +39,8 @@ Give the ring a variable of its own, such as `APP_SEAL_KEY_RING`, holding 32 ran
 **Never reuse the auth secret** — see [Gotchas](#gotchas). `parseKeyRingSecrets` splits the variable into the list `importKeyRing` takes:
 
 ```ts
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+
 const ring = await importKeyRing(parseKeyRingSecrets(c.env.APP_SEAL_KEY_RING));
 ```
 
@@ -46,6 +48,7 @@ Make `KeyRingSecretSchema` the variable's field in your app's env schema. It acc
 bytes of hex, and a short or mistyped secret fails validation with `Invalid environment: APP_SEAL_KEY_RING: <reason>`:
 
 ```ts
+import { KeyRingSecretSchema } from "@y-core/forge/crypto/keyring";
 import { v } from "@y-core/forge/validation";
 
 const EnvSchema = v.object({ APP_SEAL_KEY_RING: KeyRingSecretSchema /* , …the rest of your bindings */ });
@@ -65,7 +68,9 @@ shows how.
 resolver at module scope with `createKeyRingResolver`, and call it inside the handler:
 
 ```ts
-const appRing = createKeyRingResolver<Env>((c) => importKeyRing(parseKeyRingSecrets(c.env.APP_SEAL_KEY_RING)));
+import { createKeyRingResolver, importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+
+const appRing = createKeyRingResolver<Env>((env) => importKeyRing(parseKeyRingSecrets(env.APP_SEAL_KEY_RING)));
 
 // inside a handler
 const ring = await appRing(c);
@@ -75,7 +80,7 @@ The resolver keeps one ring for each `env` object, and every request a Worker is
 deployment, so it arrives with a new `env`, and a new ring is resolved for it. Calls racing on a cold `env` share one resolve, and a resolve that
 throws is retried by the next request rather than cached.
 
-Anywhere forge takes a `KeyRingResolver` — `csrfProtection`'s `ring`, `defineApproval`'s, `createAnonymousSession`'s — you can pass the plain
+Anywhere forge takes a `KeyRingResolver` — the CSRF policy's `ring`, `defineApproval`'s, `createAnonymousSession`'s — you can pass the plain
 function. Forge caches its ring per `env` for you.
 
 ---
@@ -86,6 +91,9 @@ Seal the value and store the frame as a blob. Each frame is AES-256-GCM under a 
 stored in:
 
 ```ts
+import { sealAtRest } from "@y-core/forge/crypto/keyring";
+import { sql } from "@y-core/forge/storage/db";
+
 const binding = { purpose: "webhook-secret", context: new TextEncoder().encode(`webhooks ${webhookId}`) };
 const frame = await sealAtRest(ring, binding, new TextEncoder().encode(secret));
 await db.execute(sql`UPDATE webhooks SET secret = ${frame} WHERE id = ${webhookId}`);
@@ -94,9 +102,13 @@ await db.execute(sql`UPDATE webhooks SET secret = ${frame} WHERE id = ${webhookI
 Open it with the same binding. A refusal is a `Result`, never a throw:
 
 ```ts
-const opened = await openAtRest(ring, binding, row.secret);
-if (!opened.ok) return refuse(opened.error); // "no-key" or "unopenable"
-const secret = new TextDecoder().decode(opened.data.plaintext);
+import { openAtRest } from "@y-core/forge/crypto/keyring";
+
+async function readSecret() {
+  const opened = await openAtRest(ring, binding, row.secret);
+  if (!opened.ok) return refuse(opened.error); // "no-key" or "unopenable"
+  return new TextDecoder().decode(opened.data.plaintext);
+}
 ```
 
 ### Choosing a purpose and a context
@@ -123,6 +135,9 @@ secrets in this same frame format under its own domain, `y-core/forge/auth/v1`, 
 again and write the new frame back:
 
 ```ts
+import { sealAtRest } from "@y-core/forge/crypto/keyring";
+import { sql } from "@y-core/forge/storage/db";
+
 if (opened.data.kid !== ring.activeKeyId) {
   const resealed = await sealAtRest(ring, binding, opened.data.plaintext);
   await db.execute(sql`UPDATE webhooks SET secret = ${resealed} WHERE id = ${webhookId}`);
@@ -139,6 +154,8 @@ When an id has to appear somewhere you do not trust with the id itself — a bro
 pseudonym for it instead:
 
 ```ts
+import { derivePseudonym } from "@y-core/forge/crypto/keyring";
+
 const storeName = `notes-v1:${await derivePseudonym(ring, { purpose: "notes-store", value: userId })}`;
 ```
 
@@ -158,10 +175,15 @@ When your app hands out bytes and must later know they came back unaltered — a
 them, and check the signature when they return:
 
 ```ts
+import { signKeyRingValue, verifyKeyRingValue } from "@y-core/forge/crypto/keyring";
+
 const signature = await signKeyRingValue(ring, { purpose: "answers-export", value: bytes });
+
 // …later, with the bytes and signature as they came back
-const verdict = await verifyKeyRingValue(ring, { purpose: "answers-export", value: bytes }, signature);
-if (verdict !== "verified") return refuse(verdict); // "no-key" or "forged"
+async function checkReturned() {
+  const verdict = await verifyKeyRingValue(ring, { purpose: "answers-export", value: bytes }, signature);
+  if (verdict !== "verified") return refuse(verdict); // "no-key" or "forged"
+}
 ```
 
 A signature is one string, `<kid>.<mac>`: the signing key's id, a dot, and HMAC-SHA-256 of the value in base64url. Store or send it whole —
@@ -181,7 +203,7 @@ an empty purpose, and refuse a ring `importKeyRing` did not build.
 
 ## What else signs under this ring
 
-**CSRF tokens, signed cookies and R2 signed URLs take this ring too.** Pass the same `KeyRing` to `csrfProtection`, `createSignedCookie` and
+**CSRF tokens, signed cookies and R2 signed URLs take this ring too.** Pass the same `KeyRing` to the CSRF policy, `createSignedCookie` and
 `createSignedObjectUrl`: each derives an HMAC subkey for a purpose of its own, so none of them shares a key with a sealed frame, a pseudonym, a
 signature or each other. Each carries the ring's key id on the wire, so a rotation keeps what was signed before it verifying until the old secret
 leaves the ring. Each refuses the auth key ring, as `sealAtRest` and `derivePseudonym` do.
@@ -221,12 +243,19 @@ under an old key and write it back sealed under the active one. Build the bindin
 sweep cannot open under a binding the app never uses:
 
 ```ts
+import { atRestKeyId, openAtRest, sealAtRest } from "@y-core/forge/crypto/keyring";
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+
+const db = createD1Client(c.env.DB);
 const webhookBinding = (id: string) => ({ purpose: "webhook-secret", context: new TextEncoder().encode(`webhooks ${id}`) });
 
 const unopenable: string[] = [];
-for (const row of await db.all(sql`SELECT id, secret FROM webhooks WHERE secret IS NOT NULL`)) {
-  if (atRestKeyId(row.secret) === ring.activeKeyId) continue;
-  const opened = await openAtRest(ring, webhookBinding(row.id), row.secret);
+const rows = await db.query<{ id: string; secret: number[] }>(sql`SELECT id, secret FROM webhooks WHERE secret IS NOT NULL`);
+if (!rows.ok) throw rows.error;
+for (const row of rows.data) {
+  const frame = new Uint8Array(row.secret); // a BLOB reads back from D1 as number[]
+  if (atRestKeyId(frame) === ring.activeKeyId) continue;
+  const opened = await openAtRest(ring, webhookBinding(row.id), frame);
   if (opened.ok) {
     const secret = await sealAtRest(ring, webhookBinding(row.id), opened.data.plaintext);
     await db.execute(sql`UPDATE webhooks SET secret = ${secret} WHERE id = ${row.id}`);

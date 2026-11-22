@@ -1,4 +1,5 @@
 import { err, ok } from "../../result/result";
+import { checkArtwork } from "./artwork";
 import { conformanceViolations } from "./conformance";
 import { DEFAULT_ORPHANS, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, LINK_SCHEMES } from "./limits";
 import { resolvePdfPage } from "./page";
@@ -12,6 +13,7 @@ import type {
   PdfDocument,
   PdfDocumentFonts,
   PdfInkName,
+  PdfLetterhead,
   PdfPage,
   PdfPalette,
   PdfPrepared,
@@ -103,6 +105,16 @@ function unsettable(pages: readonly PdfPage[], fonts: PdfDocumentFonts | undefin
   return undefined;
 }
 
+function unmarkable(letterhead: PdfLetterhead | undefined): PdfRenderError | undefined {
+  const markWidth = letterhead?.markWidth;
+  if (markWidth !== undefined && !(Number.isFinite(markWidth) && markWidth > 0)) {
+    return { kind: "artwork", message: "the letterhead's markWidth must be a finite number above 0" };
+  }
+  if (letterhead?.mark === undefined) return undefined;
+  const checked = checkArtwork(letterhead.mark, "the letterhead's mark");
+  return checked.ok ? undefined : checked.error;
+}
+
 function overCeiling(maxPages: number): PdfRenderError {
   return {
     kind: "max-pages",
@@ -118,6 +130,8 @@ export function preparePdfRender(doc: PdfDocument, options: PdfRendererOptions):
   if (refused !== undefined) return err(refused);
   const fault = attachmentFaults(options.attachments ?? [])[0];
   if (fault !== undefined) return err({ kind: "attachment", message: fault });
+  const unmarked = unmarkable(doc.letterhead);
+  if (unmarked !== undefined) return err(unmarked);
   const paper = resolvePdfPage(options.page);
   const maxPages = options.maxPages ?? DEFAULT_PDF_MAX_PAGES;
   const { pages, over } = paginateWithin(

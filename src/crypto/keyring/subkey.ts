@@ -1,3 +1,4 @@
+import { cachePendingUntilRejected } from "../../context/env-memo";
 import { hkdfExpand, hkdfExtract, importAeadKey, importHmacKey, utf8Encode } from "../primitives/mod";
 import { lookupKeyRingKey } from "./ring";
 import type { KeyRing, KeyRingKeyUse, KeyRingSubkeyRequest } from "./types";
@@ -22,19 +23,6 @@ function cacheFor<T>(cache: WeakMap<KeyRing, Map<string, T>>, ring: KeyRing): Ma
   const fresh = new Map<string, T>();
   cache.set(ring, fresh);
   return fresh;
-}
-
-/** Caches a pending promise under `key`, evicting it on rejection so the next caller retries. @internal */
-export function cachePendingUntilRejected<K, T>(
-  cache: { get(key: K): Promise<T> | undefined; set(key: K, value: Promise<T>): unknown; delete(key: K): boolean },
-  key: K,
-  pending: Promise<T>,
-): Promise<T> {
-  cache.set(key, pending);
-  pending.catch(() => {
-    if (cache.get(key) === pending) cache.delete(key);
-  });
-  return pending;
 }
 
 /** Resolves one purpose's HKDF subkey under one key id and domain, or `undefined` where the ring holds no such key. @internal */

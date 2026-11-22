@@ -47,7 +47,7 @@ between deployments is an argument to it.
 
 ```ts
 export function createWorker(security: SecurityHeadersOptions) {
-  const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).site.debug, notFound: notFoundController });
+  const app = createApp<AppEnv>({ config: configStore, notFound: notFoundController });
   registerMiddleware(app, security);
   app.map(routes, controller);
   applyAssets(app);
@@ -63,7 +63,7 @@ internally to decide policy, has moved the difference somewhere no reader can se
 
 The steps inside the factory execute in a fixed order, and the order is load-bearing:
 
-1. **Create the app** — with config integration and the debug predicate.
+1. **Create the app** — with config integration.
 2. **Register middleware** — security headers, request identity, logging, CORS.
 3. **Map routes to controllers** — the declarative route map bound to its controller.
 4. **Apply static assets** — including the not-found handler.

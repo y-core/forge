@@ -7,17 +7,19 @@ import { verifyTurnstile } from "../form/turnstile";
 import type { ParseFormDataOptions, ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "../form/types";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
+import { loggerFor } from "../logging/request-logger";
 import { renderError, renderValidationErrors } from "../render/htmx/fragment";
 import { err, ok } from "../result/result";
+import { rateLimitCheck } from "../security/rate-limit";
 import { describeValidationField, describeValidationIssue } from "../validation/format-issues";
 import { v } from "../validation/validation";
 import { readTurnstileKey, turnstileVerifyOptions } from "./turnstile";
 import type { SubmissionPipeline, SubmissionPipelineDefinition } from "./types";
 
-const logger = createLogger("pipeline");
+const fallbackLogger = createLogger("pipeline");
 
 /** The pipeline's own option names — the one list both the type and `definePage`'s guard read. @internal */
-export const PIPELINE_ONLY_KEYS = ["turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
+export const PIPELINE_ONLY_KEYS = ["rateLimit", "turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
 
 /** The one refusal this pipeline renders for a body it will not accept. */
 function refuseSubmission(messages: readonly string[]): Response {
@@ -42,7 +44,7 @@ export async function screenTurnstile<Bindings>(
   if (!verification.ok) {
     // The refusal is deliberately a validation refusal naming the first declared field, so this
     // line is the only thing separating an unpassable CAPTCHA from a wrong first field.
-    logger.warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
+    loggerFor(c, "pipeline", fallbackLogger).warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
   }
   return verification;
 }
@@ -54,6 +56,7 @@ export function createSubmissionPipeline<
   Params extends Record<string, string | undefined> = Record<string, string | undefined>,
   ConfigData = unknown,
 >(def: SubmissionPipelineDefinition<S, Bindings, Params, ConfigData>): SubmissionPipeline<S, Bindings, Params, ConfigData> {
+  const rateLimitChecks = def.rateLimit === undefined ? [] : [def.rateLimit].flat().map((options) => rateLimitCheck(options));
   const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
   const turnstileField = def.turnstile ? (def.turnstile.tokenField ?? TURNSTILE_FIELD_DEFAULT) : undefined;
   const declaredDrops = turnstileField === undefined ? [] : [turnstileField];
@@ -76,6 +79,11 @@ export function createSubmissionPipeline<
         return err(fragmentResponse(renderError("The submitted form is too large. Please reduce its size and try again."), 413));
       }
       return err(fragmentResponse(renderError("Unable to process the form data. Please try again."), 400));
+    }
+
+    for (const check of rateLimitChecks) {
+      const refusal = await check(c);
+      if (refusal !== undefined) return err(refusal);
     }
 
     if (def.turnstile !== undefined && turnstileField !== undefined) {

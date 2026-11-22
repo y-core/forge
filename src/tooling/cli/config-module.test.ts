@@ -37,6 +37,14 @@ describe("loadConfigModule()", () => {
     expect((await loadConfigModule({ ...REQUEST, path: join(ROOT, "absolute.ts") }))?.value).toBe("reached");
   });
 
+  it("reads a module edited after an earlier load in the same process as it is on disk now", async () => {
+    const path = write("edited.ts", "export default 'v1';");
+    await loadConfigModule({ ...REQUEST, path });
+    write("edited.ts", "export default 'v2';");
+
+    expect((await loadConfigModule({ ...REQUEST, path }))?.value).toBe("v2");
+  });
+
   it("returns undefined for an absent default path, so an optional config stays optional", async () => {
     expect(await loadConfigModule({ ...REQUEST, path: "forge-no-such-config.ts" })).toBeUndefined();
   });

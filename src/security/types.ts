@@ -1,4 +1,6 @@
-import type { AppContext } from "../context/types";
+import type { RequestContext } from "@remix-run/fetch-router";
+
+import type { AppContext, Refusal, RefuseHook } from "../context/types";
 import type { GuardResult, Result } from "../result/types";
 import type { NONCE } from "./nonce";
 import type { UNSAFE_CSP_SOURCES } from "./unsafe";
@@ -105,30 +107,52 @@ export interface DeriveAllowedOriginsOptions {
 /** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
 export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site" | "same-site">;
 
+/** Why `originProtection` refused a request — a server diagnostic, never echoed to the sender. @public */
+export type OriginRefusal = Extract<Refusal, { guard: "origin" }>["reason"];
+
 /** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
 export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
   /** The app's own origin must appear here, or its own same-origin mutations are rejected. */
   allowedOrigins: string[] | ((c: AppContext<Bindings>) => string[]);
+  /** Answers a refused request in place of the chain's hook, or declines with `undefined` to it; with neither answering, a bare 403 "Forbidden". */
+  onRefuse?: RefuseHook<Bindings>;
+  /** `"allow"` admits a mutation carrying no `Origin`, `Referer` or `Sec-Fetch-Site`, for callers that are not browsers; defaults to `"refuse"`. */
+  missing?: "refuse" | "allow";
 }
 
-/** Cloudflare rate-limit binding shape exposing a keyed `limit()` call. @public */
-export interface RateLimitBinding {
+/** Cloudflare's Workers Rate Limiting binding, under the name `wrangler types` and `forge cf gen env` give it. @public */
+export interface RateLimit {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
-/** Options for the rate-limit middleware: binding resolver, keying, and over-limit handling. @public */
-export interface RateLimitOptions<Bindings = Record<string, unknown>> {
-  limiter: (c: AppContext<Bindings>) => RateLimitBinding | undefined;
-  key?: (c: AppContext<Bindings>) => string;
-  onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
-  /** Opts the default keying into `CF-Connecting-IP`, trustworthy only behind Cloudflare; without it and without a `key`, keying throws. */
-  trustCfHeaders?: boolean;
-}
+/** Every rate-limit binding's window by binding name, as the generated `RATELIMITS` declares it. @internal */
+export type RateLimitTable = Readonly<Record<string, { readonly limit: number; readonly period: number }>>;
+
+/** Options for the rate-limit middleware: the binding by name, the methods it counts, keying, and the refusal hook. @public */
+export type RateLimitOptions<Bindings = Record<string, unknown>> = {
+  /** The binding's name on `env`, which must be a key of the chain's `rateLimits`. */
+  binding: string;
+  /** The methods the limit counts; every method by default. A request by any other passes without spending. */
+  methods?: readonly string[];
+  /** Answers a `429` or `503` in place of the chain's hook, or declines with `undefined` to it; with neither answering, forge's plain-text default. */
+  onRefuse?: RefuseHook<Bindings>;
+} & (
+  | {
+      /** Replaces the client-IP key whatever the chain's trust, for non-Cloudflare deployments; to extend the IP key, pass `keySuffix`. */
+      key?: (c: AppContext<Bindings>) => string;
+      keySuffix?: never;
+    }
+  | {
+      key?: never;
+      /** Appended to the trusted client IP as `<ip>:<suffix>`, keyed only under the chain's trust. */
+      keySuffix?: (c: AppContext<Bindings>) => string;
+    }
+);
 
 /** CORS middleware options: allowed origins, methods, allowed and exposed headers, credentials, and preflight cache. @public */
-export interface CorsOptions {
-  /** Exact allowed origins or subdomain patterns ("https://*.example.com"). */
-  origins: string[];
+export interface CorsOptions<Bindings = Record<string, unknown>> {
+  /** Exact allowed origins or subdomain patterns ("https://*.example.com"), or a resolver answering them once per `env` from that `env`. */
+  origins: readonly string[] | ((env: Bindings) => readonly string[] | Promise<readonly string[]>);
   methods?: string[];
   allowedHeaders?: string[];
   /** Response headers a calling script may read; sent on allowed actual responses, never a preflight. `"*"` is refused with `credentials`. */
@@ -189,6 +213,10 @@ export type WebhookRefusal =
   | "body-too-large"
   | "signature-mismatch";
 
+/** One limit's check: the refusal it answers, or `undefined` to admit the request. @internal */
+// oxlint-disable-next-line typescript/no-explicit-any -- params and bindings are irrelevant to the check
+export type RateLimitCheck = (context: RequestContext<any, any>) => Promise<Response | undefined>;
+
 /** Whether a request may pass a rate limiter whose binding is absent. @internal */
 export type RelaxAbsentLimiter = () => boolean;
 
@@ -197,3 +225,7 @@ export type RelaxMissingFetchMetadata = () => boolean;
 
 /** The origins, beyond the configured ones, an app's bindings admit during development. @internal */
 export type RelaxExtraOrigins = (env: unknown) => readonly string[];
+
+/** Answers one refusal and logs it as `security.<guard>.refused`; `cause` is the failure behind a `503`. @internal */
+// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+export type RefusalAnswer = (context: RequestContext<any, any>, refusal: Refusal, cause?: unknown) => Promise<Response>;

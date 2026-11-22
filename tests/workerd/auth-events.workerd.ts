@@ -16,7 +16,7 @@ import type { KeyRing } from "../../src/crypto/keyring/types";
 import { base32Decode, hotpCode, totpCounter } from "../../src/crypto/primitives/mod";
 import { createD1Client } from "../../src/storage/db/client";
 import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
-import type { TestD1 } from "../../src/testing/d1";
+import type { TestD1 } from "../../src/testing/d1/mod";
 import { insertSession, openAuthD1, securityEvents, sessionCount, signedUp, tokenHash } from "./auth-d1.fixture";
 
 const AT = 2_000_000;

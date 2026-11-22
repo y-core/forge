@@ -11,7 +11,7 @@ const app = createApp({
       crossOriginProtection(),
       originProtection({ allowedOrigins: ["https://example.com"] }),
       originGuard(["https://example.com"]),
-      rateLimit({ limiter: () => undefined, trustCfHeaders: true }),
+      rateLimit({ binding: "LIMITER" }),
     );
   },
 });

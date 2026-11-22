@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { insertNewline, insertNewlineAndIndent, redo, selectParentSyntax, undo } from "@codemirror/commands";
-import { EditorSelection } from "@codemirror/state";
-import type { EditorState, Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState } from "@codemirror/state";
+import type { Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
 import fc from "fast-check";
@@ -14,6 +14,7 @@ import { revealActiveLines } from "./hybrid";
 import type { ViewportMode, ViewportRendering } from "./mod";
 import { createViewportState, replaceTransaction, viewportEffects } from "./mount";
 import { ROUND_TRIP_MARKDOWN } from "./round-trip.fixture";
+import { editorTheme } from "./theme";
 import { renderedWidget } from "./widget-dom.fixture";
 
 interface Viewport {
@@ -114,6 +115,23 @@ describe("createViewportState", () => {
       viewportKeymap.find((binding) => binding.key === "Mod-i")?.run,
       selectParentSyntax,
     ]);
+  });
+
+  it("ranks the dialect's theme ahead of the viewport's own, so the dialect wins a tie with the base styles", () => {
+    const dialectTheme = EditorView.theme({ ".cm-md-callout-note": { borderInlineStartColor: "rgb(1, 2, 3)" } });
+    const [dialectModule] = EditorState.create({ extensions: dialectTheme }).facet(EditorView.styleModule);
+    const [baseModule] = EditorState.create({ extensions: editorTheme }).facet(EditorView.styleModule);
+    const state = createViewportState({
+      markdown: "a",
+      mode: "view",
+      rendering: "styled",
+      label: "Page body",
+      dialect: { ...TEST_DIALECT, theme: dialectTheme },
+    });
+
+    const ranked = state.facet(EditorView.styleModule).filter((module) => module === dialectModule || module === baseModule);
+
+    expect(ranked).toEqual([dialectModule, baseModule]);
   });
 
   it("holds the markdown it was given byte for byte", () => {

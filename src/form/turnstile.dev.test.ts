@@ -1,12 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { TURNSTILE_TEST_KEYS } from "./turnstile-keys";
 import { admitsTestingSecret, isTurnstileTestingSecret } from "./turnstile.dev";
 
-const PUBLISHED_TESTING_SECRETS = [
-  "1x0000000000000000000000000000000AA",
-  "2x0000000000000000000000000000000AA",
-  "3x0000000000000000000000000000000AA",
-];
+const PUBLISHED_TESTING_SECRETS = Object.values(TURNSTILE_TEST_KEYS.secret);
 
 describe("isTurnstileTestingSecret", () => {
   it("admits each of Cloudflare's published testing secrets", () => {

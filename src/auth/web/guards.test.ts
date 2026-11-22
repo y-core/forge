@@ -1,24 +1,37 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import { RequestContext } from "@remix-run/fetch-router";
 import { get, route } from "@remix-run/fetch-router/routes";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
+import { applyMiddlewareChain } from "../../app/middleware-chain";
+import type { MiddlewareContribution } from "../../app/types";
+import { refuseHookCtx } from "../../context/refusal";
+import { matchedRoutePattern } from "../../context/route-pattern";
+import type { AppContext, Refusal, RefuseHook } from "../../context/types";
 import { getAppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
 import type { KeyRing } from "../../crypto/keyring/types";
 import { bytesToHex } from "../../crypto/primitives/mod";
+import { requestLog } from "../../logging/request-logger";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
+import { routeKeySuffix } from "../../security/rate-limit";
+import { createRefusalAnswer } from "../../security/refusal";
+import { requestIdCtx } from "../../security/request-id";
+import type { RateLimit, RateLimitOptions } from "../../security/types";
+import { createAnonymousSession } from "../../session/anonymous";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { createD1Client } from "../../storage/db/client";
 import { fakeAuthD1 } from "../../testing/auth-fakes";
-import { nullLogger } from "../../testing/context";
+import { createTestContext, nullLogger } from "../../testing/context";
+import { captureLogs } from "../../testing/logs";
 import { mapHandler } from "../../testing/route";
 import { AUTH_FRESH_STEP_UP_MS, AUTH_SESSION_IDLE_MS, AUTH_SESSION_MAX_MS, AUTH_STEP_UP_MAX_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import type { AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
+import { importAuthKeyRing } from "../keys/ring";
 import { squashSql } from "../stores/events.fixture";
 import { createFactorStore } from "../stores/factors";
 import { createAuthSessionStore } from "../stores/sessions";
@@ -50,18 +63,24 @@ import {
   establishAuthSession,
   markApproval,
   markAuthStepUp,
+  NO_SESSION,
 } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import type { AuthGuardChainOptions, AuthIdentity } from "./types";
+import { authRequestServices } from "./services";
+import type { AuthGuardChainOptions, AuthIdentity, AuthRequestServicesResolver } from "./types";
 import {
   approvedSession,
   FAKE_APPROVAL_CODE,
+  FAKE_RATE_LIMITS,
   fakeApproval,
+  fakeAuthServicesResolver,
   fakeAuthSessionStore,
   fakeFactorRegistry,
   fakeFactorStore,
+  fakeLimiterContribution,
   fakeSessionCookie,
+  fakeWebRing,
 } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
@@ -115,6 +134,11 @@ function recordingFactors(resolution: AuthFactorResolution): FakeRegistry & { re
   };
 }
 
+/** The services resolver the guards take, its session store resolving through `sessions`. */
+function servicesOver(sessions: Pick<AuthSessionStore, "resolve">): AuthRequestServicesResolver {
+  return fakeAuthServicesResolver({ sessions: { ...fakeAuthSessionStore([]), resolve: (tokenHash, at) => sessions.resolve(tokenHash, at) } });
+}
+
 /** One already-built dependency as the per-request resolver the guards take. */
 function perRequest<T>(value: T): () => T {
   return () => value;
@@ -129,7 +153,7 @@ const enrolment = { enrolmentPaths: authEnrolmentPaths(paths.auth), stepUpPath: 
 // `satisfied` by default, so a test about the identity says nothing about the factor policy: the
 // tests that are about an owed step-up pass their own registry.
 function guardOptions(sessions: Pick<AuthSessionStore, "resolve">, factors: () => FakeRegistry = satisfied) {
-  return { sessions: perRequest(sessions), signinPath: paths.auth.signin(), factors, stepUpPath: paths.auth.verify.show() };
+  return { services: servicesOver(sessions), signinPath: paths.auth.signin(), factors, stepUpPath: paths.auth.verify.show() };
 }
 
 interface SessionSeed {
@@ -159,6 +183,13 @@ function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: Sessio
   mapHandler(app, "GET", "/admin/users", () => new Response("users"));
   mapHandler(app, "GET", "/auth/enrol/passkey", () => new Response("enrol"));
   return app;
+}
+
+function publishRefuseHook(hook: RefuseHook): Parameters<Forge["use"]>[1] {
+  return (context, next) => {
+    refuseHookCtx.set(context, hook);
+    return next();
+  };
 }
 
 const locationOf = (res: Response) => ({ status: res.status, location: res.headers.get("location") });
@@ -273,9 +304,7 @@ describe("requireAuth", () => {
   it("throws when no session middleware ran, rather than reading as a correct denial", async () => {
     const guard = requireAuth(guardOptions(fakeSessions([])));
     const context = new RequestContext(new Request("http://localhost/account/passkeys"));
-    expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
-      "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
-    );
+    await expect(guard(context, async () => new Response("ok"))).rejects.toThrow(NO_SESSION);
   });
 });
 
@@ -487,7 +516,7 @@ describe("requireAuth — the statements one signed-in request issues", () => {
   });
 
   it("reads only the session under `resolveAuth`, and nothing at all for an anonymous request", async () => {
-    const resolving: StatementChain = ({ sessions, now }) => [resolveAuth({ sessions: perRequest(sessions), now })];
+    const resolving: StatementChain = ({ sessions, now }) => [resolveAuth({ services: servicesOver(sessions), now })];
     expect({
       resolved: await statementsOfSignedInRequest(60_000, resolving),
       anonymous: await statementsOfSignedInRequest(60_000, resolving, { signedIn: false }),
@@ -545,10 +574,12 @@ describe("resolveAuth", () => {
       const built: string[] = [];
       const options = {
         ...guardOptions(fakeSessions([fakeAuthUser()])),
-        sessions: () => {
-          built.push("sessions");
-          return fakeSessions([fakeAuthUser()]);
-        },
+        services: Object.assign(fakeAuthServicesResolver(), {
+          sessions: async () => {
+            built.push("sessions");
+            return { ...fakeAuthSessionStore([]), ...fakeSessions([fakeAuthUser()]) };
+          },
+        }),
       };
       await guardedApp([build(options)]).request("/account/passkeys");
       const anonymous = [...built];
@@ -593,12 +624,10 @@ describe("resolveAuth", () => {
     expect(users.calls).toEqual(["u1"]);
   });
 
-  it("throws when no session middleware ran, rather than reading as an anonymous request", () => {
+  it("throws when no session middleware ran, rather than reading as an anonymous request", async () => {
     const guard = resolveAuth(guardOptions(fakeSessions([])));
     const context = new RequestContext(new Request("http://localhost/account/passkeys"));
-    expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
-      "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
-    );
+    await expect(guard(context, async () => new Response("ok"))).rejects.toThrow(NO_SESSION);
   });
 });
 
@@ -607,23 +636,84 @@ describe("requireAdmin", () => {
   const administrator = () => requireAuth(guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])));
   const answerOf = async (res: Response) => ({ status: res.status, type: res.headers.get("content-type"), body: await res.text() });
 
-  it("refuses a signed-in non-administrator with a plain-text 403 when no `onForbidden` is passed", async () => {
+  it("refuses a signed-in non-administrator with a plain-text 403 when no hook is passed or published", async () => {
     const app = guardedApp([member(), requireAdmin()], { userId: "u1" });
     const res = await app.request("/admin/users");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
   });
 
-  it("answers a signed-in non-administrator with the `onForbidden` response, handed the request's app context", async () => {
-    const onForbidden = (c: { readonly url: URL }) =>
-      new Response(`page for ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
-    const app = guardedApp([member(), requireAdmin({ onForbidden })], { userId: "u1" });
-    expect(await answerOf(await app.request("/admin/users"))).toEqual({ status: 403, type: "text/html", body: "page for /admin/users" });
+  it("answers a signed-in non-administrator with the `onRefuse` response, handed the request's app context and the admin refusal", async () => {
+    const refusals: Refusal[] = [];
+    const onRefuse = (c: { readonly url: URL }, refusal: Refusal) => {
+      refusals.push(refusal);
+      return new Response(`page for ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
+    };
+    const app = guardedApp([member(), requireAdmin({ onRefuse })], { userId: "u1" });
+    expect({ answer: await answerOf(await app.request("/admin/users")), refusals }).toEqual({
+      answer: { status: 403, type: "text/html", body: "page for /admin/users" },
+      refusals: [{ guard: "admin", status: 403 }],
+    });
   });
 
-  it("answers with what an async `onForbidden` resolves to", async () => {
-    const app = guardedApp([member(), requireAdmin({ onForbidden: async () => new Response("later", { status: 451 }) })], { userId: "u1" });
+  it("answers with what an async `onRefuse` resolves to", async () => {
+    const app = guardedApp([member(), requireAdmin({ onRefuse: async () => new Response("later", { status: 451 }) })], { userId: "u1" });
     const res = await app.request("/admin/users");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 451, body: "later" });
+  });
+
+  it("answers through the hook published on the request when given none of its own", async () => {
+    const refusals: Refusal[] = [];
+    const app = guardedApp(
+      [publishRefuseHook((_c, refusal) => (refusals.push(refusal), new Response("chain answer", { status: 403 }))), member(), requireAdmin()],
+      { userId: "u1" },
+    );
+    const res = await app.request("/admin/users");
+    expect({ status: res.status, body: await res.text(), refusals }).toEqual({
+      status: 403,
+      body: "chain answer",
+      refusals: [{ guard: "admin", status: 403 }],
+    });
+  });
+
+  it("answers through its own `onRefuse` rather than the hook published on the request", async () => {
+    const published: Refusal[] = [];
+    const app = guardedApp(
+      [
+        publishRefuseHook((_c, refusal) => (published.push(refusal), new Response("chain answer", { status: 403 }))),
+        member(),
+        requireAdmin({ onRefuse: () => new Response("own answer", { status: 403 }) }),
+      ],
+      { userId: "u1" },
+    );
+    const res = await app.request("/admin/users");
+    expect({ status: res.status, body: await res.text(), published }).toEqual({ status: 403, body: "own answer", published: [] });
+  });
+
+  it("logs one security.admin.refused warning naming the route and request id, and no session, token or address", async () => {
+    const capture = captureLogs();
+    const app = guardedApp(
+      [
+        (context, next) => {
+          requestLog.set(context, capture.logger);
+          requestIdCtx.set(context, "req-admin-1");
+          return next();
+        },
+        member(),
+        requireAdmin(),
+      ],
+      { userId: "u1" },
+    );
+    const res = await app.request("/admin/users", { headers: { "CF-Connecting-IP": "203.0.113.9" } });
+    expect({ status: res.status, logged: capture.records.map(({ level, message, data }) => ({ level, message, data })) }).toEqual({
+      status: 403,
+      logged: [
+        {
+          level: "warn",
+          message: "security.admin.refused",
+          data: { source: "security", guard: "admin", status: 403, reason: null, routePattern: "/admin/users", requestId: "req-admin-1" },
+        },
+      ],
+    });
   });
 
   it("admits an administrator", async () => {
@@ -631,14 +721,29 @@ describe("requireAdmin", () => {
     expect(await (await app.request("/admin/users")).text()).toBe("users");
   });
 
-  it("admits an administrator without consulting the `onForbidden` it was passed", async () => {
+  it("admits an administrator without consulting the `onRefuse` it was passed, logging nothing", async () => {
     const consulted: string[] = [];
-    const onForbidden = (c: { readonly url: URL }) => {
+    const capture = captureLogs();
+    const onRefuse = (c: { readonly url: URL }) => {
       consulted.push(c.url.pathname);
       return new Response("refused", { status: 403 });
     };
-    const app = guardedApp([administrator(), requireAdmin({ onForbidden })], { userId: "u1" });
-    expect({ body: await (await app.request("/admin/users")).text(), consulted }).toEqual({ body: "users", consulted: [] });
+    const app = guardedApp(
+      [
+        (context, next) => {
+          requestLog.set(context, capture.logger);
+          return next();
+        },
+        administrator(),
+        requireAdmin({ onRefuse }),
+      ],
+      { userId: "u1" },
+    );
+    expect({ body: await (await app.request("/admin/users")).text(), consulted, logged: capture.records }).toEqual({
+      body: "users",
+      consulted: [],
+      logged: [],
+    });
   });
 
   it("throws when no identity was established, rather than admitting the request", () => {
@@ -648,14 +753,14 @@ describe("requireAdmin", () => {
     );
   });
 
-  it("throws on a missing identity before consulting `onForbidden`", () => {
+  it("throws on a missing identity before consulting `onRefuse`", () => {
     const consulted: string[] = [];
-    const onForbidden = () => {
+    const onRefuse = () => {
       consulted.push("called");
       return new Response("refused", { status: 403 });
     };
     const context = new RequestContext(new Request("http://localhost/admin/users"));
-    expect(() => requireAdmin({ onForbidden })(context, async () => new Response("ok"))).toThrow(
+    expect(() => requireAdmin({ onRefuse })(context, async () => new Response("ok"))).toThrow(
       "auth/web guard: no identity on this request — `requireAuth` must run before `requireAdmin`, which reads the identity it establishes.",
     );
     expect(consulted).toEqual([]);
@@ -1360,6 +1465,13 @@ describe("a mandatory factor against the real registry", () => {
   });
 });
 
+/** A request context the router matched to the route `pattern`, as a rate limit's key reads it. */
+function contextMatching(pattern: string): AppContext {
+  const context = new RequestContext(new Request("http://localhost/"));
+  matchedRoutePattern.set(context, pattern);
+  return context as unknown as AppContext;
+}
+
 describe("createAuthGuards", () => {
   const origin = { allowedOrigins: ["https://app.example.com"] };
 
@@ -1378,6 +1490,19 @@ describe("createAuthGuards", () => {
   const { origin: _omitted, ...rest } = chain;
   const chainWithoutOrigin = rest as typeof chain;
 
+  /** A `rateLimit` keying every group the shipped table emits, each opted out. */
+  const unlimitedGroups = {
+    auth: false,
+    "auth.verify": false,
+    "auth.verify.ceremony": false,
+    "auth.enrol": false,
+    "auth.enrol.ceremony": false,
+    account: false,
+    "account.passkeyCeremony": false,
+    "admin.users": false,
+    "admin.elevate": false,
+  } as const;
+
   it("throws when a group lists `require-admin` before the `require-auth` it reads", () => {
     expect(() =>
       createAuthGuards({ ...chain, groups: [{ path: ["admin", "users"], guards: ["require-admin", "require-auth"], medium: "html" }] }),
@@ -1393,7 +1518,7 @@ describe("createAuthGuards", () => {
   });
 
   it("lets a group list `require-approval` alone, because it reads the session and never the identity", () => {
-    const groups = createAuthGuards({
+    const { guards: groups } = createAuthGuards({
       ...chain,
       approval: fakeApproval(),
       groups: [{ path: ["account"], guards: ["require-approval"], medium: "html" }],
@@ -1411,7 +1536,7 @@ describe("createAuthGuards", () => {
       return next();
     });
     if (seed.approved === true) app.use("*", approvedSession());
-    for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
+    for (const group of createAuthGuards({ ...chain, ...options }).guards) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "GET", "/admin/elevate", () => new Response("elevate"));
     return app;
   }
@@ -1437,7 +1562,7 @@ describe("createAuthGuards", () => {
     const sessions = fakeAuthSessionStore([fakeAuthUser()]);
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    for (const group of createAuthGuards({ ...chain, auth: guardOptions(sessions), approval: fakeApproval() })) {
+    for (const group of createAuthGuards({ ...chain, auth: guardOptions(sessions), approval: fakeApproval() }).guards) {
       app.use([...group.paths], ...(group.guards ?? []));
     }
     mapHandler(app, "GET", "/admin/elevate", () => new Response("elevate"));
@@ -1475,25 +1600,33 @@ describe("createAuthGuards", () => {
       await markAuthStepUp(session, guardSeeder, now, now, "email-otp");
       return next();
     });
-    for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
+    for (const group of createAuthGuards({ ...chain, ...options }).guards) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "GET", "/admin/users", () => new Response("users"));
     return app;
   }
 
-  it("refuses a non-administrator on `admin.users` with a plain-text 403 when the chain has no `onForbidden`", async () => {
+  it("refuses a non-administrator on `admin.users` with a plain-text 403 when the chain has no `onRefuse`", async () => {
     const res = await adminListApp({}).request("/admin/users");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
   });
 
-  it("answers a non-administrator on `admin.users` with the chain's `onForbidden`", async () => {
-    const onForbidden = (c: { readonly url: URL }) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
-    const res = await adminListApp({ onForbidden }).request("/admin/users");
-    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "admin only: /admin/users" });
+  it("answers a non-administrator on `admin.users` with the chain's `onRefuse`, handed the admin refusal", async () => {
+    const refusals: Refusal[] = [];
+    const onRefuse = (c: { readonly url: URL }, refusal: Refusal) => (
+      refusals.push(refusal),
+      new Response(`admin only: ${c.url.pathname}`, { status: 403 })
+    );
+    const res = await adminListApp({ onRefuse }).request("/admin/users");
+    expect({ status: res.status, body: await res.text(), refusals }).toEqual({
+      status: 403,
+      body: "admin only: /admin/users",
+      refusals: [{ guard: "admin", status: 403 }],
+    });
   });
 
-  it("admits an administrator on `admin.users` past a chain carrying `onForbidden`", async () => {
-    const onForbidden = () => new Response("admin only", { status: 403 });
-    const res = await adminListApp({ auth: guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])), onForbidden }).request("/admin/users");
+  it("admits an administrator on `admin.users` past a chain carrying `onRefuse`", async () => {
+    const onRefuse = () => new Response("admin only", { status: 403 });
+    const res = await adminListApp({ auth: guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])), onRefuse }).request("/admin/users");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 200, body: "users" });
   });
 
@@ -1523,7 +1656,7 @@ describe("createAuthGuards", () => {
       });
       app.use("*", approvedSession());
       const options = { auth: guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])), approval: fakeApproval() };
-      for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
+      for (const group of createAuthGuards({ ...chain, ...options }).guards) app.use([...group.paths], ...(group.guards ?? []));
       for (const { method, pattern } of mutations) {
         mapHandler(app, method, pattern, () => (reached.push(`${method} ${pattern}`), new Response("reached")));
       }
@@ -1579,7 +1712,7 @@ describe("createAuthGuards", () => {
   // one actually mounted satisfied too. This is the check that cannot be satisfied by the wrong value.
   it("fails the request when the app mounted no session middleware ahead of the chain, rather than admitting it", async () => {
     const app = new Forge(nullLogger);
-    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.guards ?? []));
+    for (const group of createAuthGuards(chain).guards) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
 
     const res = await app.request("/account/passkeys");
@@ -1588,7 +1721,7 @@ describe("createAuthGuards", () => {
   });
 
   it("emits one group per guarded route group, with paths read off the route map", () => {
-    const groups = createAuthGuards(chain);
+    const { guards: groups } = createAuthGuards(chain);
     expect(groups.map((group) => group.paths.length > 0)).toEqual(groups.map(() => true));
     expect(groups.flatMap((group) => group.paths)).toContain("/admin/users/:id");
     // `/auth/signin` is here for its origin protection alone: its group declares no guard middleware.
@@ -1596,7 +1729,7 @@ describe("createAuthGuards", () => {
   });
 
   it("registers a nested group's own leaves only, so a shared guard never runs twice", () => {
-    const groups = createAuthGuards(chain);
+    const { guards: groups } = createAuthGuards(chain);
     const enrol = groups.find((group) => group.paths.includes("/auth/enrol/passkey"));
     expect(enrol?.paths).toEqual(["/auth/enrol/passkey", "/auth/enrol/totp"]);
   });
@@ -1616,7 +1749,7 @@ describe("createAuthGuards", () => {
   });
 
   it("still skips a group that declares no guard and has no map, which is not a wiring error", () => {
-    const groups = createAuthGuards({
+    const { guards: groups } = createAuthGuards({
       ...chain,
       routes: { account: accountMap },
       groups: [
@@ -1644,7 +1777,7 @@ describe("createAuthGuards", () => {
   it("hands each group its own medium down, so the JSON ceremony refuses in JSON while an HTML group still redirects", async () => {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.guards ?? []));
+    for (const group of createAuthGuards(chain).guards) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "POST", "/auth/enrol/passkey/register/finish", () => new Response("finished"));
     mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
 
@@ -1660,7 +1793,7 @@ describe("createAuthGuards", () => {
   // The count is written out rather than derived from `AUTH_ROUTE_GROUPS`: a count read off the same
   // table cannot tell a group that was dropped from a group that was never declared.
   it("wires a stack for each of the nine groups the shipped table mounts a route for", () => {
-    const groups = createAuthGuards(chain);
+    const { guards: groups } = createAuthGuards(chain);
 
     expect(groups).toHaveLength(9);
     expect(groups.flatMap((group) => group.paths)).toContain("/admin/users/:id");
@@ -1669,7 +1802,7 @@ describe("createAuthGuards", () => {
   });
 
   it("collects a guard-less mutating group once an allowlist is configured, carrying origin protection and no middleware", () => {
-    const groups = createAuthGuards(chain);
+    const { guards: groups } = createAuthGuards(chain);
     const signin = groups.find((group) => group.paths.includes("/auth/signin"));
     expect(signin?.origin).toBe(origin);
     expect(signin?.guards).toBeUndefined();
@@ -1678,20 +1811,57 @@ describe("createAuthGuards", () => {
 
   // The seam the group table exists to make possible: without it a consumer matches groups by path
   // against the emitted array, which is the second copy of this table the design exists to prevent.
-  it("emits the rate limit named for a group, and leaves a group nothing was named for unchanged", () => {
-    const limit = { limiter: () => undefined, required: false };
-    const groups = createAuthGuards({ ...chain, rateLimit: { auth: limit } });
+  it("emits the rate limit named for a group, and none for a group set to `false`", () => {
+    const limit = { binding: "LIMITER", required: false };
+    const rateLimit = { ...unlimitedGroups, auth: limit };
+    const { guards: groups } = createAuthGuards({ ...chain, rateLimit });
 
+    expect(groups).toHaveLength(9);
     expect(groups.find((group) => group.paths.includes("/auth/signin"))?.rateLimit).toBe(limit);
     expect(groups.find((group) => group.paths.includes("/account/passkeys"))?.rateLimit).toBeUndefined();
+  });
+
+  it("refuses a map leaving groups with routes of their own and no keyed ancestor unkeyed, naming each but not `auth.verify`, which inherits `auth`", () => {
+    const limit = { binding: "LIMITER", required: false };
+    const { "auth.verify": _verify, "admin.users": _users, "admin.elevate": _elevate, ...keyed } = unlimitedGroups;
+
+    expect(() => createAuthGuards({ ...chain, rateLimit: { ...keyed, auth: limit } })).toThrow(
+      new Error(
+        "createAuthGuards: `rateLimit` leaves `admin.users`, `admin.elevate` unlimited — key each group a limit, or set it to `false` to mount it without one.",
+      ),
+    );
+  });
+
+  it("mounts no limit on any group when `rateLimit` is omitted", () => {
+    expect(createAuthGuards(chain).guards.every((group) => group.rateLimit === undefined)).toBe(true);
+  });
+
+  it("refuses `false` for the bare `admin` group when every subgroup under it keys its own, naming those subgroups", () => {
+    expect(() => createAuthGuards({ ...chain, rateLimit: { ...unlimitedGroups, admin: false } })).toThrow(
+      new Error(
+        "createAuthGuards: `rateLimit` names `admin`, whose `routes` map holds no route of its own and which no group inherits, so the limit would cover nothing — every subgroup under it keys a limit of its own (`admin.users`, `admin.elevate`), so remove it or drop a subgroup's key to inherit it.",
+      ),
+    );
+  });
+
+  it("drops a guard-less read-only group set to `false`, as it drops one with no map passed", () => {
+    const readOnly = route("/read", { show: get("/thing") });
+    const { guards: groups } = createAuthGuards({
+      ...chainWithoutOrigin,
+      routes: { auth: readOnly },
+      groups: [{ path: ["auth"], guards: [], medium: "html" }],
+      rateLimit: { auth: false },
+    });
+
+    expect(groups).toEqual([]);
   });
 
   // Forge picks no numbers, so a guard-less group is emitted for a rate limit alone the same way it
   // is for an origin allowlist — otherwise the sign-in POSTs would have nowhere to carry one.
   it("collects a guard-less group for a rate limit alone, on a read-only map that needs no allowlist", () => {
-    const limit = { limiter: () => undefined, required: false };
+    const limit = { binding: "LIMITER", required: false };
     const readOnly = route("/read", { show: get("/thing") });
-    const groups = createAuthGuards({
+    const { guards: groups } = createAuthGuards({
       ...chainWithoutOrigin,
       routes: { auth: readOnly },
       groups: [{ path: ["auth"], guards: [], medium: "html" }],
@@ -1704,24 +1874,239 @@ describe("createAuthGuards", () => {
     expect(unguarded?.guards).toBeUndefined();
   });
 
+  it("hands a limit on the bare `admin` group to each unkeyed subgroup, keyed per route rather than shared", () => {
+    const limit = { binding: "LIMITER" };
+    const { "admin.users": _users, "admin.elevate": _elevate, ...keyed } = unlimitedGroups;
+    const { guards: groups } = createAuthGuards({ ...chain, rateLimit: { ...keyed, admin: limit } });
+    const inherited = (path: string) => groups.find((group) => group.paths.includes(path))?.rateLimit as RateLimitOptions;
+
+    expect(
+      ["/admin/users/:id", "/admin/elevate"].map((path) => ({
+        binding: inherited(path).binding,
+        key: inherited(path).key,
+        keySuffix: inherited(path).keySuffix?.(contextMatching(path)),
+      })),
+    ).toEqual([
+      { binding: "LIMITER", key: undefined, keySuffix: "/admin/users/:id" },
+      { binding: "LIMITER", key: undefined, keySuffix: "/admin/elevate" },
+    ]);
+  });
+
+  it("refuses a key naming no group in the table, listing every name a limit can be keyed by", () => {
+    const limit = { binding: "LIMITER", required: false };
+
+    expect(() => createAuthGuards({ ...chain, rateLimit: { auth: limit, acount: limit } })).toThrow(
+      "createAuthGuards: `rateLimit` names `acount`, which is no group in the table — key a limit by a group's dotted path: `auth`, `auth.verify`, `auth.verify.ceremony`, `auth.enrol`, `auth.enrol.ceremony`, `account`, `account.passkeyCeremony`, `admin`, `admin.users`, `admin.elevate`.",
+    );
+  });
+
+  it("refuses a limit for a guard-less group that has no map, rather than skipping it and the limit with it", () => {
+    const limit = { binding: "LIMITER", required: false };
+
+    expect(() =>
+      createAuthGuards({
+        ...chain,
+        routes: { account: accountMap },
+        groups: [
+          { path: ["admin"], guards: [], medium: "html" },
+          { path: ["account"], guards: ["require-auth"], medium: "html" },
+        ],
+        rateLimit: { admin: limit },
+      }),
+    ).toThrow(
+      "createAuthGuards: `rateLimit` names `admin` but `routes` holds no `admin` map — pass the map that mounts those routes, or remove the limit.",
+    );
+  });
+
+  it("refuses a limit for a group with no route of its own and no subgroup to name, telling the caller to remove it", () => {
+    const limit = { binding: "LIMITER", required: false };
+
+    expect(() =>
+      createAuthGuards({
+        ...chain,
+        routes: { admin: adminMap },
+        groups: [{ path: ["admin"], guards: [], medium: "html" }],
+        rateLimit: { admin: limit },
+      }),
+    ).toThrow(
+      new Error(
+        "createAuthGuards: `rateLimit` names `admin`, whose `routes` map holds no route of its own and which no group inherits, so the limit would cover nothing — remove it.",
+      ),
+    );
+  });
+
+  it("accepts a limit for each of the nine groups the shipped table emits, and puts each on its own group", () => {
+    const representative = {
+      auth: "/auth/signin",
+      "auth.verify": "/auth/verify",
+      "auth.verify.ceremony": "/auth/verify/passkey/finish",
+      "auth.enrol": "/auth/enrol/passkey",
+      "auth.enrol.ceremony": "/auth/enrol/passkey/register/finish",
+      account: "/account/passkeys",
+      "account.passkeyCeremony": "/account/passkeys/register/begin",
+      "admin.users": "/admin/users/:id",
+      "admin.elevate": "/admin/elevate",
+    };
+    const limits = Object.fromEntries(Object.keys(representative).map((name) => [name, { binding: "LIMITER", required: false }]));
+    const { guards: groups } = createAuthGuards({ ...chain, rateLimit: limits });
+
+    expect(groups).toHaveLength(9);
+    for (const [name, path] of Object.entries(representative)) {
+      expect({ name, rateLimit: groups.find((group) => group.paths.includes(path))?.rateLimit }).toEqual({ name, rateLimit: limits[name] });
+    }
+  });
+
+  describe("a nested group's limit inherited from its nearest keyed ancestor", () => {
+    const nested = route("/r", { home: get("/home"), verify: { a: get("/verify/a"), b: get("/verify/b/:id") }, other: { c: get("/other/c") } });
+    const nestedGroups = [
+      { path: ["auth"], guards: [], medium: "html" },
+      { path: ["auth", "verify"], guards: [], medium: "html" },
+      { path: ["auth", "other"], guards: [], medium: "html" },
+    ] as const;
+    const visitor = { headers: { "CF-Connecting-IP": "203.0.113.7" } };
+    const burstContribution: MiddlewareContribution = {
+      bindings: [{ name: "BURST", methods: ["limit"], label: "a rate-limit binding", optional: true }],
+    };
+
+    function nestedGuards(rateLimit: NonNullable<AuthGuardChainOptions["rateLimit"]>) {
+      return createAuthGuards({ ...chainWithoutOrigin, routes: { auth: nested }, groups: nestedGroups, rateLimit });
+    }
+
+    /** The emitted rate limit on the group covering `path`. */
+    function limitOn(rateLimit: NonNullable<AuthGuardChainOptions["rateLimit"]>, path: string) {
+      return nestedGuards(rateLimit).guards.find((group) => group.paths.includes(path))?.rateLimit;
+    }
+
+    /** Requests each of `requested` in turn through the whole chain, answering every route, and returns each binding's `limit` call as `binding key`. */
+    async function spent(rateLimit: NonNullable<AuthGuardChainOptions["rateLimit"]>, requested: readonly string[]): Promise<string[]> {
+      const calls: string[] = [];
+      const recording = (name: string): RateLimit => ({
+        limit: async ({ key }) => {
+          calls.push(`${name} ${key}`);
+          return { success: true };
+        },
+      });
+      const app = new Forge();
+      applyMiddlewareChain(app, {
+        securityHeaders: {},
+        trustCfHeaders: true,
+        rateLimits: { ...FAKE_RATE_LIMITS, BURST: { limit: 3, period: 10 } },
+        session: createAnonymousSession({ ring: () => fakeWebRing, storage: "cookie" }),
+        csrf: { ring: () => fakeWebRing, subject: false },
+        contributions: [fakeLimiterContribution, burstContribution, nestedGuards(rateLimit)],
+      });
+      for (const pattern of ["/r/home", "/r/verify/a", "/r/verify/b/:id", "/r/other/c"]) mapHandler(app, "GET", pattern, () => new Response("ok"));
+      const env = { LIMITER: recording("LIMITER"), BURST: recording("BURST") };
+      for (const path of requested) {
+        const res = await app.request(path, visitor, env);
+        expect({ path, status: res.status, body: await res.text() }).toEqual({ path, status: 200, body: "ok" });
+      }
+      return calls;
+    }
+
+    it("spends two sibling routes of an inheriting child on separate per-route budgets, each apart from the parent's own", async () => {
+      expect(await spent({ auth: { binding: "LIMITER" } }, ["/r/home", "/r/verify/a", "/r/verify/b/42", "/r/verify/a"])).toEqual([
+        "LIMITER 203.0.113.7",
+        "LIMITER 203.0.113.7:/r/verify/a",
+        "LIMITER 203.0.113.7:/r/verify/b/:id",
+        "LIMITER 203.0.113.7:/r/verify/a",
+      ]);
+    });
+
+    it("keys an inheriting child of a parent already keyed per route by `<ip>:<pattern>`, never the pattern twice", async () => {
+      expect(await spent({ auth: { binding: "LIMITER", keySuffix: routeKeySuffix } }, ["/r/home", "/r/verify/b/42"])).toEqual([
+        "LIMITER 203.0.113.7:/r/home",
+        "LIMITER 203.0.113.7:/r/verify/b/:id",
+      ]);
+    });
+
+    it("charges one request to an inheriting child once on each binding of a stacked limit", async () => {
+      expect(await spent({ auth: [{ binding: "LIMITER" }, { binding: "BURST" }] }, ["/r/verify/a"])).toEqual([
+        "LIMITER 203.0.113.7:/r/verify/a",
+        "BURST 203.0.113.7:/r/verify/a",
+      ]);
+    });
+
+    it("leaves a child under an ancestor keyed `false` unlimited, while a sibling keyed its own limit spends it unchanged", async () => {
+      expect(await spent({ auth: false, "auth.other": { binding: "LIMITER" } }, ["/r/home", "/r/verify/a", "/r/other/c"])).toEqual([
+        "LIMITER 203.0.113.7",
+      ]);
+    });
+
+    it("emits no limit on the child of an ancestor keyed `false`", () => {
+      expect(limitOn({ auth: false, "auth.other": { binding: "LIMITER" } }, "/r/verify/a")).toBeUndefined();
+    });
+
+    it("refuses at construction a group with routes of its own under no keyed ancestor, though a sibling is keyed", () => {
+      expect(() => nestedGuards({ "auth.verify": { binding: "LIMITER" }, "auth.other": false })).toThrow(
+        new Error("createAuthGuards: `rateLimit` leaves `auth` unlimited — key each group a limit, or set it to `false` to mount it without one."),
+      );
+    });
+
+    it("passes a group's own limit through as the very options it was keyed", () => {
+      const own = { binding: "LIMITER" };
+      expect(limitOn({ auth: own, "auth.verify": own }, "/r/verify/a")).toBe(own);
+    });
+
+    it.each([
+      {
+        name: "a limit keying by client IP gains the route pattern as its suffix",
+        limit: { binding: "LIMITER", methods: ["POST"] },
+        expected: { binding: "LIMITER", methods: ["POST"], key: undefined, keySuffix: "/r/verify/b/:id" },
+      },
+      {
+        name: "a custom `key` gains the route pattern after its own",
+        limit: { binding: "LIMITER", key: () => "tenant-7" },
+        expected: { binding: "LIMITER", methods: undefined, key: "tenant-7:/r/verify/b/:id", keySuffix: undefined },
+      },
+      {
+        name: "a `keySuffix` gains the route pattern after its own",
+        limit: { binding: "LIMITER", keySuffix: () => "signin" },
+        expected: { binding: "LIMITER", methods: undefined, key: undefined, keySuffix: "signin:/r/verify/b/:id" },
+      },
+    ])("keys an inherited limit per route: $name", ({ limit, expected }) => {
+      const inherited = limitOn({ auth: limit }, "/r/verify/b/:id") as RateLimitOptions;
+      const context = contextMatching("/r/verify/b/:id");
+
+      expect({
+        binding: inherited.binding,
+        methods: inherited.methods,
+        key: inherited.key?.(context),
+        keySuffix: inherited.keySuffix?.(context),
+      }).toEqual(expected);
+    });
+
+    it("keys each limit of an inherited stack per route, in the order the ancestor stacked them", () => {
+      const stack = [{ binding: "LIMITER", key: () => "tenant-7" }, { binding: "BURST" }];
+      const inherited = limitOn({ auth: stack }, "/r/verify/a") as readonly RateLimitOptions[];
+      const context = contextMatching("/r/verify/a");
+
+      expect(inherited.map((each) => ({ binding: each.binding, key: each.key?.(context), keySuffix: each.keySuffix?.(context) }))).toEqual([
+        { binding: "LIMITER", key: "tenant-7:/r/verify/a", keySuffix: undefined },
+        { binding: "BURST", key: undefined, keySuffix: "/r/verify/a" },
+      ]);
+      expect(limitOn({ auth: stack }, "/r/home")).toBe(stack);
+    });
+  });
+
   it("leaves a group with no mutating leaf of its own unprotected, and a group with no direct leaf absent", () => {
     // Every group of the shipped table now carries a mutating leaf, so the read-only case is stated
     // against a map of its own rather than dropped.
     const readOnly = route("/read", { show: get("/thing") });
-    const groups = createAuthGuards({
+    const { guards: groups } = createAuthGuards({
       ...chain,
       routes: { auth: readOnly },
       groups: [{ path: ["auth"], guards: ["require-auth"], medium: "html" }],
     });
     expect(groups.find((group) => group.paths.includes("/read/thing"))?.origin).toBeUndefined();
     // `admin`'s own level has no direct leaf: `users` and `elevate` are nested groups registering their own.
-    expect(createAuthGuards(chain).flatMap((group) => group.paths)).not.toContain("/admin");
+    expect(createAuthGuards(chain).guards.flatMap((group) => group.paths)).not.toContain("/admin");
   });
 
   it("checks a mutating request's origin while leaving the safe method on the same path reachable", async () => {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    for (const group of createAuthGuards(chain)) {
+    for (const group of createAuthGuards(chain).guards) {
       if (group.origin) app.use([...group.paths], originProtection(group.origin));
       if (group.guards) app.use([...group.paths], ...group.guards);
     }
@@ -1737,6 +2122,285 @@ describe("createAuthGuards", () => {
     const page = await app.request("/auth/signin", { headers: { origin: "https://evil.example.com" } });
     expect(page.status).toBe(200);
     expect(await page.text()).toBe("sign-in page");
+  });
+  it("stamps one URL per leaf of every route map under a non-default mount, nested and unguarded groups included, on every group it emits", () => {
+    const members = { auth: authRoutes("/members"), account: accountRoutes("/members/account"), admin: adminRoutes("/members/admin") };
+    const auth = [
+      "/signin",
+      "/signup",
+      "/signout",
+      "/signout/site-data",
+      "/verify",
+      "/verify/resend",
+      "/verify/passkey/begin",
+      "/verify/passkey/finish",
+    ];
+    const enrol = ["/enrol/passkey", "/enrol/totp", "/enrol/passkey/register/begin", "/enrol/passkey/register/finish"];
+    const account = ["/passkeys", "/passkeys/new", "/passkeys/register/begin", "/passkeys/register/finish", "/passkeys/id", "/passkeys/id/edit"];
+    const accountRest = ["/totp", "/totp/replace", "/factors", "/recovery-codes", "/recovery-codes/confirm", "/email-change"];
+    const sessions = ["/sessions", "/sessions/revoke", "/sessions/revoke-others"];
+    const admin = ["/users", "/users/id", "/users/id/edit", "/users/id/factors", "/users/id/factors/reset", "/elevate"];
+
+    const covers = [
+      ...[...auth, ...enrol].map((path) => `/members${path}`),
+      ...[...account, ...accountRest, ...sessions].map((path) => `/members/account${path}`),
+      ...admin.map((path) => `/members/admin${path}`),
+    ];
+    const { guards: groups } = createAuthGuards({ ...chain, routes: members });
+
+    expect(groups.length).toBeGreaterThan(1);
+    expect(groups.map((group) => group.csrfCovers)).toEqual(groups.map(() => covers));
+  });
+
+  describe("the URLs its groups ask the csrf policy to cover, judged when applyMiddlewareChain registers it", () => {
+    const ownGroup = [{ path: ["auth"], guards: ["resolve-auth" as const], medium: "html" as const }];
+
+    /** Registers the guards for an `/auth/signin` group beside an ungrouped map of `leaves` under `basePath`, under a csrf policy skipping `exclude`. */
+    function register(basePath: string, leaves: Record<string, ReturnType<typeof get>>, exclude: readonly string[]): void {
+      const routes = { auth: route("/auth", { signin: get("/signin") }), account: route(basePath, leaves) };
+      applyMiddlewareChain(new Forge(), {
+        securityHeaders: {},
+        session: createAnonymousSession({ ring: () => fakeWebRing, storage: "cookie" }),
+        csrf: { ring: () => fakeWebRing, subject: false, exclude },
+        contributions: [createAuthGuards({ ...chain, routes, groups: ownGroup })],
+      });
+    }
+
+    const excluded = (path: string, entry: string) =>
+      new Error(
+        `applyMiddlewareChain: contribution 0's guard group \`/auth/signin\`'s route \`${path}\` mints a CSRF token, but the csrf policy's exclude entry \`${entry}\` skips it — narrow the entry so it leaves the route covered.`,
+      );
+
+    it("refuses an exclude matching a param leaf through the same param", () => {
+      expect(() => register("/members", { passkey: get("/passkeys/:id") }, ["/members/passkeys/:id"])).toThrow(
+        excluded("/members/passkeys/id", "/members/passkeys/:id"),
+      );
+    });
+
+    it("refuses an exclude matching a leaf whose segment holds two params", () => {
+      expect(() => register("/members", { file: get("/files/:id.:ext") }, ["/members/files/*"])).toThrow(
+        excluded("/members/files/id.ext", "/members/files/*"),
+      );
+    });
+
+    it("refuses an exclude matching an optional segment's longer form", () => {
+      expect(() => register("/members", { file: get("/files(/:name)") }, ["/members/files/:name"])).toThrow(
+        excluded("/members/files/name", "/members/files/:name"),
+      );
+    });
+
+    it("refuses an exclude matching only an optional segment's shorter form, which the route also serves", () => {
+      expect(() => register("/members", { file: get("/files(/:name)") }, ["/members/files"])).toThrow(/exclude entry `\/members\/files` skips it/);
+    });
+
+    it("refuses an exclude matching the unprefixed form of a mount whose base is an optional locale", () => {
+      expect(() => register("(/:lang)/members", { signin: get("/signin") }, ["/members/*"])).toThrow(/exclude entry `\/members\/\*` skips it/);
+    });
+
+    it("refuses an exclude matching a leaf ending in a named wildcard", () => {
+      expect(() => register("/members", { docs: get("/docs/*path") }, ["/members/docs/*"])).toThrow(/exclude entry `\/members\/docs\/\*` skips it/);
+    });
+
+    it("refuses an exclude matching a leaf ending in a nameless wildcard", () => {
+      expect(() => register("/members", { raw: get("/raw/*") }, ["/members/raw/*"])).toThrow(/exclude entry `\/members\/raw\/\*` skips it/);
+    });
+
+    it("registers an exclude that only shares a param leaf's prefix", () => {
+      expect(() => register("/members", { passkey: get("/passkeys/:id") }, ["/members/passkeys", "/members/passkeys/:id/edit"])).not.toThrow();
+    });
+
+    it("refuses an exclude skipping the auth routes when an app spreads the groups into its own contribution with no covers of its own", () => {
+      const app = new Forge();
+      const use = spyOn(app, "use");
+      const { guards } = createAuthGuards(chain);
+
+      expect(() =>
+        applyMiddlewareChain(app, {
+          securityHeaders: {},
+          csrf: { ring: () => fakeWebRing, subject: false, exclude: ["/auth/*"] },
+          contributions: [{ globals: [] }, { guards: [...guards] }],
+        }),
+      ).toThrow(
+        /^applyMiddlewareChain: contribution 1's guard group `[^`]+`'s route `\/auth\/signin` mints a CSRF token, but the csrf policy's exclude entry `\/auth\/\*` skips it/,
+      );
+      expect(use).toHaveBeenCalledTimes(0);
+    });
+
+    it("refuses an exclude skipping the sign-out when an app spreads only an admin group, which carries every auth route", () => {
+      const { guards } = createAuthGuards(chain);
+      const admin = guards.find((group) => group.paths.every((path) => path.startsWith("/admin")));
+      if (admin === undefined) throw new Error("no group holds only admin paths");
+
+      expect(() =>
+        applyMiddlewareChain(new Forge(), {
+          securityHeaders: {},
+          csrf: { ring: () => fakeWebRing, subject: false, exclude: ["/auth/signout"] },
+          contributions: [{ guards: [admin] }],
+        }),
+      ).toThrow(
+        new Error(
+          `applyMiddlewareChain: contribution 0's guard group \`${admin.paths.join(", ")}\`'s route \`/auth/signout\` mints a CSRF token, but the csrf policy's exclude entry \`/auth/signout\` skips it — narrow the entry so it leaves the route covered.`,
+        ),
+      );
+    });
+
+    it("returns only the guards and the session lifetime, no top-level covers", () => {
+      const result = createAuthGuards(chain);
+      // @ts-expect-error -- the covers ride on the groups, so the return type has no `csrfCovers`
+      const dropped: unknown = result.csrfCovers;
+
+      expect({ keys: Object.keys(result).sort(), dropped }).toEqual({ keys: ["guards", "sessionMaxAgeAtLeastMs"], dropped: undefined });
+    });
+  });
+
+  describe("the session cookie lifetime its contribution needs, checked when applyMiddlewareChain registers it", () => {
+    const DAY_SECONDS = 86_400;
+    const DAY_MS = 86_400_000;
+    const sessionRing = () => fakeWebRing;
+
+    /** Registers `contribution` beside an anonymous session whose cookie lasts `maxAge` seconds, or the session's own default when omitted. */
+    function register(contribution: MiddlewareContribution, maxAge?: number): void {
+      applyMiddlewareChain(new Forge(), {
+        securityHeaders: {},
+        session: createAnonymousSession({ ring: sessionRing, storage: "cookie", ...(maxAge === undefined ? {} : { maxAge }) }),
+        csrf: { ring: sessionRing, subject: false },
+        contributions: [contribution],
+      });
+    }
+
+    function servicesLasting(absoluteLifetimeMs?: number): AuthRequestServicesResolver {
+      return authRequestServices({
+        auth: { ring: () => importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]) },
+        db: () => createD1Client(fakeAuthD1([]) as never),
+        notifier: () => ({ send: () => Promise.resolve(ok()) }),
+        defer: () => () => {},
+        confirmUrl: (_c, token) => `https://app.example.com/confirm?t=${token}`,
+        ...(absoluteLifetimeMs === undefined ? {} : { sessionOptions: { absoluteLifetimeMs } }),
+      });
+    }
+
+    it("throws at registration on a 1-day cookie, naming the 7 days the auth session lasts, and registers nothing", () => {
+      const app = new Forge();
+      const use = spyOn(app, "use");
+
+      expect(() =>
+        applyMiddlewareChain(app, {
+          securityHeaders: {},
+          session: createAnonymousSession({ ring: sessionRing, storage: "cookie", maxAge: DAY_SECONDS }),
+          contributions: [createAuthGuards(chain)],
+        }),
+      ).toThrow(
+        new Error(
+          "applyMiddlewareChain: the session slot's cookie maxAge is 86400 seconds (1 day), shorter than the 604800 seconds (7 days) a contribution needs it to last — set maxAge to at least 604800.",
+        ),
+      );
+      expect(use).toHaveBeenCalledTimes(0);
+    });
+
+    it("throws at registration on a session cookie that sets no maxAge, naming the 7 days it must last", () => {
+      const app = new Forge();
+      const use = spyOn(app, "use");
+
+      expect(() =>
+        applyMiddlewareChain(app, {
+          securityHeaders: {},
+          session: sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie),
+          contributions: [createAuthGuards(chain)],
+        }),
+      ).toThrow(
+        new Error(
+          "applyMiddlewareChain: a contribution needs the session cookie to last at least 604800 seconds (7 days), but the session slot's cookie sets no maxAge — set maxAge to at least 604800.",
+        ),
+      );
+      expect(use).toHaveBeenCalledTimes(0);
+    });
+
+    it("throws at registration when no source supplies a session slot at all", () => {
+      expect(() => applyMiddlewareChain(new Forge(), { securityHeaders: {}, contributions: [createAuthGuards(chain)] })).toThrow(
+        new Error(
+          "applyMiddlewareChain: a contribution needs the session cookie to last at least 604800 seconds (7 days), but no source supplies a session slot.",
+        ),
+      );
+    });
+
+    it("registers under a cookie lasting exactly 7 days and under the anonymous session's 365-day default", () => {
+      expect(() => register(createAuthGuards(chain), 7 * DAY_SECONDS)).not.toThrow();
+      expect(() => register(createAuthGuards(chain))).not.toThrow();
+    });
+
+    it("states the 7-day absolute lifetime of the real `authRequestServices` resolver when no sessionOptions are configured", () => {
+      expect(createAuthGuards({ ...chain, auth: { ...chain.auth, services: servicesLasting() } }).sessionMaxAgeAtLeastMs).toBe(7 * DAY_MS);
+    });
+
+    it("compares the cookie with a configured `absoluteLifetimeMs`: a 1-day session admits the 1-day cookie the default refuses, and refuses a 12-hour one", () => {
+      const oneDay = { ...chain, auth: { ...chain.auth, services: servicesLasting(DAY_MS) } };
+
+      expect(createAuthGuards(oneDay).sessionMaxAgeAtLeastMs).toBe(DAY_MS);
+      expect(() => register(createAuthGuards(oneDay), DAY_SECONDS)).not.toThrow();
+      expect(() => register(createAuthGuards(chain), DAY_SECONDS)).toThrow("shorter than the 604800 seconds (7 days)");
+      expect(() => register(createAuthGuards(oneDay), DAY_SECONDS / 2)).toThrow(
+        new Error(
+          "applyMiddlewareChain: the session slot's cookie maxAge is 43200 seconds (12 hours), shorter than the 86400 seconds (1 day) a contribution needs it to last — set maxAge to at least 86400.",
+        ),
+      );
+    });
+  });
+});
+
+describe("the identity guards — the services resolver they hold at construction", () => {
+  const unwired = (guard: string) =>
+    `${guard}: no \`services\` resolver, so no session could be resolved and every visitor would pass as anonymous — pass the \`authRequestServices\` resolver the pages use.`;
+  const origin = { allowedOrigins: ["https://app.example.com"] };
+  const { services: _omitted, ...withoutServices } = guardOptions(fakeSessions([fakeAuthUser()]));
+
+  // Each `services` is what an untyped or pre-resolver consumer passes; the cast is how a typed test reproduces it.
+  const MISWIRED: readonly { readonly name: string; readonly options: typeof withoutServices & Record<string, unknown> }[] = [
+    { name: "no `services` at all", options: withoutServices },
+    { name: "the retired `sessions` option in its place", options: { ...withoutServices, sessions: perRequest(fakeSessions([fakeAuthUser()])) } },
+    { name: "a session store where the resolver belongs", options: { ...withoutServices, services: fakeAuthSessionStore([fakeAuthUser()]) } },
+  ];
+
+  for (const { name, options } of MISWIRED) {
+    it(`refuses to build \`requireAuth\` given ${name}, so no request is ever sent to sign-in as anonymous`, () => {
+      expect(() => guardedApp([requireAuth(options as unknown as Parameters<typeof requireAuth>[0])])).toThrow(unwired("requireAuth"));
+    });
+
+    it(`refuses to build \`resolveAuth\` given ${name}, so no request is ever admitted as anonymous`, () => {
+      expect(() => guardedApp([resolveAuth(options as unknown as Parameters<typeof resolveAuth>[0])])).toThrow(unwired("resolveAuth"));
+    });
+  }
+
+  for (const [guard, built] of [
+    ["resolve-auth", "resolveAuth"],
+    ["require-auth", "requireAuth"],
+  ] as const) {
+    it(`refuses to wire a group listing \`${guard}\` from an \`auth\` with no \`services\`, naming \`${built}\``, () => {
+      expect(() =>
+        createAuthGuards({
+          routes: { auth: authMap, account: accountMap, admin: adminMap },
+          auth: withoutServices as unknown as AuthGuardChainOptions["auth"],
+          enrolment: { factors: satisfied, ...enrolment },
+          origin,
+          groups: [{ path: ["account"], guards: [guard], medium: "html" }],
+        }),
+      ).toThrow(unwired(built));
+    });
+  }
+
+  it("builds both guards, and a group listing both, once the resolver is passed", () => {
+    const options = guardOptions(fakeSessions([fakeAuthUser()]));
+
+    expect(() => requireAuth(options)).not.toThrow();
+    expect(() => resolveAuth(options)).not.toThrow();
+    expect(() =>
+      createAuthGuards({
+        routes: { auth: authMap, account: accountMap, admin: adminMap },
+        auth: options,
+        enrolment: { factors: satisfied, ...enrolment },
+        origin,
+        groups: [{ path: ["account"], guards: ["resolve-auth", "require-auth"], medium: "html" }],
+      }),
+    ).not.toThrow();
   });
 });
 
@@ -1760,10 +2424,10 @@ describe("the enrolment guards — the step-up window they hold at construction"
   });
 
   it("holds `resolveAuth` to it too, since the verify page measures marks by the window it records", () => {
-    const users = perRequest(fakeSessions([fakeAuthUser()]));
+    const services = servicesOver(fakeSessions([fakeAuthUser()]));
 
-    expect(() => resolveAuth({ sessions: users, stepUpMaxAgeMs: 0 })).toThrow(`resolveAuth: ${FLOOR}`);
-    expect(() => resolveAuth({ sessions: users, stepUpMaxAgeMs: 1_000 })).not.toThrow();
+    expect(() => resolveAuth({ services, stepUpMaxAgeMs: 0 })).toThrow(`resolveAuth: ${FLOOR}`);
+    expect(() => resolveAuth({ services, stepUpMaxAgeMs: 1_000 })).not.toThrow();
   });
 
   it("refuses a fraction", () => {
@@ -1917,5 +2581,245 @@ describe("requireBearer", () => {
     const { service } = bearerService();
     // @ts-expect-error — "admin" is not one of the service's scopes.
     expect(() => requireBearer({ tokens: perRequest(service), scopes: ["admin"] })).not.toThrow();
+  });
+});
+
+describe("createAuthGuards — the HTML groups' refusal hook", () => {
+  const EXPIRED: Refusal = { guard: "csrf", status: 403, reason: "expired" };
+
+  function chainAt(auth: typeof authMap | ReturnType<typeof authRoutes<"/login">>, onRefuse?: RefuseHook) {
+    return createAuthGuards({
+      routes: { auth, account: accountMap, admin: adminMap },
+      auth: guardOptions(fakeSessions([fakeAuthUser()])),
+      enrolment: { factors: satisfied, ...enrolment },
+      origin: { allowedOrigins: ["http://localhost"] },
+      ...(onRefuse === undefined ? {} : { onRefuse }),
+    }).guards;
+  }
+
+  function hookOf(groups: ReturnType<typeof chainAt>, path: string): RefuseHook | undefined {
+    const group = groups.find((candidate) => candidate.paths.includes(path));
+    if (group === undefined) throw new Error(`no group covers ${path}`);
+    return group.onRefuse;
+  }
+
+  function recordingHook() {
+    const seen: string[] = [];
+    const hook: RefuseHook = (c, refusal) => {
+      seen.push(`${c.method} ${c.url.pathname} ${refusal.guard}`);
+      return new Response(`app answered ${refusal.guard}`, { status: refusal.status });
+    };
+    return { seen, hook };
+  }
+
+  async function ask(hook: RefuseHook | undefined, method: string, path: string, refusal: Refusal, headers: Record<string, string> = {}) {
+    if (hook === undefined) return "no hook";
+    const res = await hook(createTestContext(new Request(`http://localhost${path}`, { method, headers })), refusal);
+    if (res === undefined) return "declined";
+    return { status: res.status, location: res.headers.get("location"), hxRedirect: res.headers.get("hx-redirect"), body: await res.text() };
+  }
+
+  const toConfirm = { status: 303, location: "/auth/signout", hxRedirect: null, body: "" };
+
+  const cases: Array<{ name: string; method: string; path: string; refusal: Refusal; answer: unknown; asked: boolean }> = [
+    {
+      name: "sends an expired-token sign-out POST to the confirm page",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: EXPIRED,
+      answer: toConfirm,
+      asked: false,
+    },
+    {
+      name: "sends a missing-token sign-out POST to the confirm page",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: { guard: "csrf", status: 403, reason: "missing-token" },
+      answer: toConfirm,
+      asked: false,
+    },
+    {
+      name: "passes an unbound-subject CSRF refusal of a sign-out POST to the app's hook",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: { guard: "csrf", status: 403, reason: "unbound-subject" },
+      answer: { status: 403, location: null, hxRedirect: null, body: "app answered csrf" },
+      asked: true,
+    },
+    {
+      name: "passes a CSRF refusal of the sign-in POST to the app's hook",
+      method: "POST",
+      path: "/auth/signin",
+      refusal: EXPIRED,
+      answer: { status: 403, location: null, hxRedirect: null, body: "app answered csrf" },
+      asked: true,
+    },
+    {
+      name: "passes an oversized sign-out POST's 413 to the app's hook",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: { guard: "csrf", status: 413, reason: "too-large" },
+      answer: { status: 413, location: null, hxRedirect: null, body: "app answered csrf" },
+      asked: true,
+    },
+    {
+      name: "passes an origin refusal of a sign-out POST to the app's hook",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: { guard: "origin", status: 403, reason: "cross-site" },
+      answer: { status: 403, location: null, hxRedirect: null, body: "app answered origin" },
+      asked: true,
+    },
+    {
+      name: "passes an absent limiter binding's 503 on a sign-out POST to the app's hook",
+      method: "POST",
+      path: "/auth/signout",
+      refusal: { guard: "rate-limit", status: 503, reason: "binding-absent" },
+      answer: { status: 503, location: null, hxRedirect: null, body: "app answered rate-limit" },
+      asked: true,
+    },
+  ];
+
+  for (const { name, method, path, refusal, answer, asked } of cases) {
+    it(name, async () => {
+      const { seen, hook } = recordingHook();
+      const auth = hookOf(chainAt(authMap, hook), "/auth/signout");
+      expect({ answer: await ask(auth, method, path, refusal), seen }).toEqual({
+        answer,
+        seen: asked ? [`${method} ${path} ${refusal.guard}`] : [],
+      });
+    });
+  }
+
+  it("answers an htmx sign-out POST's expired token with a 204 carrying HX-Redirect to the confirm page", async () => {
+    const auth = hookOf(chainAt(authMap), "/auth/signout");
+    expect(await ask(auth, "POST", "/auth/signout", EXPIRED, { "HX-Request": "true" })).toEqual({
+      status: 204,
+      location: null,
+      hxRedirect: "/auth/signout",
+      body: "",
+    });
+  });
+
+  it("recovers a sign-out with no onRefuse passed, declining every other refusal to the chain's hook", async () => {
+    const auth = hookOf(chainAt(authMap), "/auth/signout");
+    expect({
+      signout: await ask(auth, "POST", "/auth/signout", EXPIRED),
+      unbound: await ask(auth, "POST", "/auth/signout", { guard: "csrf", status: 403, reason: "unbound-subject" }),
+      signin: await ask(auth, "POST", "/auth/signin", EXPIRED),
+    }).toEqual({ signout: toConfirm, unbound: "declined", signin: "declined" });
+  });
+
+  describe("a declining hook passed both here and as the chain's", () => {
+    const groupsAsked = [
+      { name: "behind the sign-out recovery", path: "/auth/signout", at: "/auth/signin" },
+      { name: "with no sign-out recovery", path: "/account/sessions", at: "/account/sessions" },
+    ];
+
+    for (const { name, path, at } of groupsAsked) {
+      it(`is asked once per refusal ${name}, the answer unchanged`, async () => {
+        const asked: string[] = [];
+        const both: RefuseHook = (c) => {
+          asked.push(c.url.pathname);
+          return undefined;
+        };
+        const context = createTestContext(new Request(`http://localhost${at}`, { method: "POST" }));
+        requestLog.set(context, captureLogs().logger);
+        refuseHookCtx.set(context, both);
+
+        const res = await createRefusalAnswer(hookOf(chainAt(authMap, both), path))(context, EXPIRED);
+
+        expect({ status: res.status, body: await res.text(), asked }).toEqual({ status: 403, body: "Forbidden", asked: [at] });
+      });
+    }
+
+    it("still recovers the sign-out ahead of it, never asking it", async () => {
+      const asked: string[] = [];
+      const both: RefuseHook = (c) => {
+        asked.push(c.url.pathname);
+        return undefined;
+      };
+      const context = createTestContext(new Request("http://localhost/auth/signout", { method: "POST" }));
+      requestLog.set(context, captureLogs().logger);
+      refuseHookCtx.set(context, both);
+
+      const res = await createRefusalAnswer(hookOf(chainAt(authMap, both), "/auth/signout"))(context, EXPIRED);
+
+      expect({ status: res.status, location: res.headers.get("location"), asked }).toEqual({ status: 303, location: "/auth/signout", asked: [] });
+    });
+  });
+
+  describe("an answering hook passed both here and as the chain's", () => {
+    function answeringAt() {
+      const asked: string[] = [];
+      const both: RefuseHook = (c) => {
+        asked.push(c.url.pathname);
+        return new Response("app answered", { status: 409 });
+      };
+      return { asked, both };
+    }
+
+    function refusedAt(path: string, chainHook: RefuseHook) {
+      const context = createTestContext(new Request(`http://localhost${path}`, { method: "POST" }));
+      requestLog.set(context, captureLogs().logger);
+      refuseHookCtx.set(context, chainHook);
+      return context;
+    }
+
+    it("is asked once for a refusal the recovery does not own, its answer used", async () => {
+      const { asked, both } = answeringAt();
+
+      const res = await createRefusalAnswer(hookOf(chainAt(authMap, both), "/auth/signout"))(refusedAt("/auth/signin", both), EXPIRED);
+
+      expect({ status: res.status, body: await res.text(), asked }).toEqual({ status: 409, body: "app answered", asked: ["/auth/signin"] });
+    });
+
+    it("is never asked for an expired sign-out, which the recovery answers first", async () => {
+      const { asked, both } = answeringAt();
+
+      const res = await createRefusalAnswer(hookOf(chainAt(authMap, both), "/auth/signout"))(refusedAt("/auth/signout", both), EXPIRED);
+
+      expect({ status: res.status, location: res.headers.get("location"), asked }).toEqual({ status: 303, location: "/auth/signout", asked: [] });
+    });
+  });
+
+  it("falls through to the chain's hook when the app's hook declines a refusal the recovery does not own", async () => {
+    const auth = hookOf(
+      chainAt(authMap, () => undefined),
+      "/auth/signout",
+    );
+    expect({ signout: await ask(auth, "POST", "/auth/signout", EXPIRED), signin: await ask(auth, "POST", "/auth/signin", EXPIRED) }).toEqual({
+      signout: toConfirm,
+      signin: "declined",
+    });
+  });
+
+  it("recovers the sign-out at the path the app mounted auth under, and not at the default one", async () => {
+    const { seen, hook } = recordingHook();
+    const auth = hookOf(chainAt(authRoutes("/login"), hook), "/login/signout");
+    expect({
+      mounted: await ask(auth, "POST", "/login/signout", EXPIRED),
+      defaultPath: await ask(auth, "POST", "/auth/signout", EXPIRED),
+      seen,
+    }).toEqual({
+      mounted: { status: 303, location: "/login/signout", hxRedirect: null, body: "" },
+      defaultPath: { status: 403, location: null, hxRedirect: null, body: "app answered csrf" },
+      seen: ["POST /auth/signout csrf"],
+    });
+  });
+
+  it("leaves a group not holding the sign-out without the recovery: no hook with none passed, the app's own otherwise", async () => {
+    const { seen, hook } = recordingHook();
+    const unhooked = hookOf(chainAt(authMap), "/account/passkeys");
+    const hooked = hookOf(chainAt(authMap, hook), "/account/passkeys");
+    expect({
+      unhooked: await ask(unhooked, "POST", "/auth/signout", EXPIRED),
+      hooked: await ask(hooked, "POST", "/auth/signout", EXPIRED),
+      seen,
+    }).toEqual({
+      unhooked: "no hook",
+      hooked: { status: 403, location: null, hxRedirect: null, body: "app answered csrf" },
+      seen: ["POST /auth/signout csrf"],
+    });
   });
 });

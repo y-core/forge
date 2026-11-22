@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { BUNDLE_FIXER, BUNDLES } from "../../../../config/bundles";
-import { checkBundle, checkNodeExports, hasEsbuild, importEsbuild, nodeBundles } from "./bundle";
+import { bundleSource, checkBundle, checkNodeExports, hasEsbuild, importEsbuild, nodeBundles } from "./bundle";
 import type { BundleCheckConfig, ExportsMap, NodeManifest } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
@@ -16,8 +16,15 @@ const PACKAGE = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8"))
   Required<NodeManifest>;
 const DECLARED = { ...PACKAGE.dependencies, ...PACKAGE.peerDependencies };
 const CONFIGS: readonly BundleCheckConfig[] = BUNDLES.map(({ entry, bundle }) => ({ root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }));
-const PLUGIN_BUNDLE = "src/tooling/lint/plugin.mjs";
-const WRANGLER_BUNDLE = "src/tooling/cf/wrangler.mjs";
+const PLUGIN_BUNDLE = "src/tooling/lint/plugin.node.mjs";
+const WRANGLER_BUNDLE = "src/tooling/cf/wrangler.node.mjs";
+const REQUEST_BOUND = ["src/context/accessor.ts", "src/context/types.ts"];
+const NODE_SCOPE = "src/context/request-scope.node.ts";
+const SOURCE_SCOPE = "src/context/request-scope.ts";
+
+const inlinedModules = (bundle: string) =>
+  new Set([...readFileSync(resolve(ROOT, bundle), "utf-8").matchAll(/^\/\/ (src\/\S+)$/gm)].map((match) => match[1] ?? ""));
+const requestBoundBundles = () => BUNDLES.filter(({ bundle }) => REQUEST_BOUND.some((module) => inlinedModules(bundle).has(module)));
 
 const roots: string[] = [];
 
@@ -50,6 +57,25 @@ describe("the committed bundles", () => {
     });
   }
 
+  it("inlines the throwing request scope into every bundle carrying contextVar or getAppContext, and the source scope into none", () => {
+    const carried = BUNDLES.map(({ bundle }) => {
+      const inlined = inlinedModules(bundle);
+      return { bundle, scopes: [NODE_SCOPE, SOURCE_SCOPE].filter((scope) => inlined.has(scope)) };
+    });
+    const bound = requestBoundBundles().map(({ bundle }) => bundle);
+
+    expect([bound.includes("src/storage/db/mod.node.mjs"), carried.filter(({ scopes }) => scopes.length > 0)]).toEqual([
+      true,
+      bound.map((bundle) => ({ bundle, scopes: [NODE_SCOPE] })),
+    ]);
+  });
+
+  for (const { bundle } of requestBoundBundles()) {
+    it(`loads ${bundle} without throwing, though it creates its request keys at module load`, async () => {
+      await expect(import(resolve(ROOT, bundle))).resolves.toBeDefined();
+    });
+  }
+
   it("default-exports the plugin oxlint reads, under the `forge` prefix its rule ids carry", async () => {
     const loaded = (await import(resolve(ROOT, PLUGIN_BUNDLE))) as { default: { meta: { name: string } } };
 
@@ -58,6 +84,7 @@ describe("the committed bundles", () => {
 });
 
 const NODE_PAIR = { types: "./src/a.ts", import: "./src/a.mjs" };
+const NODE_CONDITIONED = { types: "./src/a.ts", workerd: "./src/a.ts", bun: "./src/a.ts", node: "./src/a.mjs", import: "./src/a.ts" };
 
 const nodeMessages = (exports: ExportsMap, node: readonly string[]) =>
   checkNodeExports({ exports, node, fixer: BUNDLE_FIXER }).findings.map((finding) => finding.message);
@@ -99,13 +126,41 @@ describe("checkNodeExports()", () => {
   it("leaves an unlisted `.ts` export alone, since nothing infers which exports Node reaches", () => {
     expect(nodeMessages({ "./a": { types: "./src/a.ts", import: "./src/a.ts" } }, [])).toEqual([]);
   });
+
+  it("passes a `node` bundle whose `workerd`, `bun` and `import` keep the `.ts` source, in resolution order", () => {
+    expect(nodeMessages({ "./a": NODE_CONDITIONED }, ["./a"])).toEqual([]);
+  });
+
+  it("fails a `node` bundle a Worker or Bun reaches, by a condition naming it or by one sitting on the wrong side of `node`", () => {
+    const { workerd: _workerd, ...unconditioned } = NODE_CONDITIONED;
+    const bunAfterNode = { types: "./src/a.ts", workerd: "./src/a.ts", node: "./src/a.mjs", bun: "./src/a.ts", import: "./src/a.ts" };
+
+    expect(
+      nodeMessages({ "./a": { ...NODE_CONDITIONED, import: "./src/a.mjs" }, "./b": unconditioned, "./c": bunAfterNode }, ["./a", "./b", "./c"]),
+    ).toEqual([
+      "`./a` points `node` at a bundle but `import` does not keep its runtime on the `.ts` source",
+      "`./b` points `node` at a bundle but `workerd` does not keep its runtime on the `.ts` source",
+      "`./c` points `node` at a bundle but `bun` does not keep its runtime on the `.ts` source",
+    ]);
+  });
+
+  it("fails an unlisted `node` bundle as it fails an `import` one", () => {
+    expect(nodeMessages({ "./a": NODE_CONDITIONED }, [])).toEqual(["`./a` exports a `.mjs` bundle but is not listed under `forge.node`"]);
+  });
 });
 
 describe("nodeBundles()", () => {
   it("derives this repository's rows from `forge.node`, entry from `types` and bundle from `import`", () => {
     expect(nodeBundles(ROOT, PACKAGE).find(({ label }) => label === "validate-testing-totp-bundle")).toMatchObject({
       entry: "src/testing/totp.ts",
-      bundle: "src/testing/totp.mjs",
+      bundle: "src/testing/totp.node.mjs",
+    });
+  });
+
+  it("takes the bundle from `node` ahead of `import`, as this repository's `storage/db` declares it", () => {
+    expect(nodeBundles(ROOT, PACKAGE).find(({ label }) => label === "validate-storage-db-bundle")).toMatchObject({
+      entry: "src/storage/db/mod.ts",
+      bundle: "src/storage/db/mod.node.mjs",
     });
   });
 
@@ -144,6 +199,31 @@ describe("nodeBundles()", () => {
   it("derives nothing from a manifest with no `forge.node` declaration", () => {
     expect(nodeBundles(ROOT, { exports: PACKAGE.exports })).toEqual([]);
   });
+});
+
+describe("bundleSource()", () => {
+  it.skipIf(!hasEsbuild())(
+    "resolves `#request-scope` to the scope that refuses a request, so a bundled contextVar throws where the source reads",
+    async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "forge-scope-"));
+      roots.push(dir);
+      symlinkSync(resolve(ROOT, "node_modules"), resolve(dir, "node_modules"));
+      const text = await bundleSource({ root: ROOT, entry: "src/context/accessor.ts", bundle: "unused.mjs", fixer: BUNDLE_FIXER });
+      writeFileSync(resolve(dir, "accessor.mjs"), text, "utf-8");
+      const { contextVar } = (await import(resolve(dir, "accessor.mjs"))) as typeof import("../../../context/accessor");
+      const { RequestContext } = await import("@remix-run/fetch-router");
+
+      const outcome = (() => {
+        try {
+          return contextVar<string>("probe").getOptional(new RequestContext(new Request("http://localhost/"))) ?? "read";
+        } catch (error) {
+          return (error as Error).name;
+        }
+      })();
+
+      expect(outcome).toBe("RequestFreeBundleError");
+    },
+  );
 });
 
 describe("checkBundle()", () => {

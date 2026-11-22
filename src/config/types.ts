@@ -10,7 +10,10 @@ export type ConfigContext<C> = { config: C };
 export type EnvRef<K extends string = string> = { readonly __env: K };
 
 /** A config mapping node: a literal string, an {@link EnvRef}, or a nested record of mappings. @public */
-export type EnvMapping<K extends string = string> = string | EnvRef<K> | { readonly [key: string]: EnvMapping<K>; readonly __env?: never };
+export type EnvMapping<K extends string = string> =
+  | string
+  | EnvRef<K>
+  | { readonly [key: string]: EnvMapping<K> | undefined; readonly __env?: never };
 
 /** The Worker's env surface, which the module `forge cf gen env` writes merges into, so `createConfig` refuses an undeclared `env()` name. @public */
 export interface DeclaredEnv extends Record<never, never> {}
