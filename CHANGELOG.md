@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.8.0] — 2026-11-26
+
 ### Breaking Changes
 
 - **The chain's `session` slot takes only a `SessionMiddleware`, checks that it set a session, and the CSRF `subject` takes `"session"`.**
@@ -2617,6 +2623,7 @@ the Worker secret holding the D1 token if nothing else reads it. Schedule `forge
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.8.0]: https://github.com/y-core/forge/compare/v0.7.7...v0.8.0
 [0.7.7]: https://github.com/y-core/forge/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/y-core/forge/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/y-core/forge/compare/v0.7.4...v0.7.5
