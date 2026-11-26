@@ -19,8 +19,9 @@ the task ids and their lanes, the epic, the checked-out branch, any open handoff
 | Epic | `bun run verify` on the rebased tip | Once, in place of the push check, before the push that closes an epic — sent to `cc-tester` |
 | Browser spec | one spec, one engine | Only where a UI change needs confirming (`TESTING.md` §6a) |
 
-Not findable from `package.json`: `bun run verify --only <step>` runs one step, and `bun run verify --list` prints a tier's steps. The steps live
-in `{{STEPS_CONFIG_PATH}}`. `verify:scheduled` belongs to the release command and the daily cron; agents do not run it.
+Not findable from `package.json`: `bun run verify --only <step>` runs one step, and `bun run verify --list` prints a tier's steps. The steps live in
+`{{STEPS_CONFIG_PATH}}`. `verify:scheduled` belongs to the release command and the daily cron; agents run it only through a release the user asked
+for.
 
 Use `oxlint` (not `eslint`), `bun fmt` (not `prettier` or `oxfmt`), `bun check` (not `tsc`), and the hand-written types stub (not a
 runtime-specific type package). {{ADDITIONAL_TOOLS}}

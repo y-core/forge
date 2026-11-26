@@ -11,7 +11,7 @@ import { worktreeFixture } from "../cli/worktree.fixture";
 import { changelogSectionsSource, packageWithVersion } from "./pkg-json";
 import { createReleaseBinCommand, createReleaseCommand, defineReleaseConfig } from "./release";
 import { ReleaseError } from "./types";
-import type { GateOutcome, GateRecord } from "./types";
+import type { CommitSummary, GateOutcome, GateRecord } from "./types";
 import type { VersionResult } from "./types";
 
 /** A written `[Unreleased]` — the ordinary case, where release has an entry to promote. */
@@ -30,7 +30,12 @@ interface MockDeps {
   commit: Mock<(cwd: string, message: string, files: string[]) => boolean>;
   committedPaths: Mock<(cwd: string) => string[]>;
   tagExists: Mock<(cwd: string, tag: string) => boolean>;
-  createTag: Mock<(cwd: string, tag: string) => void>;
+  createTag: Mock<(cwd: string, tag: string, commit?: string) => void>;
+  fetchRemote: Mock<(cwd: string) => void>;
+  commitSummary: Mock<(cwd: string, ref: string) => CommitSummary | null>;
+  commitWithSubject: Mock<(cwd: string, ref: string, subject: string, since: string | null) => string | null>;
+  pushTag: Mock<(cwd: string, tag: string) => void>;
+  deleteTag: Mock<(cwd: string, tag: string) => void>;
   readChangelog: Mock<(cwd: string, file: string) => string | null>;
   writeChangelog: Mock<(cwd: string, file: string, source: string) => void>;
   writeChangelogSections: Mock<(cwd: string, file: string, source: string) => void>;
@@ -61,7 +66,12 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true),
     committedPaths: mock((_cwd: string): string[] => ["package.json"]),
     tagExists: mock((_cwd: string, _tag: string): boolean => false),
-    createTag: mock((_cwd: string, _tag: string): void => {}),
+    createTag: mock((_cwd: string, _tag: string, _commit?: string): void => {}),
+    fetchRemote: mock((_cwd: string): void => {}),
+    commitSummary: mock((_cwd: string, _ref: string): CommitSummary | null => null),
+    commitWithSubject: mock((_cwd: string, _ref: string, _subject: string, _since: string | null): string | null => null),
+    pushTag: mock((_cwd: string, _tag: string): void => {}),
+    deleteTag: mock((_cwd: string, _tag: string): void => {}),
     readChangelog: mock((_cwd: string, _file: string): string | null => WRITTEN),
     writeChangelog: mock((_cwd: string, _file: string, _source: string): void => {}),
     writeChangelogSections: mock((_cwd: string, _file: string, _source: string): void => {}),
@@ -1254,9 +1264,9 @@ describe("defineReleaseConfig()", () => {
   });
 
   it("returns a host-tag config unchanged", () => {
-    const config = { tagOn: "host" as const };
+    const config = { tagOn: "pushed" as const };
 
-    expect(defineReleaseConfig(config)).toEqual({ tagOn: "host" });
+    expect(defineReleaseConfig(config)).toEqual({ tagOn: "pushed" });
   });
 });
 
@@ -1290,6 +1300,10 @@ interface Repo {
   today: Date;
   untracked: string[];
   records: Map<string, GateRecord>;
+  /** origin/main after a fetch, newest first; `null` when the fetch leaves no origin/main. */
+  published: CommitSummary[] | null;
+  pushRefuses: boolean;
+  pushed: string[];
 }
 
 /** A stand-in tree id: equal for equal contents, whatever commit carries them. */
@@ -1320,6 +1334,9 @@ function fakeRepo(seed: Partial<Repo> = {}) {
     today: new Date(2026, 1, 3),
     untracked: [],
     records: new Map(),
+    published: [{ commit: FIRST_HEAD, tree: treeOf(head), subject: "feat: a thing" }],
+    pushRefuses: false,
+    pushed: [],
     ...seed,
   };
   let sequence = 1;
@@ -1356,8 +1373,26 @@ function fakeRepo(seed: Partial<Repo> = {}) {
     commit: mock((_cwd: string, message: string, files: string[]): boolean => land(message, files)),
     committedPaths: mock((_cwd: string): string[] => [...repo.committed]),
     tagExists: mock((_cwd: string, tag: string): boolean => repo.tags.includes(tag)),
-    createTag: mock((_cwd: string, tag: string): void => {
+    createTag: mock((_cwd: string, tag: string, _commit?: string): void => {
       repo.tags.push(tag);
+    }),
+    fetchRemote: mock((_cwd: string): void => {}),
+    commitSummary: mock((_cwd: string, ref: string): CommitSummary | null =>
+      ref === "refs/remotes/origin/main" ? (repo.published?.[0] ?? null) : null,
+    ),
+    commitWithSubject: mock(
+      (_cwd: string, _ref: string, subject: string, _since: string | null): string | null =>
+        (repo.published ?? []).find((entry) => entry.subject === subject)?.commit ?? null,
+    ),
+    pushTag: mock((_cwd: string, tag: string): void => {
+      if (!repo.tags.includes(tag)) throw new ReleaseError("git-error", `git push failed: error: src refspec refs/tags/${tag} does not match any`);
+      if (repo.pushRefuses)
+        throw new ReleaseError("git-error", `git push failed: ! [remote rejected] ${tag} -> ${tag} (pre-receive hook declined)`);
+      repo.pushed.push(tag);
+      repo.remote?.push(tag);
+    }),
+    deleteTag: mock((_cwd: string, tag: string): void => {
+      repo.tags = repo.tags.filter((entry) => entry !== tag);
     }),
     readChangelog: mock((_cwd: string, file: string): string | null => repo.work[file] ?? null),
     writeChangelog: mock((_cwd: string, file: string, source: string): void => {
@@ -1414,7 +1449,13 @@ function fakeRepo(seed: Partial<Repo> = {}) {
     repo.parentSha = parentSha;
   };
 
-  return { repo, deps, land, run, clear, squash };
+  /** The push flow: the squash, then the squashed commit on top of origin/main. */
+  const push = (): void => {
+    squash();
+    repo.published = [{ commit: repo.headSha, tree: treeOf(repo.head), subject: repo.subject }, ...(repo.published ?? [])];
+  };
+
+  return { repo, deps, land, run, clear, squash, push };
 }
 
 function outcomeOf(run: () => unknown): string {
@@ -1485,12 +1526,7 @@ function hostStepsIn(logs: readonly string[]): string[] {
   return start === -1 ? [] : logs.slice(start);
 }
 
-const HOST = { tagOn: "host" as const };
-
-function hostTagStepsIn(logs: readonly string[]): string[] {
-  const start = logs.findIndex((line) => line.startsWith("\nThe server refuses tags"));
-  return start === -1 ? [] : logs.slice(start);
-}
+const PUSHED = { tagOn: "pushed" as const };
 
 describe("createReleaseCommand() — resuming a release from the state the repository is in", () => {
   type Start = "fresh" | "written" | "committed" | "tagged" | "bumped-only" | "version-mismatch";
@@ -1534,7 +1570,7 @@ describe("createReleaseCommand() — resuming a release from the state the repos
     });
   }
 
-  const hostCases: { start: Start; outcomes: string[]; calls: Record<string, number> }[] = [
+  const pushedCases: { start: Start; outcomes: string[]; calls: Record<string, number> }[] = [
     { start: "fresh", outcomes: ["ok", "ok"], calls: { updatePackageVersion: 1, writeChangelog: 1, commit: 1, createTag: 0 } },
     { start: "written", outcomes: ["ok", "ok"], calls: { ...none, commit: 1 } },
     { start: "committed", outcomes: ["ok", "ok"], calls: none },
@@ -1543,13 +1579,16 @@ describe("createReleaseCommand() — resuming a release from the state the repos
     { start: "version-mismatch", outcomes: ["version-mismatch", "version-mismatch"], calls: none },
   ];
 
-  for (const { start, outcomes, calls } of hostCases) {
-    it(`${start}, .git writable, tagOn host: two consecutive runs write and commit at most once and never tag`, () => {
+  for (const { start, outcomes, calls } of pushedCases) {
+    it(`${start}, .git writable, tagOn pushed: two consecutive runs before the push write and commit at most once and never tag or push`, () => {
       const { fake, args } = startIn(start, true);
 
-      const seen = [outcomeOf(() => fake.run(args, RESUME_FLAGS, HOST)), outcomeOf(() => fake.run(args, RESUME_FLAGS, HOST))];
+      const seen = [outcomeOf(() => fake.run(args, RESUME_FLAGS, PUSHED)), outcomeOf(() => fake.run(args, RESUME_FLAGS, PUSHED))];
 
-      expect({ outcomes: seen, calls: releaseCalls(fake.deps) }).toEqual({ outcomes, calls });
+      expect({ outcomes: seen, calls: { ...releaseCalls(fake.deps), pushTag: fake.deps.pushTag.mock.calls.length } }).toEqual({
+        outcomes,
+        calls: { ...calls, pushTag: 0 },
+      });
     });
   }
 
@@ -2170,100 +2209,304 @@ function chmodDeniesWrites(): boolean {
 
 const CHMOD_DENIES = chmodDeniesWrites();
 
-describe("createReleaseCommand() — tagging on the host when the server refuses tags", () => {
+describe("createReleaseCommand() — tagging the pushed release commit from the clone", () => {
   const SKIPPED = "\n`bun run verify` already passed on these v1.1.0 files — not running it again.";
+  const PUSH_IT =
+    "Push it to main through the repository's push flow (in an agent clone, the `merge` skill), keeping its subject, then run `bun run release` here again.";
+  const COMMITTED_AWAITING = ['\nCommitted "chore: release 1.1.0" here; v1.1.0 is cut once it reaches main.', PUSH_IT];
+  const NOT_REACHED = ["\nThe release commit has not reached main yet, so v1.1.0 was not cut.", PUSH_IT];
+  const OTHER_TREE = "9".repeat(40);
 
-  function stepsFor(fake: ReturnType<typeof fakeRepo>, ref = "main"): string[] {
-    return [
-      `\nThe server refuses tags, so v1.1.0 is cut on the host once the release commit reaches ${ref}.`,
-      `The commit reaches ${ref} through the repository's push flow (in an agent clone, the \`land\` skill). Then on the host:`,
-      `  test "$(git log -1 --format='%T %s' ${ref})" = "${treeOf(fake.repo.head)} chore: release 1.1.0" && git tag v1.1.0 ${ref}`,
-      "  git push && git push --tags",
-      "Then run `git fetch --tags` and `bun run release` here to confirm.",
-    ];
+  function tagAndPushCalls(deps: MockDeps) {
+    return { createTag: deps.createTag.mock.calls, pushTag: deps.pushTag.mock.calls, gate: deps.runGate.mock.calls.length };
   }
 
-  it("commits a fresh release, never tags it, and prints the host's guarded tag", () => {
+  function committedHere() {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, PUSHED);
+    fake.clear();
+    return fake;
+  }
+
+  function publish(fake: ReturnType<typeof fakeRepo>, tip: CommitSummary): void {
+    fake.repo.published = [tip, ...(fake.repo.published ?? [])];
+  }
+
+  it("commits a fresh release, cuts no tag, fetches nothing, and prints what it waits on", () => {
     const fake = fakeRepo();
 
-    const steps = hostTagStepsIn(fake.run([], RESUME_FLAGS, HOST));
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
     expect({
       commits: fake.deps.commit.mock.calls,
-      tag: fake.deps.createTag.mock.calls.length,
-      gate: fake.deps.runGate.mock.calls.length,
-      steps,
-    }).toEqual({ commits: [["/project", "chore: release 1.1.0", RELEASE_FILES]], tag: 0, gate: 1, steps: stepsFor(fake) });
+      fetch: fake.deps.fetchRemote.mock.calls.length,
+      ...tagAndPushCalls(fake.deps),
+      tail: logs.slice(-2),
+    }).toEqual({
+      commits: [["/project", "chore: release 1.1.0", RELEASE_FILES]],
+      fetch: 0,
+      createTag: [],
+      pushTag: [],
+      gate: 1,
+      tail: COMMITTED_AWAITING,
+    });
   });
 
-  it("reprints the same steps on the unpushed release commit, skipping the gate", () => {
-    const fake = fakeRepo();
-    fake.run([], RESUME_FLAGS, HOST);
-    fake.clear();
+  it("fetches once on the unpushed release commit, skips the gate, and says the commit has not reached main", () => {
+    const fake = committedHere();
 
-    const logs = fake.run([], RESUME_FLAGS, HOST);
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
     expect({
+      fetch: fake.deps.fetchRemote.mock.calls,
+      read: fake.deps.commitSummary.mock.calls,
+      searched: fake.deps.commitWithSubject.mock.calls,
+      ...tagAndPushCalls(fake.deps),
       commit: fake.deps.commit.mock.calls.length,
-      tag: fake.deps.createTag.mock.calls.length,
-      gate: fake.deps.runGate.mock.calls.length,
-      skipped: logs.includes(SKIPPED),
-      steps: hostTagStepsIn(logs),
-    }).toEqual({ commit: 0, tag: 0, gate: 0, skipped: true, steps: stepsFor(fake) });
+      tail: logs.slice(-2),
+    }).toEqual({
+      fetch: [["/project"]],
+      read: [["/project", "refs/remotes/origin/main"]],
+      searched: [["/project", "refs/remotes/origin/main", "chore: release 1.1.0", "v1.0.0"]],
+      createTag: [],
+      pushTag: [],
+      gate: 0,
+      commit: 0,
+      tail: NOT_REACHED,
+    });
   });
 
-  it("reads the squashed release commit as committed, keeping its subject and trees", () => {
-    const fake = fakeRepo();
-    fake.run([], RESUME_FLAGS, HOST);
-    fake.squash();
-    fake.clear();
+  it("tags the pushed tip once the squashed release commit is on main, then pushes only that tag", () => {
+    const fake = committedHere();
+    fake.push();
 
-    const logs = fake.run([], RESUME_FLAGS, HOST);
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
+
+    expect({ ...tagAndPushCalls(fake.deps), pushed: fake.repo.pushed, skipped: logs.includes(SKIPPED), tail: logs.slice(-2) }).toEqual({
+      createTag: [["/project", "v1.1.0", "3".repeat(40)]],
+      pushTag: [["/project", "v1.1.0"]],
+      gate: 0,
+      pushed: ["v1.1.0"],
+      skipped: true,
+      tail: ["\nTagged main's tip 33333333 as v1.1.0 and pushed the tag. Publish from the host:", "  git push && git push --tags"],
+    });
+  });
+
+  for (const branch of ["task/x", null]) {
+    it(`tags the tip of main, never the stale HEAD, from ${branch === null ? "a detached HEAD" : branch} under --allow-branch`, () => {
+      const fake = fakeRepo();
+      fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => branch);
+      const flags = { ...RESUME_FLAGS, "allow-branch": true };
+      fake.run([], flags, PUSHED);
+      publish(fake, { commit: "f".repeat(40), tree: treeOf(fake.repo.head), subject: "chore: release 1.1.0" });
+      fake.clear();
+
+      const logs = fake.run([], flags, PUSHED);
+
+      expect({
+        head: fake.repo.headSha,
+        ...tagAndPushCalls(fake.deps),
+        namesTaskBranch: logs.some((line) => line.includes("task/x")),
+        tail: logs.slice(-2),
+      }).toEqual({
+        head: "2".repeat(40),
+        createTag: [["/project", "v1.1.0", "f".repeat(40)]],
+        pushTag: [["/project", "v1.1.0"]],
+        gate: 0,
+        namesTaskBranch: false,
+        tail: ["\nTagged main's tip ffffffff as v1.1.0 and pushed the tag. Publish from the host:", "  git push && git push --tags"],
+      });
+    });
+  }
+
+  const mismatches: { name: string; tip: (fake: ReturnType<typeof fakeRepo>) => void; message: string }[] = [
+    {
+      name: "the release subject over a tree the gate never passed",
+      tip: (fake) => publish(fake, { commit: "a".repeat(40), tree: OTHER_TREE, subject: "chore: release 1.1.0" }),
+      message:
+        "main's tip aaaaaaaa is the 1.1.0 release commit over a tree the gate never passed here, so v1.1.0 was not cut.\n" +
+        "The push carried other work into it. Run the release again on that tip (`git switch main && git merge --ff-only origin/main`): it gates the pushed tree before tagging it.",
+    },
+    {
+      name: "the gated tree under another subject",
+      tip: (fake) => publish(fake, { commit: "a".repeat(40), tree: treeOf(fake.repo.head), subject: "feat: release it" }),
+      message:
+        'main\'s tip aaaaaaaa carries the gated tree under "feat: release it" rather than "chore: release 1.1.0", so v1.1.0 was not cut.\n' +
+        "The release commit is recognised by its subject, and a pushed commit cannot be reworded: check the tip and tag it on the host by hand.",
+    },
+    {
+      name: "a branch that moved past the release commit",
+      tip: (fake) => {
+        fake.push();
+        publish(fake, { commit: "c".repeat(40), tree: OTHER_TREE, subject: "fix: later" });
+      },
+      message:
+        'main has moved past the 1.1.0 release commit 33333333, and its tip cccccccc is "fix: later", so v1.1.0 was not cut.\n' +
+        "Only a tip that is the release commit is tagged here: check 33333333 and tag it on the host by hand.",
+    },
+  ];
+
+  for (const { name, tip, message } of mismatches) {
+    it(`refuses ${name} as publishing-mismatch, before the gate, any write, the tag and the push`, () => {
+      const fake = committedHere();
+      tip(fake);
+
+      const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
+
+      expect({
+        kind: err.kind,
+        message: err.message,
+        writes: writesBy(fake.deps),
+        commit: fake.deps.commit.mock.calls.length,
+        ...tagAndPushCalls(fake.deps),
+      }).toEqual({ kind: "publishing-mismatch", message, writes: 0, commit: 0, createTag: [], pushTag: [], gate: 0 });
+    });
+  }
+
+  it("quotes a publishing branch the shell would expand in the command a mismatch prints", () => {
+    const fake = fakeRepo();
+    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
+    fake.deps.defaultBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
+    fake.run([], RESUME_FLAGS, PUSHED);
+    fake.deps.commitSummary.mockImplementation((_cwd: string, ref: string): CommitSummary | null =>
+      ref === "refs/remotes/origin/rel$ease" ? { commit: "a".repeat(40), tree: OTHER_TREE, subject: "chore: release 1.1.0" } : null,
+    );
+
+    const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
+
+    expect(err.message.split("\n")[1]).toBe(
+      "The push carried other work into it. Run the release again on that tip (`git switch 'rel$ease' && git merge --ff-only origin/'rel$ease'`): it gates the pushed tree before tagging it.",
+    );
+  });
+
+  it("refuses as wrong-branch when origin/main does not exist after the fetch", () => {
+    const fake = committedHere();
+    fake.repo.published = null;
+
+    const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
+
+    expect({ kind: err.kind, message: err.message, ...tagAndPushCalls(fake.deps) }).toEqual({
+      kind: "wrong-branch",
+      message:
+        "The remote publishes from main, but origin/main does not exist after the fetch, so v1.1.0 was not cut.\n" +
+        "Set the publishing branch with `git remote set-head origin --auto`, then release again.",
+      createTag: [],
+      pushTag: [],
+      gate: 0,
+    });
+  });
+
+  it("refuses as git-error when the fetch fails, reading nothing it would have fetched", () => {
+    const fake = committedHere();
+    fake.deps.fetchRemote.mockImplementation((_cwd: string): void => {
+      throw new ReleaseError("git-error", "git fetch failed: Could not resolve host: x");
+    });
+
+    const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
+
+    expect({ kind: err.kind, message: err.message, read: fake.deps.commitSummary.mock.calls.length, ...tagAndPushCalls(fake.deps) }).toEqual({
+      kind: "git-error",
+      message: "Could not fetch origin, so v1.1.0 was not cut: git fetch failed: Could not resolve host: x",
+      read: 0,
+      createTag: [],
+      pushTag: [],
+      gate: 0,
+    });
+  });
+
+  it("deletes the local tag again when the server refuses the tag push, and a later run tags and pushes it", () => {
+    const fake = committedHere();
+    fake.push();
+    fake.repo.pushRefuses = true;
+
+    const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
+    const afterRefusal = { tags: [...fake.repo.tags], deleted: fake.deps.deleteTag.mock.calls };
+    fake.repo.pushRefuses = false;
+    fake.run([], RESUME_FLAGS, PUSHED);
 
     expect({
-      commit: fake.deps.commit.mock.calls.length,
-      tag: fake.deps.createTag.mock.calls.length,
-      gate: fake.deps.runGate.mock.calls.length,
-      steps: hostTagStepsIn(logs),
-    }).toEqual({ commit: 0, tag: 0, gate: 0, steps: stepsFor(fake) });
+      kind: err.kind,
+      message: err.message,
+      afterRefusal,
+      createTag: fake.deps.createTag.mock.calls,
+      pushTag: fake.deps.pushTag.mock.calls,
+      pushed: fake.repo.pushed,
+    }).toEqual({
+      kind: "tag-push-failed",
+      message:
+        "Tagged 33333333 as v1.1.0, but pushing the tag to origin failed: git push failed: ! [remote rejected] v1.1.0 -> v1.1.0 (pre-receive hook declined)\n" +
+        "The local v1.1.0 is deleted again. Run the release again once the server accepts it: it checks main's tip before tagging.",
+      afterRefusal: { tags: ["v1.0.0"], deleted: [["/project", "v1.1.0"]] },
+      createTag: [
+        ["/project", "v1.1.0", "3".repeat(40)],
+        ["/project", "v1.1.0", "3".repeat(40)],
+      ],
+      pushTag: [
+        ["/project", "v1.1.0"],
+        ["/project", "v1.1.0"],
+      ],
+      pushed: ["v1.1.0"],
+    });
   });
 
-  it("skips the gate after a squash that gave the release commit's parent a new sha over the same tree", () => {
-    const fake = fakeRepo();
-    fake.run([], RESUME_FLAGS, HOST);
-    fake.squash("e".repeat(40));
-    fake.clear();
+  it("names `git tag -d` when deleting the refused tag fails too, leaving the tag in place", () => {
+    const fake = committedHere();
+    fake.push();
+    fake.repo.pushRefuses = true;
+    fake.deps.deleteTag.mockImplementation((_cwd: string, _tag: string): void => {
+      throw new Error("cannot lock ref 'refs/tags/v1.1.0'");
+    });
 
-    fake.run([], RESUME_FLAGS, HOST);
+    const err = errorFrom(() => fake.run([], RESUME_FLAGS, PUSHED));
 
-    expect(fake.deps.runGate.mock.calls.length).toBe(0);
+    expect({ kind: err.kind, undo: err.message.split("\n").slice(1), tags: fake.repo.tags }).toEqual({
+      kind: "tag-push-failed",
+      undo: ["Deleting the local v1.1.0 failed too: cannot lock ref 'refs/tags/v1.1.0'", "Run `git tag -d v1.1.0`, then release again."],
+      tags: ["v1.0.0", "v1.1.0"],
+    });
   });
 
-  it("runs the gate again when the squash moved the release commit onto a parent with other content", () => {
-    const fake = fakeRepo();
-    fake.run([], RESUME_FLAGS, HOST);
-    fake.squash("e".repeat(40));
-    fake.repo.parentHead = { ...fake.repo.parentHead, "src/b.ts": "export const b = 1;\n" };
-    fake.clear();
+  const alreadyTagged: { name: string; arrange: (fake: ReturnType<typeof fakeRepo>) => void; logs: string[] }[] = [
+    { name: "a release in sync with its tag", arrange: (fake) => fake.repo.tags.push("v1.1.0"), logs: ["Already at 1.1.0 — nothing to release."] },
+    {
+      name: "a tag that already exists",
+      arrange: (fake) => fake.deps.tagExists.mockImplementation((_cwd: string, tag: string): boolean => tag === "v1.1.0"),
+      logs: ["\nTag v1.1.0 already exists — nothing to release."],
+    },
+  ];
 
-    fake.run([], RESUME_FLAGS, HOST);
+  for (const { name, arrange, logs: expected } of alreadyTagged) {
+    it(`reports ${name}, on the remote too, as done without fetching or pushing`, () => {
+      const fake = committedHere();
+      fake.push();
+      arrange(fake);
+      fake.repo.remote = ["v1.0.0", "v1.1.0"];
 
-    expect(fake.deps.runGate.mock.calls.length).toBe(1);
-  });
+      const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
-  it("reads the host's tag, once fetched, as nothing to release", () => {
-    const fake = fakeRepo();
-    fake.run([], RESUME_FLAGS, HOST);
-    fake.squash();
+      expect({ logs, fetch: fake.deps.fetchRemote.mock.calls.length, ...tagAndPushCalls(fake.deps) }).toEqual({
+        logs: expected,
+        fetch: 0,
+        createTag: [],
+        pushTag: [],
+        gate: 0,
+      });
+    });
+  }
+
+  it("asks for `git tag -d` rather than `git push --tags` when the tag is here but not on the remote", () => {
+    const fake = committedHere();
     fake.repo.tags.push("v1.1.0");
-    fake.repo.remote = ["v1.0.0", "v1.1.0"];
 
-    const logs = fake.run([], RESUME_FLAGS, HOST);
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
-    expect({ logs, commit: fake.deps.commit.mock.calls.length, tag: fake.deps.createTag.mock.calls.length }).toEqual({
-      logs: ["Already at 1.1.0 — nothing to release."],
-      commit: 1,
-      tag: 0,
+    expect({ logs, pushTag: fake.deps.pushTag.mock.calls.length, fetch: fake.deps.fetchRemote.mock.calls.length }).toEqual({
+      logs: [
+        "Already at 1.1.0 — nothing to release.",
+        "v1.1.0 is tagged here but not on the remote. Delete it with `git tag -d v1.1.0` and run `bun run release` again: it checks the publishing branch's tip, tags it and pushes the tag.",
+      ],
+      pushTag: 0,
+      fetch: 0,
     });
   });
 
@@ -2272,97 +2515,158 @@ describe("createReleaseCommand() — tagging on the host when the server refuses
       const fake = fakeRepo();
       fake.repo.remote = ["v1.0.0", "v1.1.0"];
 
-      const logs = fake.run([], { ...RESUME_FLAGS, dry }, HOST);
+      const logs = fake.run([], { ...RESUME_FLAGS, dry }, PUSHED);
 
-      expect({ logs, gate: fake.deps.runGate.mock.calls.length, writes: writesBy(fake.deps), calls: releaseCalls(fake.deps) }).toEqual({
+      expect({
+        logs,
+        gate: fake.deps.runGate.mock.calls.length,
+        writes: writesBy(fake.deps),
+        calls: releaseCalls(fake.deps),
+        fetch: fake.deps.fetchRemote.mock.calls.length,
+        pushTag: fake.deps.pushTag.mock.calls.length,
+      }).toEqual({
         logs: ["\nv1.1.0 is already on the remote. Run `git fetch --tags` and `bun run release` here to confirm."],
         gate: 0,
         writes: 0,
         calls: { updatePackageVersion: 0, writeChangelog: 0, commit: 0, createTag: 0 },
+        fetch: 0,
+        pushTag: 0,
       });
     });
   }
 
-  it("checks the tree alone when the release files were committed under another subject", () => {
+  it("matches the tree alone when the release files were committed under another subject, tagging a tip that carries it", () => {
+    const fake = writtenRepo();
+    fake.land("chore: bump", RELEASE_FILES);
+    fake.repo.writable = true;
+    publish(fake, { commit: "d".repeat(40), tree: treeOf(fake.repo.head), subject: "chore: bump" });
+
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
+
+    expect({
+      commit: fake.deps.commit.mock.calls.length,
+      createTag: fake.deps.createTag.mock.calls,
+      pushTag: fake.deps.pushTag.mock.calls,
+      tail: logs.slice(-2),
+    }).toEqual({
+      commit: 0,
+      createTag: [["/project", "v1.1.0", "d".repeat(40)]],
+      pushTag: [["/project", "v1.1.0"]],
+      tail: ["\nTagged main's tip dddddddd as v1.1.0 and pushed the tag. Publish from the host:", "  git push && git push --tags"],
+    });
+  });
+
+  it("waits on the push when the release files were committed under another subject and main carries another tree", () => {
     const fake = writtenRepo();
     fake.land("chore: bump", RELEASE_FILES);
     fake.repo.writable = true;
 
-    const logs = fake.run([], RESUME_FLAGS, HOST);
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
-    expect({ commit: fake.deps.commit.mock.calls.length, guard: hostTagStepsIn(logs)[2] }).toEqual({
-      commit: 0,
-      guard: `  test "$(git log -1 --format=%T main)" = ${treeOf(fake.repo.head)} && git tag v1.1.0 main`,
+    expect({ ...tagAndPushCalls(fake.deps), searched: fake.deps.commitWithSubject.mock.calls.length, tail: logs.slice(-2) }).toEqual({
+      createTag: [],
+      pushTag: [],
+      gate: 0,
+      searched: 0,
+      tail: NOT_REACHED,
     });
   });
 
-  it("tags the publishing branch, never HEAD's, and prints no push, on another branch under --allow-branch", () => {
-    const fake = fakeRepo();
-    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => "task/x");
-
-    const steps = hostTagStepsIn(fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
-
-    expect({
-      steps,
-      namesTaskBranch: steps.some((line) => line.includes("task/x")),
-      pushesFromHere: steps.some((line) => line.includes("git push origin")),
-    }).toEqual({ steps: stepsFor(fake), namesTaskBranch: false, pushesFromHere: false });
-  });
-
-  it("tags the publishing branch from a detached HEAD under --allow-branch", () => {
-    const fake = fakeRepo();
-    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => null);
-
-    const steps = hostTagStepsIn(fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
-
-    expect(steps).toEqual(stepsFor(fake));
-  });
-
-  it("refuses a remote that names no publishing branch before the gate and every write, even under --allow-branch", () => {
+  it("refuses a remote that names no publishing branch before the gate, every write and the fetch, even under --allow-branch", () => {
     const fake = fakeRepo();
     fake.deps.defaultBranch.mockImplementation((_cwd: string): string | null => null);
 
-    const kind = outcomeOf(() => fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
+    const err = errorFrom(() => fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, PUSHED));
 
-    expect({ kind, gate: fake.deps.runGate.mock.calls.length, writes: writesBy(fake.deps), calls: releaseCalls(fake.deps) }).toEqual({
+    expect({
+      kind: err.kind,
+      message: err.message,
+      gate: fake.deps.runGate.mock.calls.length,
+      writes: writesBy(fake.deps),
+      calls: releaseCalls(fake.deps),
+      fetch: fake.deps.fetchRemote.mock.calls.length,
+    }).toEqual({
       kind: "wrong-branch",
+      message:
+        'The remote names no publishing branch, and with `tagOn: "pushed"` the tag goes on the tip of the branch the release commit is pushed to, so there is none to check.\n' +
+        "Set it with `git remote set-head origin --auto`, then release again.",
       gate: 0,
       writes: 0,
       calls: { updatePackageVersion: 0, writeChangelog: 0, commit: 0, createTag: 0 },
+      fetch: 0,
     });
   });
 
-  it("quotes a publishing branch name the shell would expand", () => {
-    const fake = fakeRepo();
-    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
-    fake.deps.defaultBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
-
-    const steps = hostTagStepsIn(fake.run([], RESUME_FLAGS, HOST));
-
-    expect(steps).toEqual(stepsFor(fake, "'rel$ease'"));
-  });
-
-  it("keeps the read-only steps when .git is read-only", () => {
+  it("keeps the read-only host steps when .git is read-only, fetching nothing", () => {
     const fake = fakeRepo({ writable: false });
 
-    const logs = fake.run([], RESUME_FLAGS, HOST);
+    const logs = fake.run([], RESUME_FLAGS, PUSHED);
 
     expect({
-      readOnly: hostStepsIn(logs).length > 0,
-      hostTag: hostTagStepsIn(logs),
+      steps: hostStepsIn(logs),
       row: logs.includes("  commit:    on the host (.git is read-only)"),
-    }).toEqual({ readOnly: true, hostTag: [], row: true });
+      fetch: fake.deps.fetchRemote.mock.calls.length,
+      read: fake.deps.commitSummary.mock.calls.length,
+      pushTag: fake.deps.pushTag.mock.calls.length,
+    }).toEqual({ steps: hostSteps(fake, RELEASE_FILES), row: true, fetch: 0, read: 0, pushTag: 0 });
   });
 
-  it("names the host's tag in the commit row of a dry run, writing nothing", () => {
+  it("names the pushed tag in the commit row of a dry run, writing and fetching nothing", () => {
     const fake = fakeRepo();
 
-    const logs = fake.run([], { ...RESUME_FLAGS, dry: true }, HOST);
+    const logs = fake.run([], { ...RESUME_FLAGS, dry: true }, PUSHED);
 
-    expect({ row: logs.includes("  commit:    here; the tag on the host after the push"), writes: writesBy(fake.deps) }).toEqual({
-      row: true,
-      writes: 0,
+    expect({
+      row: logs.includes("  commit:    here; tagged once pushed to the publishing branch"),
+      writes: writesBy(fake.deps),
+      fetch: fake.deps.fetchRemote.mock.calls.length,
+    }).toEqual({ row: true, writes: 0, fetch: 0 });
+  });
+
+  const gateCases: { name: string; parentChanged: boolean; gate: number }[] = [
+    { name: "skips the gate after a squash that gave the release commit's parent a new sha over the same tree", parentChanged: false, gate: 0 },
+    { name: "runs the gate again when the squash moved the release commit onto a parent with other content", parentChanged: true, gate: 1 },
+  ];
+
+  for (const { name, parentChanged, gate } of gateCases) {
+    it(`${name}, then tags the tip carrying HEAD's tree`, () => {
+      const fake = committedHere();
+      fake.squash("e".repeat(40));
+      if (parentChanged) fake.repo.parentHead = { ...fake.repo.parentHead, "src/b.ts": "export const b = 1;\n" };
+      publish(fake, { commit: fake.repo.headSha, tree: treeOf(fake.repo.head), subject: "chore: release 1.1.0" });
+
+      fake.run([], RESUME_FLAGS, PUSHED);
+
+      expect(tagAndPushCalls(fake.deps)).toEqual({ createTag: [["/project", "v1.1.0", "3".repeat(40)]], pushTag: [["/project", "v1.1.0"]], gate });
     });
+  }
+
+  it("refuses as gate-failed on a pushed tip whose gate fails, cutting and pushing no tag", () => {
+    const fake = committedHere();
+    fake.push();
+    fake.repo.records.clear();
+    fake.deps.runGate.mockImplementation((_cwd: string, _command: readonly string[]): GateOutcome => "failed");
+
+    const kind = outcomeOf(() => fake.run([], RESUME_FLAGS, PUSHED));
+
+    expect({ kind, ...tagAndPushCalls(fake.deps) }).toEqual({ kind: "gate-failed", createTag: [], pushTag: [], gate: 1 });
+  });
+
+  it("pushes nothing but the one tag, and prints no `git push origin`, across a whole release", () => {
+    const fake = fakeRepo();
+    const logs = [
+      ...fake.run([], RESUME_FLAGS, PUSHED),
+      ...fake.run([], RESUME_FLAGS, PUSHED),
+      ...(fake.push(), fake.run([], RESUME_FLAGS, PUSHED)),
+      ...fake.run([], RESUME_FLAGS, PUSHED),
+    ];
+
+    expect({
+      printsPushOrigin: logs.some((line) => line.includes("git push origin")),
+      pushTag: fake.deps.pushTag.mock.calls,
+      commits: fake.deps.commit.mock.calls.length,
+      last: logs.at(-1),
+    }).toEqual({ printsPushOrigin: false, pushTag: [["/project", "v1.1.0"]], commits: 1, last: "Already at 1.1.0 — nothing to release." });
   });
 });
 
@@ -2382,7 +2686,7 @@ describe("forge release end to end in a real repository", () => {
   }
 
   /** A repository one `feat:` commit past `v1.0.0`, whose gate appends a line to `gateLog` outside it. */
-  function releaseRepo({ ignoresForge = true } = {}): { root: string; gateLog: string; scratch: string } {
+  function releaseRepo({ ignoresForge = true, tagOn = "here" as "here" | "pushed" } = {}): { root: string; gateLog: string; scratch: string } {
     const scratch = mkdtempSync(join(tmpdir(), "forge-release-gate-"));
     const gateLog = join(scratch, "runs");
     writeFileSync(gateLog, "");
@@ -2390,7 +2694,7 @@ describe("forge release end to end in a real repository", () => {
       "package.json": MANIFEST_1_0_0,
       "CHANGELOG.md": CHANGELOG,
       [SECTIONS_FILE]: "{}\n",
-      "config/release.config.ts": `export default { gateCommand: ["sh", "-c", "echo ran >> '${gateLog}'"] };\n`,
+      "config/release.config.ts": `export default { gateCommand: ["sh", "-c", "echo ran >> '${gateLog}'"], tagOn: "${tagOn}" };\n`,
       ...(ignoresForge ? { ".gitignore": ".forge/\n" } : {}),
       "src/a.ts": "export {};\n",
     });
@@ -2437,6 +2741,51 @@ describe("forge release end to end in a real repository", () => {
     rmSync(fixture.root, { recursive: true, force: true });
     rmSync(fixture.scratch, { recursive: true, force: true });
   }
+
+  /** A pushed-mode fixture whose origin is a bare repository in `scratch`, holding main and v1.0.0, with origin/HEAD set. */
+  function pushedRepo(): { root: string; gateLog: string; scratch: string; bare: string } {
+    const fixture = releaseRepo({ tagOn: "pushed" });
+    const bare = join(fixture.scratch, "origin.git");
+    git(fixture.root, ["branch", "-M", "main"]);
+    git(fixture.scratch, ["init", "--bare", "-q", bare]);
+    git(fixture.root, ["remote", "add", "origin", bare]);
+    git(fixture.root, ["push", "-q", "origin", "main", "v1.0.0"]);
+    git(fixture.root, ["fetch", "-q", "origin"]);
+    git(fixture.root, ["remote", "set-head", "origin", "main"]);
+    return { ...fixture, bare };
+  }
+
+  it("under tagOn pushed: commits, waits on the push, then tags the pushed tip and pushes only the tag to origin", async () => {
+    const fixture = pushedRepo();
+    const { root, gateLog, bare } = fixture;
+    const bareTag = (): string => git(bare, ["tag", "--list", "v1.0.1"]).trim();
+    try {
+      const committed = (await release(root)).slice(-2);
+      const afterCommit = { bareTag: bareTag(), subject: git(root, ["log", "-1", "--format=%s"]).trim() };
+      const unpushed = (await release(root)).slice(-2);
+      git(root, ["push", "-q", "origin", "main"]);
+      const tagged = (await release(root)).slice(-2);
+      const bareMain = git(bare, ["rev-parse", "main"]).trim();
+      const afterTag = { bareTagged: git(bare, ["rev-parse", "refs/tags/v1.0.1^{commit}"]).trim(), bareMain, state: snapshot(root, gateLog) };
+      const done = await release(root);
+
+      const pushLine =
+        "Push it to main through the repository's push flow (in an agent clone, the `merge` skill), keeping its subject, then run `bun run release` here again.";
+      expect({ committed, afterCommit, unpushed, tagged, afterTag, done }).toEqual({
+        committed: ['\nCommitted "chore: release 1.0.1" here; v1.0.1 is cut once it reaches main.', pushLine],
+        afterCommit: { bareTag: "", subject: "chore: release 1.0.1" },
+        unpushed: ["\nThe release commit has not reached main yet, so v1.0.1 was not cut.", pushLine],
+        tagged: [
+          `\nTagged main's tip ${bareMain.slice(0, 8)} as v1.0.1 and pushed the tag. Publish from the host:`,
+          "  git push && git push --tags",
+        ],
+        afterTag: { bareTagged: bareMain, bareMain, state: { workHeadings: 1, headHeadings: 1, version: "1.0.1", tagged: true, gateRuns: 1 } },
+        done: ["Already at 1.0.1 — nothing to release."],
+      });
+    } finally {
+      cleanup(fixture);
+    }
+  });
 
   it("commits and tags once with a writable .git, and a rerun finds it already released", async () => {
     const fixture = releaseRepo();

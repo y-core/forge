@@ -13,13 +13,18 @@ import { definitionList } from "../term/grid";
 import { DEFAULT_GATE_COMMAND, runGate } from "./gate";
 import {
   commit,
+  commitSummary,
+  commitWithSubject,
   committedPaths,
   createTag,
   currentBranch,
   defaultBranch,
+  deleteTag,
+  fetchRemote,
   getLastCommitMessage,
   gitWritable,
   isWorkingTreeClean,
+  pushTag,
   readFileAtRef,
   remoteTags,
   resolveCommit,
@@ -213,6 +218,11 @@ export function createReleaseCommand(
     committedPaths,
     tagExists,
     createTag,
+    fetchRemote,
+    commitSummary,
+    commitWithSubject,
+    pushTag,
+    deleteTag,
     readChangelog,
     writeChangelog,
     writeChangelogSections,
@@ -264,6 +274,61 @@ export function createReleaseCommand(
     const written = promotes ? releaseFiles : ["package.json"];
     if (!isReleaseCommit(deps.committedPaths(cwd), stagedFor(promotes), written)) return null;
     return { state: "committed", promotes, date: releasedDate(head.changelog, version), wasEmpty: false, targets: new Map(), current: new Map() };
+  }
+
+  function pushedTip(publishing: string, subject: string | null, since: string | null, version: string, tag: string): string | null {
+    try {
+      deps.fetchRemote(cwd);
+    } catch (err) {
+      throw new ReleaseError("git-error", `Could not fetch origin, so ${tag} was not cut: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const ref = `refs/remotes/origin/${publishing}`;
+    const tip = deps.commitSummary(cwd, ref);
+    if (tip === null) {
+      throw new ReleaseError(
+        "wrong-branch",
+        `The remote publishes from ${publishing}, but origin/${publishing} does not exist after the fetch, so ${tag} was not cut.\n` +
+          "Set the publishing branch with `git remote set-head origin --auto`, then release again.",
+      );
+    }
+    const tree = deps.resolveTree(cwd, "HEAD");
+    if (subject === null) return tip.tree === tree ? tip.commit : null;
+    const short = tip.commit.slice(0, 8);
+    if (tip.subject === subject) {
+      if (tip.tree === tree) return tip.commit;
+      throw new ReleaseError(
+        "publishing-mismatch",
+        `${publishing}'s tip ${short} is the ${version} release commit over a tree the gate never passed here, so ${tag} was not cut.\n` +
+          `The push carried other work into it. Run the release again on that tip (\`git switch ${shellWord(publishing)} && git merge --ff-only origin/${shellWord(publishing)}\`): it gates the pushed tree before tagging it.`,
+      );
+    }
+    if (tip.tree === tree) {
+      throw new ReleaseError(
+        "publishing-mismatch",
+        `${publishing}'s tip ${short} carries the gated tree under "${tip.subject}" rather than "${subject}", so ${tag} was not cut.\n` +
+          "The release commit is recognised by its subject, and a pushed commit cannot be reworded: check the tip and tag it on the host by hand.",
+      );
+    }
+    const found = deps.commitWithSubject(cwd, ref, subject, since);
+    if (found !== null) {
+      throw new ReleaseError(
+        "publishing-mismatch",
+        `${publishing} has moved past the ${version} release commit ${found.slice(0, 8)}, and its tip ${short} is "${tip.subject}", so ${tag} was not cut.\n` +
+          `Only a tip that is the release commit is tagged here: check ${found.slice(0, 8)} and tag it on the host by hand.`,
+      );
+    }
+    return null;
+  }
+
+  function printAwaitingPush(publishing: string, version: string, tag: string, justCommitted: boolean): void {
+    console.log(
+      justCommitted
+        ? `\nCommitted "chore: release ${version}" here; ${tag} is cut once it reaches ${publishing}.`
+        : `\nThe release commit has not reached ${publishing} yet, so ${tag} was not cut.`,
+    );
+    console.log(
+      `Push it to ${publishing} through the repository's push flow (in an agent clone, the \`merge\` skill), keeping its subject, then run \`bun run release\` here again.`,
+    );
   }
 
   function refuseShippedEdits(work: ChangelogParse, head: string | null, version: string): void {
@@ -411,11 +476,17 @@ export function createReleaseCommand(
           result.reason === "in-sync" ? `Already at ${result.version} — nothing to release.` : `\nTag ${tag} already exists — nothing to release.`,
         );
         const remote = published === undefined ? deps.remoteTags(cwd) : published;
-        if (remote !== null && !remote.includes(tag)) console.log(`${tag} is not on the remote yet. Push it:\n  git push --tags`);
+        if (remote !== null && !remote.includes(tag)) {
+          console.log(
+            tagOn === "pushed"
+              ? `${tag} is tagged here but not on the remote. Delete it with \`git tag -d ${tag}\` and run \`bun run release\` again: it checks the publishing branch's tip, tags it and pushes the tag.`
+              : `${tag} is not on the remote yet. Push it:\n  git push --tags`,
+          );
+        }
         return;
       }
 
-      if (tagOn === "host") {
+      if (tagOn === "pushed") {
         const remote = published === undefined ? deps.remoteTags(cwd) : published;
         if (remote !== null && remote.includes(tag)) {
           console.log(`\n${tag} is already on the remote. Run \`git fetch --tags\` and \`bun run release\` here to confirm.`);
@@ -508,7 +579,7 @@ export function createReleaseCommand(
       }
 
       const writable = deps.gitWritable(cwd);
-      const hostTag = tagOn === "host" && writable;
+      const pushedTag = tagOn === "pushed" && writable;
 
       // One definition list rather than four literals whose alignment lived inside the label
       // strings, where renaming one silently misaligned the other three.
@@ -521,7 +592,7 @@ export function createReleaseCommand(
           { term: "changelog:", description: changelogNote },
           {
             term: "commit:",
-            description: !writable ? "on the host (.git is read-only)" : hostTag ? "here; the tag on the host after the push" : "here",
+            description: !writable ? "on the host (.git is read-only)" : pushedTag ? "here; tagged once pushed to the publishing branch" : "here",
           },
         ],
         { indent: 2, gap: 1 },
@@ -559,13 +630,13 @@ export function createReleaseCommand(
           );
         }
       }
-      let hostBranch: string | null = null;
-      if (hostTag) {
-        hostBranch = allowBranch ? deps.defaultBranch(cwd) : publishesFrom;
-        if (hostBranch === null) {
+      let publishing: string | null = null;
+      if (pushedTag) {
+        publishing = allowBranch ? deps.defaultBranch(cwd) : publishesFrom;
+        if (publishing === null) {
           throw new ReleaseError(
             "wrong-branch",
-            'The remote names no publishing branch, and with `tagOn: "host"` the host tags the branch the release commit is pushed to, so there is none to name.\n' +
+            'The remote names no publishing branch, and with `tagOn: "pushed"` the tag goes on the tip of the branch the release commit is pushed to, so there is none to check.\n' +
               "Set it with `git remote set-head origin --auto`, then release again.",
           );
         }
@@ -597,6 +668,15 @@ export function createReleaseCommand(
           throw partWritten(err);
         }
       };
+
+      let tipToTag: string | null = null;
+      if (publishing !== null && toCommit.length === 0) {
+        tipToTag = pushedTip(publishing, state === "committed" ? message : null, result.previous, version, tag);
+        if (tipToTag === null) {
+          printAwaitingPush(publishing, version, tag, false);
+          return;
+        }
+      }
 
       // A fresh release gates before it writes, so a red gate leaves nothing behind; any other
       // writes first, so the gate runs over the bytes the release commits.
@@ -685,25 +765,37 @@ export function createReleaseCommand(
         }
       }
 
-      if (hostBranch !== null) {
-        const ref = shellWord(hostBranch);
-        const tree = deps.resolveTree(cwd, "HEAD");
-        const check = committed
-          ? `test "$(git log -1 --format='%T %s' ${ref})" = "${tree} ${message}"`
-          : `test "$(git log -1 --format=%T ${ref})" = ${tree}`;
-        console.log(`\nThe server refuses tags, so ${tag} is cut on the host once the release commit reaches ${ref}.`);
-        console.log(`The commit reaches ${ref} through the repository's push flow (in an agent clone, the \`land\` skill). Then on the host:`);
-        console.log(`  ${check} && git tag ${tag} ${ref}`);
-        console.log("  git push && git push --tags");
-        console.log("Then run `git fetch --tags` and `bun run release` here to confirm.");
+      if (publishing !== null && tipToTag === null) {
+        printAwaitingPush(publishing, version, tag, committed && toCommit.length > 0);
         return;
       }
 
       try {
-        deps.createTag(cwd, tag);
+        deps.createTag(cwd, tag, tipToTag ?? undefined);
       } catch (err) {
         const landed = committed ? `Commit "${message}" landed unpushed and untagged; ` : "";
         throw new ReleaseError("git-error", `${landed}creating tag ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      if (tipToTag !== null) {
+        try {
+          deps.pushTag(cwd, tag);
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          let undo = `The local ${tag} is deleted again. Run the release again once the server accepts it: it checks ${publishing}'s tip before tagging.`;
+          try {
+            deps.deleteTag(cwd, tag);
+          } catch (del) {
+            undo = `Deleting the local ${tag} failed too: ${del instanceof Error ? del.message : String(del)}\nRun \`git tag -d ${tag}\`, then release again.`;
+          }
+          throw new ReleaseError(
+            "tag-push-failed",
+            `Tagged ${tipToTag.slice(0, 8)} as ${tag}, but pushing the tag to origin failed: ${why}\n${undo}`,
+          );
+        }
+        console.log(`\nTagged ${publishing}'s tip ${tipToTag.slice(0, 8)} as ${tag} and pushed the tag. Publish from the host:`);
+        console.log("  git push && git push --tags");
+        return;
       }
 
       console.log(`\nTagged ${tag}. Push:`);

@@ -374,9 +374,9 @@ sharing every flag and every line of behaviour, differing only in a membership f
 `unit` is also the run for a machine with no runtime installed. No other moment exists to close on. A browser spec between them is the developing
 agent's call — one spec on one engine where a UI change needs confirming, never the whole set and never routine.
 
-**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier, never plans it into a
-task, and never reports it as owed: the release command runs it before it tags, the ledger host runs it daily, and a break either finds reaches
-the ledger as a task without anyone being told to look.
+**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier by itself, never plans it
+into a task, and never reports it as owed: the release command runs it before it tags, on a release the user asked for, the ledger host runs it
+daily, and a break either finds reaches the ledger as a task without anyone being told to look.
 
 **The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch, never a developer's
 work tree, with `--report`. A failure lands as one open task in the ledger of the project it ran for, rewritten in place by each later failure while

@@ -26,7 +26,7 @@ const isWorkingTreeClean = (cwd: string) => git.isWorkingTreeClean(cwd, mockSpaw
 const getLatestTag = (cwd: string, prefix: string) => git.getLatestTag(cwd, prefix, mockSpawnSync);
 const getCommitsSinceTag = (cwd: string, tag: string) => git.getCommitsSinceTag(cwd, tag, mockSpawnSync);
 const getLastCommitMessage = (cwd: string) => git.getLastCommitMessage(cwd, mockSpawnSync);
-const createTag = (cwd: string, tag: string) => git.createTag(cwd, tag, mockSpawnSync);
+const createTag = (cwd: string, tag: string) => git.createTag(cwd, tag, undefined, mockSpawnSync);
 const commit = (cwd: string, message: string, files: string[]) => git.commit(cwd, message, files, mockSpawnSync);
 const tagExists = (cwd: string, tag: string) => git.tagExists(cwd, tag, mockSpawnSync);
 const readFileAtRef = (cwd: string, ref: string, path: string) => git.readFileAtRef(cwd, ref, path, mockSpawnSync);
@@ -259,6 +259,202 @@ describe("createTag()", () => {
     mockSpawnSync.mockClear();
     createTag("/cwd", "v1.0.0; rm -rf /");
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["tag", "v1.0.0; rm -rf /"]);
+  });
+
+  it("tags the named commit rather than HEAD when one is given", () => {
+    mockSpawnSync.mockReturnValue(answered(""));
+    mockSpawnSync.mockClear();
+    git.createTag("/cwd", "v1.2.3", "a".repeat(40), mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["tag", "v1.2.3", "a".repeat(40)]]);
+  });
+});
+
+describe("fetchRemote()", () => {
+  it("fetches origin quietly by default", () => {
+    mockSpawnSync.mockReturnValue(answered(""));
+    mockSpawnSync.mockClear();
+    git.fetchRemote("/cwd", undefined, mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["fetch", "--quiet", "origin"]]);
+  });
+
+  it("throws a git-error naming git's complaint when the fetch fails", () => {
+    mockSpawnSync.mockReturnValue(failed(128, "fatal: unable to access 'https://x/repo/': Could not resolve host: x"));
+    const err = caught(() => git.fetchRemote("/cwd", "origin", mockSpawnSync));
+    expect({ kind: err.kind, message: err.message }).toEqual({
+      kind: "git-error",
+      message: "git fetch failed: fatal: unable to access 'https://x/repo/': Could not resolve host: x",
+    });
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+});
+
+describe("commitSummary()", () => {
+  const SHA = "a".repeat(40);
+  const TREE = "b".repeat(40);
+
+  it("reads the commit, tree and subject of the commit the ref resolves to", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValueOnce(answered(`${SHA}\n`));
+    mockSpawnSync.mockReturnValueOnce(answered(`${SHA}\0${TREE}\0chore: release 1.1.0\n`));
+
+    const summary = git.commitSummary("/cwd", "refs/remotes/origin/main", mockSpawnSync);
+
+    expect({ summary, argv: mockSpawnSync.mock.calls.map((call) => call[1]) }).toEqual({
+      summary: { commit: SHA, tree: TREE, subject: "chore: release 1.1.0" },
+      argv: [
+        ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}"],
+        ["log", "-1", "--format=%H%x00%T%x00%s", SHA],
+      ],
+    });
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("answers null on exit 1, which is rev-parse saying the ref does not resolve", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue(failed(1, ""));
+    expect({ summary: git.commitSummary("/cwd", "refs/remotes/origin/main", mockSpawnSync), spawns: mockSpawnSync.mock.calls.length }).toEqual({
+      summary: null,
+      spawns: 1,
+    });
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("throws a git-error on any other exit, so git failing to answer does not read as a missing branch", () => {
+    mockSpawnSync.mockReturnValue(failed(128, "fatal: not a git repository"));
+    const err = caught(() => git.commitSummary("/cwd", "refs/remotes/origin/main", mockSpawnSync));
+    expect({ kind: err.kind, message: err.message }).toEqual({ kind: "git-error", message: "git rev-parse failed: fatal: not a git repository" });
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("throws a git-error rather than answering null when git was killed before it exited", () => {
+    mockSpawnSync.mockReturnValue({ status: null });
+    expect(caught(() => git.commitSummary("/cwd", "HEAD", mockSpawnSync)).kind).toBe("git-error");
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+});
+
+describe("commitWithSubject()", () => {
+  const A = "a".repeat(40);
+  const B = "b".repeat(40);
+  const C = "c".repeat(40);
+
+  it("searches since..ref when a since is given", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue(answered(""));
+    git.commitWithSubject("/cwd", "refs/remotes/origin/main", "chore: release 1.1.0", "v1.0.0", mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["log", "--format=%H%x00%s", "v1.0.0..refs/remotes/origin/main"]]);
+  });
+
+  it("searches all of ref when since is null", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue(answered(""));
+    git.commitWithSubject("/cwd", "refs/remotes/origin/main", "chore: release 1.1.0", null, mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["log", "--format=%H%x00%s", "refs/remotes/origin/main"]]);
+  });
+
+  const cases: { name: string; log: string; expected: string | null }[] = [
+    {
+      name: "answers the newest commit whose subject matches when two do",
+      log: `${A}\0fix: later\n${B}\0chore: release 1.1.0\n${C}\0chore: release 1.1.0`,
+      expected: B,
+    },
+    {
+      name: "does not take a subject that only starts with the one asked for",
+      log: `${A}\0chore: release 1.1.0-x\n${B}\0chore: release 1.1.0 again`,
+      expected: null,
+    },
+    { name: "answers null when no commit carries the subject", log: `${A}\0fix: later\n${B}\0feat: a thing`, expected: null },
+    { name: "answers null for an empty range", log: "", expected: null },
+  ];
+
+  for (const { name, log, expected } of cases) {
+    it(name, () => {
+      mockSpawnSync.mockReturnValue(answered(log));
+      expect(git.commitWithSubject("/cwd", "refs/remotes/origin/main", "chore: release 1.1.0", null, mockSpawnSync)).toBe(expected);
+      mockSpawnSync.mockReturnValue(answered(""));
+    });
+  }
+});
+
+describe("commitSummary() and commitWithSubject() against a real repository", () => {
+  function releasedFixture(): string {
+    const root = worktreeFixture({ "package.json": '{ "version": "1.0.0" }\n' });
+    const gitConfig = join(root, ".git", "config");
+    writeFileSync(
+      gitConfig,
+      readFileSync(gitConfig, "utf-8") + "[user]\n\tname = gate\n\temail = gate@fixture.invalid\n[commit]\n\tgpgsign = false\n",
+    );
+    readGit(root, ["tag", "v1.0.0"]);
+    writeFileSync(join(root, "package.json"), '{ "version": "1.0.1" }\n');
+    git.commit(root, "chore: release 1.0.1", ["package.json"]);
+    writeFileSync(join(root, "notes.md"), "later\n");
+    readGit(root, ["add", "notes.md"]);
+    readGit(root, ["commit", "-q", "-m", "docs: later notes"]);
+    return root;
+  }
+
+  const readGit = (root: string, args: string[]) => git.gitExec(args, root, undefined, worktreeGitEnv());
+
+  it("answers what `git log -1` prints for the ref's sha, tree and subject", () => {
+    const root = releasedFixture();
+    try {
+      expect(git.commitSummary(root, "HEAD")).toEqual({
+        commit: readGit(root, ["rev-parse", "HEAD"]),
+        tree: readGit(root, ["log", "-1", "--format=%T", "HEAD"]),
+        subject: "docs: later notes",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("answers null for a ref that names no commit", () => {
+    const root = releasedFixture();
+    try {
+      expect(git.commitSummary(root, "refs/remotes/origin/main")).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds the release commit below the tip, and nothing at or before since", () => {
+    const root = releasedFixture();
+    try {
+      expect({
+        found: git.commitWithSubject(root, "HEAD", "chore: release 1.0.1", "v1.0.0"),
+        beforeSince: git.commitWithSubject(root, "HEAD", "chore: release 1.0.1", "HEAD^"),
+      }).toEqual({ found: readGit(root, ["rev-parse", "HEAD^"]), beforeSince: null });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pushTag()", () => {
+  it("pushes exactly refs/tags/<tag> to origin, no branch and no --tags", () => {
+    mockSpawnSync.mockReturnValue(answered(""));
+    mockSpawnSync.mockClear();
+    git.pushTag("/cwd", "v1.2.3", undefined, mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["push", "origin", "refs/tags/v1.2.3"]]);
+  });
+
+  it("throws a git-error naming the server's refusal", () => {
+    mockSpawnSync.mockReturnValue(failed(1, "! [remote rejected] v1.2.3 -> v1.2.3 (pre-receive hook declined)"));
+    const err = caught(() => git.pushTag("/cwd", "v1.2.3", "origin", mockSpawnSync));
+    expect({ kind: err.kind, message: err.message }).toEqual({
+      kind: "git-error",
+      message: "git push failed: ! [remote rejected] v1.2.3 -> v1.2.3 (pre-receive hook declined)",
+    });
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+});
+
+describe("deleteTag()", () => {
+  it("deletes the local tag", () => {
+    mockSpawnSync.mockReturnValue(answered(""));
+    mockSpawnSync.mockClear();
+    git.deleteTag("/cwd", "v1.2.3", mockSpawnSync);
+    expect(mockSpawnSync.mock.calls.map((call) => call[1])).toEqual([["tag", "-d", "v1.2.3"]]);
   });
 });
 

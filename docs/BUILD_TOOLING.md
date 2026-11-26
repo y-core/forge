@@ -109,8 +109,9 @@ difference ([`NAMESPACES.md`][namespaces-3c] §3c).
 **`createReleaseCommand` takes a config object, not a program**, with its dependencies injected so the command is testable. Its `release` subcommand
 runs in `src/tooling/release/release.ts`'s order, held to one rule: every guard, and for a fresh release the gate, comes before the first write.
 **It is the only blessed way to cut a forge release**, and **every place a version lives is computed here** — the git tag, the `package.json` field,
-the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that says so. **It never pushes**: it prints the
-push for a human, so publishing a tag stays a deliberate act.
+the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that says so. **It pushes nothing but a release tag,
+and only under `tagOn: "pushed"`**: once the checks below pass it pushes `refs/tags/<tag>` to `origin` and no branch, and it prints the host's
+`git push && git push --tags`, so publishing to the public remote stays a deliberate act.
 
 **`stageFiles` defaults to exactly what the command writes** — `package.json`, plus `changelogFile` when a changelog is promoted — so the bump and
 the promoted section land in one release commit. A project with no changelog stages `package.json` alone, because `commit` runs `git add` and a path
@@ -134,14 +135,15 @@ range with neither is a patch. The whole range is scanned, not the tip, so a `ma
 explicit version as the single positional argument overrides the scan, and is rejected unless it is greater than the current tag.
 
 **A release is open until its tag exists, and every run re-derives it from git and the working tree.** Once V is resolved and the ancestry and push
-checks pass, the run places the repository in one of four states. The release files are the ones forge writes: `package.json`, `changelogFile` and
+checks pass, the run places the repository in one of five states. The release files are the ones forge writes: `package.json`, `changelogFile` and
 `sectionsFile`.
 
 | State | Recognised by | The run |
 | --- | --- | --- |
 | fresh | Nothing of V is written: `package.json` is not at V, and the changelog has no `[V]` heading | Guards, gate, write, then commit and tag |
 | open | V is written, in the working tree or a commit, and is untagged, and HEAD is not a committed release with nothing changed since | Write what differs, gate, then commit what differs from HEAD and tag |
-| committed | HEAD is forge's release commit for V — its subject, `package.json` at V, only staged paths and every release file — no release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag; with `tagOn: "host"`, print the host's step instead |
+| committed | HEAD is forge's release commit for V — its subject, `package.json` at V, only staged paths and every release file — no release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag; with `tagOn: "pushed"`, print the push it waits on until the publishing branch carries it |
+| pushed | With `tagOn: "pushed"`, nothing to commit, and after a fetch the publishing branch's tip carries HEAD's tree and the release subject | Gate unless the record covers it, tag that tip, push only the tag |
 | tagged | V's tag exists | Reports V as already released and stops; when a reachable remote lacks the tag, prints `git push --tags` instead of refusing |
 
 **An open release is rebuilt, not replayed.** `reopenRelease` folds `[V]`'s body back into `[Unreleased]`, merging by `###` subsection without
@@ -173,14 +175,14 @@ first checks that HEAD is still the commit the run saw, and the blob ids of any 
 writes; every step is harmless to repeat, and the next run lands in _tagged_. The output and the run sequence are
 [`src/tooling/release/README.md`][release-reopen]'s.
 
-**Where the clone is writable but its git server refuses tags, `tagOn: "host"` commits in the clone and tags on the host.** The mode is stated in
-the release config, not read from a refusal, because the run never pushes and so has nothing to read. The release commit reaches `main` as a task
-under no epic, its own push unit (§2j), and the push's squash keeps forge's release subject verbatim, since _committed_ recognises the commit by it.
-A tag cut in the clone would name a sha the push may still replace, and could not be pushed, so the run stops after the commit and prints the host's
-`git tag` step, with no `git push` — the push is the repository's push flow, `merge` in an agent clone. The tag goes on the host checkout, which is
-the server's repository, so `tag-unpushed` finds it there and the clone's next fetch brings it back. The step names the branch the remote publishes
-from, never HEAD's, and tags it after checking that its tip carries the gated tree and the release subject, which the squash keeps and the sha does
-not. A remote that names no publishing branch is refused in this mode, with no override.
+**Where the clone's push flow may replace the release commit's sha, `tagOn: "pushed"` tags the commit it pushed.** The mode is stated in the release
+config. The run that commits cuts no tag, since the push may still replace the sha, and prints what it waits on: the commit reaches `main` as a task
+under no epic, its own push unit (§2j), and the push's squash keeps forge's release subject verbatim. Only a run with nothing to commit fetches
+`origin`, and it tags the tip of the branch the remote publishes from, never HEAD, once that tip carries HEAD's tree and the release subject, or the
+tree alone where the release files were committed under another subject. With no override, it refuses as `publishing-mismatch` the release subject
+over another tree, the gated tree under another subject, and a branch moved past the release commit, and as `wrong-branch` a missing publishing
+branch. A refused tag push is `tag-push-failed`, and deletes the local tag again. The server accepts a create-only `v*` tag on a commit on `main`,
+so the tag lands in the host checkout, `tag-unpushed` finds it there, and the host publishes with `git push && git push --tags`.
 
 ### 2b. The Export Surface a Release Compares
 
@@ -447,7 +449,8 @@ not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable
 unpushed tag does not exist for a consumer and `getLatestTag` would cut the next release on it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
 an offline `verify:scheduled` for a reason unrelated to the code. An unreachable remote is reported and non-fatal. When the unpushed tag is the
-version being released, the run is _tagged_ (§2a) and prints `git push --tags`.
+version being released, the run is _tagged_ (§2a) and prints `git push --tags`, or under `tagOn: "pushed"` the `git tag -d` that lets the next run
+check the tip and push it. A tag the release pushes names a commit already on `main`, so it never names history above the amend floor.
 
 These habits carry the rest:
 

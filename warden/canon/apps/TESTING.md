@@ -503,9 +503,9 @@ the exception with its compensating control, rather than leaving the reuse undoc
 
 No other moment exists to close on.
 
-**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier, never plans it into a
-task, and never reports it as owed: `forge release` runs it before it tags, the ledger host runs it daily, and a break either finds reaches the
-ledger as a task without anyone being told to look.
+**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier by itself, never plans it
+into a task, and never reports it as owed: `forge release` runs it before it tags, on a release the user asked for, the ledger host runs it daily,
+and a break either finds reaches the ledger as a task without anyone being told to look.
 
 **The browser set starts at `scheduled`, because a step that starts a browser is heavy (§6a).** Narrowing it at `runtime` bought almost nothing:
 its reach was the Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. A broken page is found by

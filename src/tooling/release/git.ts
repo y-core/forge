@@ -6,6 +6,7 @@ import { captureStreams } from "../cli/proc";
 import type { SpawnSync, StreamCapture } from "../cli/types";
 import { worktreeGitEnv } from "../cli/worktree";
 import { parseSemVer } from "../gate/semver";
+import type { CommitSummary } from "./types";
 import { ReleaseError } from "./types";
 
 function failureDetail(r: StreamCapture): string {
@@ -194,7 +195,43 @@ export function tagExists(cwd: string, tag: string, spawn?: SpawnSync): boolean 
   return gitExec(["tag", "--list", tag], cwd, spawn) !== "";
 }
 
-/** Creates a git tag named `tag`. */
-export function createTag(cwd: string, tag: string, spawn?: SpawnSync): void {
-  gitExec(["tag", tag], cwd, spawn);
+/** Creates a git tag named `tag` on `target`, or on HEAD when none is named. */
+export function createTag(cwd: string, tag: string, target?: string, spawn?: SpawnSync): void {
+  gitExec(["tag", tag, ...(target !== undefined ? [target] : [])], cwd, spawn);
+}
+
+/** Fetches `remote`, so its remote-tracking branches are current. */
+export function fetchRemote(cwd: string, remote = "origin", spawn?: SpawnSync): void {
+  gitExec(["fetch", "--quiet", remote], cwd, spawn);
+}
+
+/** The commit, tree and subject `ref` names, or `null` when it does not resolve. */
+export function commitSummary(cwd: string, ref: string, spawn?: SpawnSync): CommitSummary | null {
+  const env = worktreeGitEnv();
+  const r = captureStreams("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd, env }, spawn);
+  if (r.exited && r.code === 1) return null;
+  if (r.code !== 0) throw new ReleaseError("git-error", `git rev-parse failed: ${failureDetail(r)}`);
+  const [sha = "", tree = "", subject = ""] = gitExec(["log", "-1", "--format=%H%x00%T%x00%s", r.stdout.trim()], cwd, spawn, env).split("\0");
+  return { commit: sha, tree, subject };
+}
+
+/** The newest commit in `since..ref`, or all of `ref` when `since` is `null`, whose subject is exactly `subject`, or `null`. */
+export function commitWithSubject(cwd: string, ref: string, subject: string, since: string | null, spawn?: SpawnSync): string | null {
+  const range = since === null ? ref : `${since}..${ref}`;
+  const output = gitExec(["log", "--format=%H%x00%s", range], cwd, spawn, worktreeGitEnv());
+  for (const line of output.split("\n")) {
+    const [sha = "", lineSubject] = line.split("\0");
+    if (lineSubject === subject) return sha;
+  }
+  return null;
+}
+
+/** Pushes `refs/tags/<tag>` to `remote`, and nothing else. */
+export function pushTag(cwd: string, tag: string, remote = "origin", spawn?: SpawnSync): void {
+  gitExec(["push", remote, `refs/tags/${tag}`], cwd, spawn);
+}
+
+/** Deletes the local `tag`. */
+export function deleteTag(cwd: string, tag: string, spawn?: SpawnSync): void {
+  gitExec(["tag", "-d", tag], cwd, spawn);
 }

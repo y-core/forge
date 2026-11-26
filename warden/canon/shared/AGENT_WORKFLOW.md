@@ -165,7 +165,8 @@ moment (`TESTING.md` §6):
   filed under no epic, none of the set it handed off (§5a). It runs on the rebased tip of that last push unit, **before its push** (§5b), so an
   epic never ends with `main` red on the server. The verdict is the report, and a red one is new work, filed in the same wave and handed off like
   any other; the push waits for it. It is the whole `verify` command and any cross-cutting suite. It runs neither per batch, nor per task, nor for
-  a review handoff. `verify:scheduled` is never part of it: that tier belongs to the tag and the daily cron, and no agent runs it (`TESTING.md` §6).
+  a review handoff. `verify:scheduled` is never part of it: that tier belongs to the tag and the daily cron, and an agent reaches it only through
+  the release command, on the user's request (§4b; `TESTING.md` §6).
 - **Every other push runs the task check on the rebased tip** — the tree that will be `main` on the server, which no reviewer has seen whole when
   more than one task is merged into it (§5b).
 - **The reviewer's baseline is the `unit` tier with `--reuse`** — never the full gate. The author's receipt for the same tree answers it at once
@@ -242,15 +243,17 @@ around either is a way around the user's decision:
 
 - **A non-fast-forward means `origin/main` moved.** Fetch, rebase under §5b's patch rule, re-run the check, and push again.
 - **A dirty working tree on the host means somebody is working there.** Stop and tell the user; the push would land under their edits.
-- **Only `main` and `task/<id>` are ever pushed.** A branch a tool made for itself, such as the `worktree-agent-*` branch a worktree-isolated
-  sub-agent leaves, stays local.
+- **Only `main` and `task/<id>` are ever pushed**, and the one release tag a project's release tool pushes itself (below). A branch a tool made
+  for itself, such as the `worktree-agent-*` branch a worktree-isolated sub-agent leaves, stays local.
 - **A push takes no option, no `+` or `:` refspec, and no config that changes what it does.** Force, mirror, tags, deletion and pruning are all
   spelled one of those ways. The fleet settings deny the spellings on the command line, a `-c` before `push` included, but a setting persisted in
   git config is out of any deny list's reach, so the rule is the session's to hold, not the settings'. No session deletes a ref on the server,
   so a backup branch pushed there is the user's to prune.
 
-**What leaves the git server is the user's.** The user pushes to the public remote and cuts release tags from the host; the server refuses tags.
-Do not offer to publish, tag or release, or remind.
+**A release is cut only when the user asks for one, and what leaves the git server is the user's.** The session runs the repository's release
+command, which gates the tree with `verify:scheduled`; its commit reaches `main` as its own push unit (§5b), and the command then tags the
+pushed tip and pushes that one tag, a create-only `v*` the server accepts on a commit already on `main`. The session never spells a tag push
+itself. The user pushes `main` and the tags to the public remote from the host. Do not offer to publish, tag or release, or remind.
 
 ---
 

@@ -23,8 +23,8 @@ epic, the checked-out branch, any open handoff, the merged but unpushed wave wit
 | Browser spec | one spec, one engine | Only where a UI change needs confirming (`TESTING.md` §6a) |
 
 Not findable from `package.json`: `bun run verify --only <step>` runs one step, and `bun run verify --list` prints a tier's steps. The steps live in
-`config/steps.config.ts`, and the gate is `TEST_RUNNERS.md` §6. `verify:scheduled` belongs to the release command and the daily cron; agents do not
-run it.
+`config/steps.config.ts`, and the gate is `TEST_RUNNERS.md` §6. `verify:scheduled` belongs to the release command and the daily cron; agents run
+it only through a release the user asked for.
 
 Use `oxlint` (not `eslint`), `bun fmt` (not `prettier`, `oxfmt` or `biome`), `bun check` (not `tsc`), and the custom types stub (not `bun-types`).
 

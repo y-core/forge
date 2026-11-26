@@ -21,7 +21,9 @@ export type ReleaseErrorKind =
   | "release-part-written"
   | "release-partial"
   | "index-stale"
-  | "commit-mismatch";
+  | "commit-mismatch"
+  | "publishing-mismatch"
+  | "tag-push-failed";
 
 /** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
@@ -63,8 +65,8 @@ export interface ReleaseCommandConfig {
   sectionsFile?: string;
   /** The gate run before the tag is cut, as argv. Defaults to `["bun", "run", "verify"]`. */
   gateCommand?: string[];
-  /** Where the release tag is cut: `"here"`, or `"host"` for a writable clone whose git server refuses tags, which commits and prints the host's `git tag` step for after the push. Defaults to `"here"`. */
-  tagOn?: "here" | "host";
+  /** Where the release tag is cut: `"here"` on HEAD, or `"pushed"` for a clone whose push flow may replace the release commit's sha — it commits, and a later run tags the publishing branch's tip once that carries the gated tree and the release subject, and pushes only that tag. Defaults to `"here"`. */
+  tagOn?: "here" | "pushed";
 }
 
 /** A green gate on `baseTree`, with the release files forge derived from it, so a resumed release on the same bytes can skip running it again. */
@@ -78,6 +80,13 @@ export interface GateRecord {
   passedAt: string;
 }
 
+/** A commit's sha, tree and subject line, as {@link ReleaseDeps.commitSummary} reads them. */
+export interface CommitSummary {
+  commit: string;
+  tree: string;
+  subject: string;
+}
+
 /** Injectable dependencies of {@link createReleaseCommand}, faked in tests. */
 export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
@@ -88,7 +97,18 @@ export interface ReleaseDeps {
   /** Every path the HEAD commit changed against its parent. */
   committedPaths: (cwd: string) => string[];
   tagExists: (cwd: string, tag: string) => boolean;
-  createTag: (cwd: string, tag: string) => void;
+  /** Creates `tag` on `commit`, or on HEAD when none is named. */
+  createTag: (cwd: string, tag: string, commit?: string) => void;
+  /** Fetches `origin`, so its remote-tracking branches are current. */
+  fetchRemote: (cwd: string) => void;
+  /** The commit, tree and subject `ref` names, or `null` when it does not resolve. */
+  commitSummary: (cwd: string, ref: string) => CommitSummary | null;
+  /** The newest commit in `since..ref`, or all of `ref` when `since` is `null`, whose subject is exactly `subject`, or `null`. */
+  commitWithSubject: (cwd: string, ref: string, subject: string, since: string | null) => string | null;
+  /** Pushes `refs/tags/<tag>` to `origin`, and nothing else. */
+  pushTag: (cwd: string, tag: string) => void;
+  /** Deletes the local `tag`. */
+  deleteTag: (cwd: string, tag: string) => void;
   /** Reads the changelog, or `null` when the file does not exist. */
   readChangelog: (cwd: string, file: string) => string | null;
   writeChangelog: (cwd: string, file: string, source: string) => void;
