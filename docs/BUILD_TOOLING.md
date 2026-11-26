@@ -49,33 +49,28 @@ Signatures, worked examples and the flag-parsing table live in `src/tooling/cli/
 ### 1a. Commands Are Values
 
 **`createCommand` takes a config object and returns a command; nothing is registered by side effect.** `addCommand(parent, child)` links two of
-those values into a tree, and `execute(root)` walks it. The handler key is `run`.
+those values into a tree, `execute(root)` walks it, and the handler key is `run`. A tree is data a caller holds, so it can be built, inspected and
+driven to completion without a process: `execute` accepts an explicit `argv` and an injectable `CliIO`, which is why forge's own CLIs are covered by
+ordinary unit tests rather than by spawning themselves.
 
-The consequence is testability: a command tree is data a caller holds, so it can be built, inspected, and driven to completion without a process.
-`execute` accepts an explicit `argv` and an injectable `CliIO`, which is why forge's own CLIs are covered by ordinary unit tests rather than by
-spawning themselves.
-
-**A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§2a) and `createGateCommand` (§2f) both return a command from
+**A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§2a) and `createGateCommand` (§2f) each return a command from
 a config whose first field is `cwd`; the `bin.ts` a package script points at resolves `cwd` and calls `execute`. Both ship from
 `@y-core/forge/tooling/gate` — a factory reachable only from a repository's own binding is a script wearing a factory's clothes.
 
 ### 1b. Flags Are a Typed Record
 
 **Flags are a record keyed by long name, not an array of definitions.** The key _is_ the `--long` form and `short` is a field on the definition, so
-a flag cannot be declared with a name that disagrees with the one that reads it.
+a flag cannot be declared under a name that disagrees with the one that reads it.
 
 **The flag types are `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's flag argument from the declaration: a `string` flag with
 a `default` or `required: true` resolves to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No handler
-casts, and a renamed flag fails to typecheck at its reader.
+casts, and a renamed flag fails to typecheck at its reader. **Number parsing is deliberately absent**: a numeric flag is a string plus the caller's
+own validation, which keeps the parser total.
 
-**Number parsing is deliberately absent.** A numeric flag is a string plus the caller's own validation, which keeps the parser total — it has no way
-to fail on input it was handed.
-
-**A repeatable flag is opt-in per definition, and repeating an unmarked one is refused.** `multiple: true` resolves that flag to `string[]`; without
-it a second occurrence is an error rather than a last-wins overwrite, because silently discarding an argument the caller typed is the failure mode a
-parser exists to prevent. `ResolvedFlags` tests `multiple` **before** `default` and `required`, so a repeatable flag is `string[]` whether or not it
-carries either. **A comma-joined string is still the default shape for a list** — the gate runner takes `--only lint,typecheck` and splits it — and
-`multiple` is for the case where a value may itself contain a comma.
+**A repeatable flag is opt-in per definition, and repeating an unmarked one is refused** rather than overwritten last-wins, because silently
+discarding an argument the caller typed is the failure a parser exists to prevent. `multiple: true` resolves the flag to `string[]`, and
+`ResolvedFlags` tests it **before** `default` and `required`, so it is `string[]` with or without either. **A comma-joined string stays the default
+shape for a list** — the gate takes `--only lint,typecheck` and splits it — and `multiple` is for a value that may itself contain a comma.
 
 ### 1c. Errors Carry a Kind, Not an Exit Code
 
@@ -99,148 +94,129 @@ invariance is discharged.
 
 **The two project verbs are two namespaces, and `tooling/release` sits on top of `tooling/gate`.** The gate is the lower layer: besides its own
 command factory, steps and checks, it owns the changelog parser, the semver arithmetic and the barrel parser, because the release workflow and the
-gate's own changelog and export-surface checks both read them. Declaring the dependency the other way made the two namespaces name each other at
-value, which `validateNoValueCycles` rejects.
+gate's changelog and export-surface checks both read them. The dependency the other way round made the two namespaces name each other at value,
+which `validateNoValueCycles` rejects.
 
 **What the barrel publishes is decided by one question: would a consuming app plausibly call this itself?** A symbol that exists only to serve the
-command factories stays out of `mod.ts` — the git and `package.json` helpers in `src/tooling/release/` (§2c), the gate's formatters (§2f). The
-test is the _caller_, not difficulty or stability: a helper is unpublished because nobody outside would reach for it.
+command factories stays out of `mod.ts` — the git and `package.json` helpers (§2c), the gate's formatters (§2f). The test is the _caller_, not
+difficulty or stability.
 
 **A prebuilt-JavaScript subpath is a generated copy of its source, so nothing is ever added to it by hand** — its drift check fails on the
 difference ([`NAMESPACES.md`][namespaces-3c] §3c).
 
 ### 2a. createReleaseCommand — Automated Release Workflow
 
-**`createReleaseCommand` takes a config object, not a program**, and its dependencies are injected so the command is testable.
+**`createReleaseCommand` takes a config object, not a program**, with its dependencies injected so the command is testable. Its `release` subcommand
+runs in `src/tooling/release/release.ts`'s order, held to one rule: every guard, and for a fresh release the gate, comes before the first write.
+**It is the only blessed way to cut a forge release**, and **every place a version lives is computed here** — the git tag, the `package.json` field,
+the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that says so. **It never pushes**: it prints the
+push for a human, so publishing a tag stays a deliberate act.
 
-It builds a `release` subcommand whose step order is `src/tooling/release/release.ts`'s; the ordering rule this section holds it to is that every
-guard comes before the first write, and so does the gate for a fresh release. **It is the only blessed way to cut a forge release**, and **every
-place a version lives is computed here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere is
-a defect, and §2e is the gate that says so.
-
-**It never pushes.** The last thing it prints is the push command for a human to run, so the irreversible step — publishing a tag to a remote —
-stays a deliberate act.
-
-**`stageFiles` defaults to exactly what this command writes** — `package.json`, plus `changelogFile` when a changelog is promoted — so the bump
-and the promoted section land in the one release commit rather than a bump commit chasing a prose commit. A project with no changelog stages
-`package.json` alone, because `commit` runs `git add` and naming a path that does not exist would fail the release outright.
-
-**`sectionsFile` is the one exception, because it is not a project's choice.** The section manifest is forge's own write, and the gate's
-`checkChangelog` refuses a version with no recorded digest — so it is staged on every run that promotes a changelog, whether or not `stageFiles`
-names it. A run that promotes nothing neither writes it nor stages it, for the same reason the changelog is left out of that run's default. A
-tagged release may be missing a section only from the bottom, below the oldest heading.
+**`stageFiles` defaults to exactly what the command writes** — `package.json`, plus `changelogFile` when a changelog is promoted — so the bump and
+the promoted section land in one release commit. A project with no changelog stages `package.json` alone, because `commit` runs `git add` and a path
+that does not exist would fail the release. **`sectionsFile` is staged on every run that promotes a changelog, whatever `stageFiles` names**: the
+section manifest is forge's own write, and `checkChangelog` refuses a version with no recorded digest. A run that promotes nothing neither writes
+nor stages it. A tagged release may be missing a section only from the bottom, below the oldest heading.
 
 **Every refusal is a guard, not a convenience.** [`src/tooling/release/README.md`][release-refusals] lists each with the flag that overrides it,
-where one does; an override defeats exactly one guard, and a malformed changelog has none (§2d).
+where one does; an override defeats exactly one guard, and a malformed changelog has none (§2d). **A refusal `throw`s a `ReleaseError` and never
+calls `exit`**: `execute` renders it as `Error: <message>` and exits 1 (§1c), so a test reaches the guard without mocking a process. **The changelog
+verdict comes after the version is resolved** — it has to know whether commits exist — **and before `package.json` is written**, so no mutation
+precedes a refusal.
 
-**The gate is `gateCommand`, defaulting to `bun run verify`.** `forge release` is a first-party verb on the shipped CLI with an optional config
-module, so a consumer whose verification script is named otherwise states it in that module rather than passing `--allow-unverified` on every
-release, which is the guard permanently off.
+**The gate is `gateCommand`, defaulting to `bun run verify`**, and a consumer whose script is named otherwise states it in the optional config
+module of `forge release` rather than passing `--allow-unverified` on every release, which is the guard permanently off. **The gate runs here, not
+only in CI**: `.github/workflows/release.yml` fires `on: push: tags`, so a `verify:unit` failure there leaves a public tag with no asset,
+recoverable only by deleting a published tag or burning the version. The branch check runs after the re-tag check and before the first write.
 
-**The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify:unit` runs against a tag
-that is already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are
-deleting a published tag or burning the version. The branch check runs after the re-tag check and before the first write.
+**The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject prefix bumps major, `minor:` bumps minor, and a
+range with neither is a patch. The whole range is scanned, not the tip, so a `major:` commit followed by `fix typo` does not ship as a patch. An
+explicit version as the single positional argument overrides the scan, and is rejected unless it is greater than the current tag.
 
-**A release is open until its tag exists, and every run re-derives it from the working tree.** After V is resolved and the ancestry and push
-checks pass, the run places the repository in one of four states, reading git and the working tree alone. The release files are the ones forge
-writes: `package.json`, `changelogFile` and `sectionsFile`.
+**A release is open until its tag exists, and every run re-derives it from git and the working tree.** Once V is resolved and the ancestry and push
+checks pass, the run places the repository in one of four states. The release files are the ones forge writes: `package.json`, `changelogFile` and
+`sectionsFile`.
 
 | State | Recognised by | The run |
 | --- | --- | --- |
 | fresh | Nothing of V is written: `package.json` is not at V, and the changelog has no `[V]` heading | Guards, gate, write, then commit and tag |
-| open | V is written, in the working tree or in a commit, and is untagged, and HEAD is not a committed release with nothing changed since | Write what differs, gate, then commit what differs from HEAD and tag |
-| committed | HEAD is forge's release commit for V: its subject, its `package.json` at V, only staged paths and every release file. No release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag; with `tagOn: "host"`, print the host's step instead |
-| tagged | V's tag exists | Reports that V is already released and stops. When a reachable remote lacks the tag, it prints `git push --tags` instead of refusing |
+| open | V is written, in the working tree or a commit, and is untagged, and HEAD is not a committed release with nothing changed since | Write what differs, gate, then commit what differs from HEAD and tag |
+| committed | HEAD is forge's release commit for V — its subject, `package.json` at V, only staged paths and every release file — no release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag; with `tagOn: "host"`, print the host's step instead |
+| tagged | V's tag exists | Reports V as already released and stops; when a reachable remote lacks the tag, prints `git push --tags` instead of refusing |
 
-**An open release is rebuilt, not replayed.** `reopenRelease` folds `[V]`'s body back into `[Unreleased]`, merging the two by `###` subsection
-without dropping a line, and `promoteUnreleased` cuts exactly one `[V]` from the result, so an entry added to either after the write lands in
-`[V]`. `package.json` is the working file with `version` set to V, and the sections file is built from the rebuilt changelog. Only a file whose
-rebuilt content differs is written, and the write comes before the gate, so the gate runs over the bytes the commit carries. **The date changes
-only when the content does**: a rebuild that reproduces the working changelog under `[V]`'s own date, with `[V]`'s body still matching its
-digest in the sections file, keeps it, so a resume on a later day does not re-date the release. One that folds in a new entry, or finds `[V]`'s
-body edited, takes today's date.
+**An open release is rebuilt, not replayed.** `reopenRelease` folds `[V]`'s body back into `[Unreleased]`, merging by `###` subsection without
+dropping a line, and `promoteUnreleased` cuts exactly one `[V]` from the result, so an entry added to either after the write lands in `[V]`.
+`package.json` is the working file with `version` set to V, and the sections file is built from the rebuilt changelog. Only a file whose rebuilt
+content differs is written, before the gate, so the gate runs over the bytes the commit carries. **The date changes only when the content does**: a
+rebuild that reproduces the working changelog under `[V]`'s own date, with `[V]`'s body still matching its recorded digest, keeps the date; one that
+folds in a new entry or finds `[V]`'s body edited takes today's.
 
-**The release commit carries only the release files that differ from HEAD.** Work committed between runs may already hold some or all of them;
-when none differ, HEAD is tagged with no commit. A staged path outside the release files, such as a lockfile named in `stageFiles`, is committed
-only when the working tree changes it. Any other changed path is refused as `working-tree-dirty`, and `--allow-dirty` keeps its meaning.
+**The release commit carries only the release files that differ from HEAD**, and when none differ HEAD is tagged with no commit. A staged path
+outside the release files, such as a lockfile named in `stageFiles`, is committed only when the working tree changes it; any other changed path is
+refused as `working-tree-dirty`, and `--allow-dirty` keeps its meaning. An open release still refuses:
 
-What an open release still refuses:
+- **An edit to what shipped**, as `release-partial`: `package.json` changed beyond `version`, or any released section other than `[V]`. Its recovery
+  restores the file with `git show HEAD:./<file>`, which writes nothing to `.git` and overwrites nothing.
+- **A second release before the first is finished**, as `version-mismatch`, naming the version to finish: an untagged version other than the
+  resolved one is written in the working `package.json` or changelog, or committed at HEAD.
+- **A second promotion**, at the lower layer (§2d): `promoteUnreleased` over an existing `[V]`, `reopenRelease` of a `[V]` that is not newest.
 
-- **`release-partial` refuses an edit to what shipped**: `package.json` changed beyond `version`, or any released section other than `[V]`.
-  Its recovery restores the file from HEAD with `git show HEAD:./<file>`, which needs no write to `.git`, and nothing is overwritten.
-- **An unfinished release is finished before the next one starts.** When an untagged version other than the resolved one is written, in the
-  working `package.json` or changelog, or is committed at HEAD, the run refuses as `version-mismatch` and names the version to finish.
-- **The lower layer refuses a second promotion** (§2d): `promoteUnreleased` an existing `[V]`, `reopenRelease` a `[V]` that is not newest.
+**A green gate is recorded, and a later run reruns it unless the record matches.** `.forge/release/<tag>.json`, under the ignored `.forge/`, binds
+the version to the base tree, a hash of each staged file as committed, and the gate command. The base is HEAD's tree, or for _committed_ `HEAD^`'s
+tree with HEAD's blobs. A squash keeps every tree and no sha ([`AGENT_WORKFLOW.md`][aw-5b] §5b), so the record survives the push. Forge only reads
+the record, never executes it, and a record it cannot write is reported, not refused.
 
-**A green gate is recorded, and a later run reruns it unless the record matches.** The record, `.forge/release/<tag>.json` under the ignored
-`.forge/`, binds the version to the base tree, a hash of each staged file as committed, and the gate command. The base is HEAD's tree, or `HEAD^`'s
-with HEAD's blobs for _committed_. A squash keeps every tree and no sha ([`AGENT_WORKFLOW.md`][aw-5b] §5b), so the record survives the push. Forge
-only reads the record, never executes it, and a record it cannot write is reported, not refused.
-
-**When `.git` is read-only, the run stops before the commit and prints the host's steps.** `gitWritable` resolves the git directory and tests it for
-write access; `EROFS` and `EACCES` both read as read-only. The summary's `commit:` row reports it before the gate runs, `--dry` included. The steps
-are printed, never written as a script: a script the workspace writes and the host runs is workspace code the host executes. Each set opens by
-checking that HEAD is still the commit the run saw, and the blob ids of any file it commits, so a host whose tree has moved stops before it writes.
-Every step fails harmlessly when repeated, and the next run lands in _tagged_. The output and the sequence of runs are
+**When `.git` is read-only, the run stops before the commit and prints the host's steps.** `gitWritable` tests the resolved git directory for write
+access, reading `EROFS` and `EACCES` alike as read-only, and the summary's `commit:` row reports it before the gate runs, `--dry` included. The
+steps are printed, never written as a script, because a script the workspace writes and the host runs is workspace code the host executes. Each set
+first checks that HEAD is still the commit the run saw, and the blob ids of any file it commits, so a host whose tree has moved stops before it
+writes; every step is harmless to repeat, and the next run lands in _tagged_. The output and the run sequence are
 [`src/tooling/release/README.md`][release-reopen]'s.
 
-**Where the clone is writable and its git server refuses tags, the release commit is made in the clone and the tag on the host.** The release commit
-reaches `main` as a task under no epic, its own push unit (§2j), and the push's squash keeps forge's release subject verbatim, because the
-_committed_ state recognises the commit by it. The tag is the user's, cut on the host on the publishing branch after the push: the host checkout is
-the server's repository, so the tag is where `tag-unpushed` looks for it, and the clone's next fetch brings it back. A tag made in the clone would
-name a sha the push may still replace and could not be pushed, so the run stops after the commit and prints the host's `git tag` step instead. The
-mode is stated as `tagOn: "host"` in the release config rather than read from a refusal, because the run never pushes and so has nothing to read.
-The host step names the branch the remote publishes from, never HEAD's branch, and tags it after checking that its tip carries the gated tree and
-the release subject, which the squash keeps and the sha does not. The run prints no `git push`: the push is the repository's push flow, `merge` in
-an agent clone. A remote that names no publishing branch is refused in this mode, with no override.
-
-**A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error` as `Error: <message>` and exits 1 (§1c), so the
-operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
-version is resolved** — it has to know whether commits exist — **and before `package.json` is written**, so no mutation can precede a refusal.
-
-**The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject prefix bumps major, a `minor:` prefix bumps minor, a
-range with neither is a patch. Scanning the whole range rather than the tip is the point — a cycle holding a `major:` commit followed by `fix typo`
-must not ship as a patch. An explicit version as the command's single positional argument overrides the scan, and is rejected unless it is greater
-than the current tag.
+**Where the clone is writable but its git server refuses tags, `tagOn: "host"` commits in the clone and tags on the host.** The mode is stated in
+the release config, not read from a refusal, because the run never pushes and so has nothing to read. The release commit reaches `main` as a task
+under no epic, its own push unit (§2j), and the push's squash keeps forge's release subject verbatim, since _committed_ recognises the commit by it.
+A tag cut in the clone would name a sha the push may still replace, and could not be pushed, so the run stops after the commit and prints the host's
+`git tag` step, with no `git push` — the push is the repository's push flow, `merge` in an agent clone. The tag goes on the host checkout, which is
+the server's repository, so `tag-unpushed` finds it there and the clone's next fetch brings it back. The step names the branch the remote publishes
+from, never HEAD's, and tags it after checking that its tip carries the gated tree and the release subject, which the squash keeps and the sha does
+not. A remote that names no publishing branch is refused in this mode, with no override.
 
 ### 2b. The Export Surface a Release Compares
 
-**The surface is a set of `<specifier>#<exportName>` pairs**, harvested from every `mod.ts` the `exports` map names as a target — the same barrel
-parse `checkExports` uses, not a second parser. `removedSurfaceSince` builds it twice: at the latest tag, from `git show <tag>:<path>` (§2c), and
-from the working tree, so a `--dry` run reflects uncommitted work. An entry the tag published and the tree omits is the finding.
+**The surface is a set of `<specifier>#<exportName>` pairs**, harvested from every `mod.ts` the `exports` map names as a target — the barrel parse
+`checkExports` uses, not a second parser. `removedSurfaceSince` builds it at the latest tag, from `git show <tag>:<path>` (§2c), and from the
+working tree, so a `--dry` run reflects uncommitted work. An entry the tag published and the tree omits is the finding.
 
-**The bar the guard holds to is `auto-minor`, never `auto-major`.** A shrinking surface refuses an `auto-patch` and nothing else; `auto-minor`,
-`auto-major`, an explicit version and a first release all pass. A major-version decision is too consequential to be driven by a heuristic over
-barrel names, so this check never demands one — its whole job is catching an accidental patch across the patch→minor line, which is where a `^`
-range silently breaks.
+**The bar is `auto-minor`, never `auto-major`.** A shrinking surface refuses an `auto-patch` and nothing else; `auto-minor`, `auto-major`, an
+explicit version and a first release all pass. A major-version decision is too consequential for a heuristic over barrel names, so the check only
+catches an accidental patch across the patch→minor line, which is where a `^` range silently breaks.
 
 Deliberately not compared: **subpath patterns** (a `*` specifier names no barrel, and forge's patterns name publish files, not symbols),
-**non-barrel targets** (an entry pointing at anything but `.../mod.ts`), and **type-level narrowing** — a symbol surviving with a tighter signature
-needs a type checker, not a name set, and that gap is why the guard has an override rather than a veto.
+**non-barrel targets** (anything but `.../mod.ts`), and **type-level narrowing** — a symbol surviving with a tighter signature needs a type checker,
+not a name set, which is why the guard has an override rather than a veto.
 
-**A whole subpath deleted from the map reports every one of its symbols as removed**, not one "subpath removed" line: the honest reading of a
-symbol-keyed set, and it needs no extra machinery. **A `package.json` this command cannot parse yields an empty set**, making the guard a no-op
-rather than a new way for a differently-shaped repository to fail its release.
+**A subpath deleted from the map reports every one of its symbols as removed**, the honest reading of a symbol-keyed set, needing no extra
+machinery. **A `package.json` the command cannot parse yields an empty set**, so the guard is a no-op rather than a new way for a differently-shaped
+repository to fail its release.
 
 ### 2c. Git and Manifest Internals
 
-**The git and `package.json` helpers in `src/tooling/release/` are unpublished.** They exist to serve the two command factories and nothing else. A
-consumer that needs `git tag` has `git`; what forge publishes is the _policy_ over it — the ordered, refusing release command — not a thin
-`git` wrapper it would have to reimplement the policy around. `checkExports` enforces the line: an `@public` tag on any of them fails the
-gate until it is either exported or retagged.
+**The git and `package.json` helpers in `src/tooling/release/` are unpublished**; they serve the two command factories and nothing else. A consumer
+that needs `git tag` has `git`: what forge publishes is the _policy_ — the ordered, refusing release command — not a thin wrapper it would have to
+reimplement the policy around. `checkExports` enforces the line: an `@public` tag on any of them fails the gate until it is exported or retagged.
 
-**Every one of them takes `cwd` first.** These shell out to `git`, and a git command with no working directory is a command against whatever
-directory the process happens to be in — so the caller states it rather than inheriting it.
+**Every one of them takes `cwd` first**, because a git command with no working directory runs against whatever directory the process happens to be
+in.
 
 **`getCommitsSinceTag` stays on `--oneline` rather than a bare subject format**, and the bump scan strips the abbreviated sha itself. The helper
-answers two questions at once — what the subjects are, and whether the range holds anything at all — and a subject-only format would emit an empty
-line for a commit with an empty subject, which the emptiness filter drops. A range of such commits would then read as "nothing to release", the
-worse failure of the two.
+answers both what the subjects are and whether the range holds anything; a subject-only format emits an empty line for an empty subject, which the
+emptiness filter drops, so a range of such commits would read as "nothing to release" — the worse failure.
 
-**`readFileAtRef` returns `null` rather than throwing when the path is absent at the ref.** It is the one helper that reads a file out of history —
-`git show <ref>:<path>` — and its caller (§2b) compares two points in time, where a barrel absent at the old tag is data, not a failure: it
-published nothing then, so it can have lost nothing since. Every other git failure collapses into the same `null`, which is the cost of that reading
-— acceptable because the guard is overridable, so a surface it under-reports blocks nothing.
+**`readFileAtRef` returns `null` rather than throwing when the path is absent at the ref.** It reads a file out of history with `git show
+<ref>:<path>`, and its caller (§2b) compares two points in time, where a barrel absent at the old tag published nothing then and so has lost nothing
+since. Every other git failure collapses into the same `null`, which is acceptable because the guard is overridable: a surface it under-reports
+blocks nothing.
 
 ### 2d. Changelog Promotion — the Unreleased Contract
 
@@ -256,136 +232,124 @@ because the two are indistinguishable in review and only one of them a machine c
 **The date is the releaser's local calendar day.** `toISOString()` reads UTC and would stamp tomorrow for an evening release in a positive-offset
 zone; a changelog reader means the day the release happened where it happened.
 
-**An `[Unreleased]` section is empty when it holds nothing but whitespace, `---` separators, or the literal `_Nothing yet._` placeholder** — the
-placeholder promotion itself writes. Empty plus commits since the tag is the refusal in §2a.
+**An `[Unreleased]` section is empty when it holds nothing but whitespace, `---` separators, or the literal `_Nothing yet._` placeholder** that
+promotion writes. Empty plus commits since the tag is a refusal (§2a).
 
-`--allow-empty-changelog` is for a genuinely entry-free tooling release, and two properties keep it from becoming routine. **It does not license a
-malformed document** — an unparseable changelog is a separate refusal with no escape, because promotion has nothing to act on. **It still
-promotes**, so the section ships as a permanent `_Nothing yet._` entry in the released record; skipping promotion would leave the topmost released
-heading behind `package.json` and fail §2e on the next `bun run verify:scheduled`.
+`--allow-empty-changelog` is for a genuinely entry-free tooling release. **It does not license a malformed document** — an unparseable changelog is
+a separate refusal with no escape, because promotion has nothing to act on. **It still promotes**, so the release ships a permanent `_Nothing yet._`
+entry; skipping promotion would leave the topmost released heading behind `package.json` and fail §2e on the next `bun run verify:scheduled`.
 
-**The link reference definition is best-effort.** Its base URL comes from `package.json`'s `repository` field, normalised by stripping a `git+`
-prefix and a `.git` suffix. Absent or unusable, the definition is omitted and the promotion still succeeds — a consumer with no known remote must
-still be able to release. A first release omits it too: a compare link to nothing is worse than none. Reading the URL from `git remote get-url` was
-rejected — it breaks in a clone with a renamed remote, and it puts a subprocess on a path that is otherwise pure metadata.
+**The link reference definition is best-effort.** Its base URL is `package.json`'s `repository` field, stripped of a `git+` prefix and a `.git`
+suffix. Absent or unusable, the definition is omitted and promotion still succeeds, so a consumer with no known remote can release; a first release
+omits it too, since a compare link to nothing is worse than none. The URL is never read from `git remote get-url`, which breaks in a clone with a
+renamed remote and puts a subprocess on a path that is otherwise pure metadata.
 
-**`src/tooling/gate/changelog.ts` returns its failures instead of throwing, diverging from the `ReleaseError` style of the rest of the namespace.**
-The divergence is the gate's doing: §2e must report every malformed heading in one run, and an exception stops at the first. The module is also
-import-free — no clock, no filesystem, no git — so `release.ts` converts a returned failure into a `ReleaseError` at its own boundary and the file
-I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
+**`src/tooling/gate/changelog.ts` returns its failures instead of throwing**, unlike the rest of the namespace, because §2e must report every
+malformed heading in one run and an exception stops at the first. The module is import-free — no clock, no filesystem, no git — so `release.ts`
+converts a returned failure into a `ReleaseError` at its own boundary, and the file I/O lives with the other readers in
+`src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `static`-tier gate step** — `config/steps.config.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6]
-§6). The step asks nothing of `[Unreleased]` beyond its place, so an empty one passes and a work-in-progress commit is never held for an entry. A
-drifted heading or an edited released section is caught on the run that introduced it, not at release.
-
-**It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
-with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.
+**`CHANGELOG.md` is checked by a `static`-tier gate step** in the table `config/steps.config.ts` owns ([`TEST_RUNNERS.md`][testing-6] §6). It asks
+nothing of `[Unreleased]` beyond its place, so an empty one passes and a work-in-progress commit is never held for an entry, while a drifted heading
+or an edited released section is caught on the run that introduced it. **It imports the parser from `src/tooling/gate/mod.ts`**, the one release
+promotes with: two parsers for one document is the drift the gate exists to catch.
 
 Failing invariants:
 
 - The grammar parses — one `[Unreleased]`, first, and every other entry heading well-formed.
 - No version appears twice, and versions run strictly descending.
 - Dates are non-increasing downward; equal dates are allowed and do occur.
-- **The topmost released heading equals `package.json`'s version.** This is the drift detector, and the reason the gate exists: it catches a heading
-  hand-written for a version no tag was ever cut for.
+- **The topmost released heading equals `package.json`'s version** — the drift detector, catching a heading hand-written for a version no tag was
+  cut for.
 - Every link reference definition names a heading that exists.
-- **Every released section matches the digest the release recorded for it** in `config/changelog-sections.json`, and no digest outlives its
-  section. `[Unreleased]` is the only section to write in.
+- **Every released section matches the digest the release recorded for it** in `config/changelog-sections.json`, and no digest outlives its section.
+  `[Unreleased]` is the only section to write in.
 - Every version whose tag exists, from the oldest heading up, still has a section. Only the oldest releases may be trimmed.
 
 A heading with _no_ link definition is a warning only — promotion writes the definition, and some entries legitimately lack one.
 
-Deliberately not checked, each because the file disproves it: **`---` separators between sections** (not a per-section invariant — consecutive
-released versions carry none), **version contiguity** (a resolved version that never shipped leaves a hole the next compare link simply spans), and
-**a trailing newline** (the file has none, and promotion round-trips that exactly, §2d).
+Deliberately not checked, each because the file disproves it: **`---` separators between sections** (consecutive released versions carry none),
+**version contiguity** (a resolved version that never shipped leaves a hole the next compare link spans), and **a trailing newline** (the file has
+none, and promotion round-trips that exactly, §2d).
 
 ### 2f. createGateCommand — the Published Verification Gate
 
-**One runner, one table per project.** The runner is published; the table is not. That split is the whole design: the fleet shares the selection
-logic, the fail-fast ordering, the `requires` probe and the full-log file, while each repository keeps its own steps as its own source of truth —
-forge's in `config/steps.config.ts` (see [`TESTING.md`][testing-6e] §6e).
+**One runner, one table per project.** The runner is published; the table is not. The fleet shares the selection logic, the fail-fast ordering, the
+`requires` probe and the full-log file, while each repository keeps its own steps as its own source of truth — forge's in `config/steps.config.ts`
+([`TESTING.md`][testing-6e] §6e).
 
 **The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves `config/steps.config.ts` (or `--config`) and delegates to
 `createGateCommand`, refusing a module whose default is not a `defineSteps` table, so a project needs no binding file of its own. The factory stays
-published for the case the bin cannot serve — a table assembled at run time, or a gate embedded in a larger CLI.
+published for what the bin cannot serve — a table assembled at run time, or a gate embedded in a larger CLI.
 
-**The tiers are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
-repo and a `gate` config field.
-
-**A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6e] §6e). That is what lets the design-system steps run
-on every machine that has `tailwindcss`, an optional peer, while a run from `runtime` up never skips them — a verdict hardcoded in the table could
-state only one of them. `--list` words a step's dependency per tier: conditional, or required.
+**The tiers are [`TESTING.md`][testing-6a] §6a's, as one command**; separate verbs would cost a duplicated binding file per repo and a `gate` config
+field. **A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6e] §6e), which is what lets the design-system
+steps run on every machine that has `tailwindcss`, an optional peer, while a run from `runtime` up never skips them. `--list` words a step's
+dependency per tier: conditional, or required.
 
 **A table declares each tier as a key, and `tier()` includes a lower tier's resolved rows in place**, so what a tier runs is read off the table, not
-computed from a default each builder carries. `GateTier` is derived from the ordered `GATE_TIERS` tuple, and an entry of tier `K` may reference
-only a tier below `K`, so a tier including itself or one above it is a type error. `resolveTiers` refuses the same through a cast or plain
-JavaScript, along with a reference to an undeclared tier and a label one resolved tier holds twice. It resolves every declared tier before any
-runs, so the refusal is the table's, whatever `--tier` asked for. Nothing sorts a tier, which is why each preset tier above `static` leads with
-its reference ([`TESTING.md`][testing-6c] §6c).
+computed from a default each builder carries. `GateTier` is derived from the ordered `GATE_TIERS` tuple, and an entry of tier `K` may reference only
+a tier below `K`, so a tier including itself or one above it is a type error. `resolveTiers` refuses the same through a cast or plain JavaScript,
+along with a reference to an undeclared tier and a label one resolved tier holds twice, and resolves every declared tier before any runs, so the
+refusal is the table's whatever `--tier` asked for. Nothing sorts a tier, which is why each preset tier above `static` leads with its reference
+([`TESTING.md`][testing-6c] §6c). **At `runtime`, a row narrows only in the tier that declares it**: the resolver records each row's home tier, and
+a row reached through `tier("unit")` runs whole.
 
-**At `runtime`, a row narrows only in the tier that declares it.** The resolver records each row's home tier. A row `runtime` reaches through
-`tier("unit")` runs whole there, because the tier that declared it made no claim about narrowing it.
-
-**`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
+**`binDir` is a de-hardcoding, not a feature.** It defaults to `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
 different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays
 hardcoded — configuring it would be surface for nothing.
 
-**The formatters in `src/tooling/gate/report.ts` stay unpublished.** Publishing them would freeze the exact glyphs and wording of every gate line
-across every repository that runs it, and would hand the next one the parts to build an alternate runner from — the fork this consolidation removed.
-
-**`selectSteps` _is_ published**, because it is pure — an app unit-tests its own table against it at zero step cost, the same argument that makes
-forge's `steps.test.ts` worth having.
+**The formatters in `src/tooling/gate/report.ts` stay unpublished**: publishing them would freeze every gate line's glyphs and wording across the
+fleet and hand the next repository the parts for an alternate runner — the fork this consolidation removed. **`selectSteps` _is_ published**,
+because it is pure — an app unit-tests its own table against it at zero step cost, as forge's `steps.test.ts` does.
 
 **Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent**; the flags are [`TESTING.md`][testing-6e] §6e's
 table. Narrowing a run means enumerating labels or letting `--affected` read the change; a streamed run is `--list` and then the step's own command.
 
-**The `--reuse` receipt lives in the git directory, not in the working tree.** A working-tree path would need every consumer's `.gitignore` to
-name it, and until one did, the receipt would sit inside the tree hash it records — so writing it would invalidate it. Resolving the path with
-`git rev-parse --git-path` keeps it out of both, and gives a linked worktree a receipt of its own.
+**The `--reuse` receipt lives in the git directory, not the working tree.** A working-tree path would need every consumer's `.gitignore` to name it,
+and until one did the receipt would sit inside the tree hash it records, so writing it would invalidate it. `git rev-parse --git-path` keeps it out
+of both, and gives a linked worktree a receipt of its own.
 
 ### 2g. cloudflareWorkerSteps — the Fleet Preset
 
 **A preset is a factory returning an ordinary `StepTiers` table, not a second kind of table.** It is the app's table, or is merged with the app's
-own rows by `mergeTiers`. An app that outgrows it writes the tiers out by hand and loses nothing. Nothing in the runner knows a preset exists. **A
-complete preset declares all four tiers, each above `static` leading with `tier()` naming the one below**, so a table built from it alone resolves
-every `--tier`. `wardenAppSteps` declares rows only, because it is merged onto a complete one. Merging one complete preset onto another includes the
-lower tiers twice, which the resolver refuses as a duplicate label.
+own rows by `mergeTiers`; an app that outgrows it writes the tiers out by hand and loses nothing, and nothing in the runner knows a preset exists.
+**A complete preset declares all four tiers, each above `static` leading with `tier()` naming the one below**, so a table built from it alone
+resolves every `--tier`. `wardenAppSteps` declares rows only, because it is merged onto a complete one; merging one complete preset onto another
+includes the lower tiers twice, which the resolver refuses as a duplicate label.
 
-**Generation leads judgement**: the `wrangler types` step and the asset-types emitter both write files `typecheck` then reads, so they precede it
-— a stale generated type surfaces as a type error rather than as a green run over yesterday's output.
+**Generation leads judgement**: the `wrangler types` step and the asset-types emitter both write files `typecheck` reads, so they precede it, and a
+stale generated type surfaces as a type error rather than a green run over yesterday's output. **`validate-service-worker` follows
+`validate-asset-manifest`** and fails a built `sw.js` that is behind the files its last build read, so the test row never reads a stale worker; the
+record it reads is [`ASSET_PIPELINE.md`][ap-4d] §4d's.
 
-**`validate-service-worker` follows `validate-asset-manifest`** and fails a built `sw.js` that is behind the files its last build read, so the
-test row never reads a stale worker. The record it reads is [`ASSET_PIPELINE.md`][ap-4d] §4d's.
-
-**The preset generates runtime types only** (`--no-include-env`). The `Env` interface is the one `forge cf gen env` commits in `env.schema.ts`, so
+**The preset generates runtime types only** (`--no-include-env`): the `Env` interface is the one `forge cf gen env` commits in `env.schema.ts`, so
 no second generator describes a binding. `--config` goes on that invocation when `workerConfig` is set, because runtime types follow the config's
-compatibility date and flags. `validate-generated-types` follows it and fails any other wrangler-generated file under `.types/`: nothing
-regenerates one, so `typecheck` would pass against types older than the config. A stub written by hand there is not wrangler's and passes.
+compatibility date and flags. `validate-generated-types` follows it and fails any other wrangler-generated file under `.types/`, which nothing
+regenerates and so would let `typecheck` pass against types older than the config; a stub written by hand there is not wrangler's and passes.
 
-**`validate-env-schema` holds that committed `Env` to the config, in-process.** It renders the module through the renderer the command writes
-with, formatted under the app's own `bun fmt` config, and compares bytes. So `forge verify --only validate-env-schema` is the standalone check,
-and no `--check` flag on the command keeps a second entry point in step. Its `fix` writes the render; the row never regenerates ahead of
-`typecheck`, which would let CI pass over a stale committed file. It fails a config that declares no `secrets`, because names read from the
-gitignored `.dev.vars` would make the render differ between machines. It declares no `watches`: its inputs include optional, possibly
-untracked paths, which the dead-glob rule refuses.
+**`validate-env-schema` holds that committed `Env` to the config, in-process.** It renders the module through the renderer the command writes with,
+formatted under the app's own `bun fmt` config, and compares bytes, so `forge verify --only validate-env-schema` is the standalone check and no
+`--check` flag keeps a second entry point in step. Its `fix` writes the render; the row never regenerates ahead of `typecheck`, which would let CI
+pass over a stale committed file. It fails a config that declares no `secrets`, because names read from the gitignored `.dev.vars` would make the
+render differ between machines. It declares no `watches`, since its inputs include optional, possibly untracked paths, which the dead-glob rule
+refuses.
 
 **The options are the fleet's actual disagreements, and nothing else.** `assetOut` exists because the emitter writes nothing useful without `--out`;
 `wranglerTypes: false` for an app that supplies its runtime types itself; `envSchema.out` for an app whose schema lives elsewhere. Omitting
-`assetConfig` drops the asset rows — a shorter table, not a step that succeeds vacuously. The `.types/` path is baked in: an option nobody varies
-is surface for nothing, like the temp-dir prefix (§2f).
+`assetConfig` drops the asset rows — a shorter table, not a step that succeeds vacuously. The `.types/` path is baked in: nobody varies it, so an
+option would be surface for nothing, like the temp-dir prefix (§2f).
 
-**`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs": only a literal
-assertion catches a table that type-checks but names a command no app can run.
-
-**A row's tier follows [`TESTING.md`][testing-6c] §6c's lines, and `forge verify --list` prints it.** The default table declares no
-`requires`, so every row of it runs on any machine with the dependencies installed; `presets.test.ts` asserts that absence, since one added there
-would bind every app at once.
+**`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs", and only a literal
+assertion catches a table that type-checks but names a command no app can run. **A row's tier follows [`TESTING.md`][testing-6c] §6c's lines, and
+`forge verify --list` prints it.** The default table declares no `requires`, so every row runs on any machine with the dependencies installed;
+`presets.test.ts` asserts that absence, since one added there would bind every app at once.
 
 ### 2h. Roots Are Stated or Derived, Never Discovered
 
-**No function in `tooling/gate` or `tooling/release` walks the disk to find out where the project is.** Not upward, not by probing for a marker
+**No function in `tooling/gate` or `tooling/release` walks the disk to find out where the project is** — not upward, not by probing for a marker
 file, not at all. A root arrives one of exactly two ways:
 
 - **Stated.** The caller passes it; forge's own bindings do this from `import.meta.url` (`ROOT` in `config/paths.ts`).
@@ -394,32 +358,29 @@ file, not at all. A root arrives one of exactly two ways:
 
 `resolveAppRoot(explicit?)` is the one entry point: stated wins, derived is the fallback, and when neither is available **it throws**.
 
-**Why the refusal rather than a `process.cwd()` default.** A cwd default makes the answer depend on which directory the command was typed in, and
-the failure that produces is not a crash: it is a check that walks a tree containing nothing it recognises and reports the same green as a check
-that walked the right tree and found no problems. Every guard in this gate exists to separate those two outcomes; a discovered root quietly
-re-merges them.
+**Why the refusal rather than a `process.cwd()` default.** A cwd default makes the answer depend on where the command was typed, and the failure is
+not a crash: it is a check that walks a tree containing nothing it recognises and reports the same green as one that walked the right tree and found
+nothing wrong. Every guard in this gate exists to separate those two outcomes.
 
-**Why not a walk-up.** An upward search for `package.json` finds _a_ project, not necessarily _this_ one — a monorepo package, a `node_modules`
-entry, or a parent checkout all answer, and it succeeds, so nothing signals that the wrong tree was chosen. Deriving from the install path cannot
-pick a different project, because the path is the install.
+**Why not a walk-up.** An upward search for `package.json` finds _a_ project — a monorepo package, a `node_modules` entry or a parent checkout all
+answer — and it succeeds, so nothing signals the wrong tree. Deriving from the install path cannot pick a different project, because the path is the
+install.
 
 **The first `node_modules` segment, not the last.** A nested install and a pnpm store path both place the consuming application before the first
-occurrence; every later one names a dependency's own root, so splitting on the last would report the dependency as the app. The derivation is
-`findAppRoot(modulePath)`, a separate pure function precisely because `import.meta.url` cannot be varied from a test — folded into
-`installedAppRoot` it would be unassertable.
+occurrence; every later one names a dependency's root. The derivation is `findAppRoot(modulePath)`, a separate pure function because
+`import.meta.url` cannot be varied from a test.
 
 **A linked install is the case the derivation cannot answer, and `--root` is how the caller states it.** A `file:` dependency installs as symlinks
 into the forge checkout and every runtime resolves `import.meta.url` to the realpath, so this module reports itself under `src/tooling/` with no
-`node_modules` segment left to split on. The derivation returns `undefined`, correctly: the path has stopped naming the consumer. Every
-`forge assets` command therefore carries `--root`, falling back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset
-variable cannot resolve every path against `/`. This is the _stated_ branch, not a third one — reading through the symlink is the walk this section
-rules out, and it would answer for a `file:` dependency of a dependency exactly as confidently as for the app.
+`node_modules` segment, and the derivation correctly returns `undefined`. Every `forge assets` command therefore carries `--root`, falling back to
+`FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset variable cannot resolve every path against `/`. This is the
+_stated_ branch, not a third one: reading through the symlink is the walk this section rules out, and would answer for a `file:` dependency of a
+dependency as confidently as for the app.
 
 ### 2i. Checks Are Functions, Not Scripts
 
-**Every validator the gate runs is a published `checkX(config)` returning findings.** A validator kept in a repository-local script directory is
-unreachable through the `exports` map, so a consuming app would get a step table with nothing to put in it — publishing the runner while withholding
-the steps is a half-measure this namespace refuses.
+**Every validator the gate runs is a published `checkX(config)` returning findings.** A validator in a repository-local script directory is
+unreachable through the `exports` map, leaving a consuming app a step table with nothing to put in it.
 
 A check is built in layers, and the **prefix states which one a function is**:
 
@@ -435,138 +396,127 @@ A check is built in layers, and the **prefix states which one a function is**:
 `src/tooling/gate/mod.ts` is authoritative over which checks are published, and this document enumerates none of them.
 
 **A check may ship a fixer, and it is a different verb from the check.** `checkX` reports and writes nothing; the `fixX` beside it writes and
-reports nothing, and `--fix` calls it in-process. Only the rules a fixer can apply without guessing belong in it — a rule that would have to invent
-a code fence's language or rewrap an author's prose stays report-only, and `checkX` is where it is raised.
+reports nothing, and `--fix` calls it in-process. Only rules a fixer can apply without guessing belong in it — a rule that would have to invent a
+code fence's language or rewrap an author's prose stays report-only in `checkX`.
 
-**`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it, so "a check that reports a failure and forgets to
-flip a flag" is not expressible.
+**`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it, so a check that reports a failure and forgets to
+flip a flag is not expressible.
 
-**`summary` always carries a count, and that is necessary but not sufficient.** A visible `0 .tsx files carry every pragma` beats a silent green,
-but it is still a green and nobody reads a passing summary. **A check whose scan set is empty therefore fails**, through `scannedNothing`.
+**`summary` always carries a count, and a check whose scan set is empty fails**, through `scannedNothing`: a visible `0 .tsx files carry every
+pragma` beats a silent green, but it is still a green nobody reads. **The guard reads the raw walk, and returns before any finding accumulates.** A
+post-exclusion count lets an all-exempt tree report zero green beside a wall of stale-exemption failures, and guarding after the work discards what
+the check found, so where the count is only knowable at the end the refusal also requires no findings. **Not every check has a scan set, and a few
+reach zero legitimately** — a single-artifact diff, a Worker with no static assets, an opt-in anchor, a project before its first release — and each
+records that at the branch, where a reader tempted to add a guard is standing.
 
-**The guard reads the raw walk, and returns before any finding accumulates.** A post-exclusion count lets an all-exempt tree report zero green
-beside a wall of stale-exemption failures; guarding after the work makes the refusal discard what the check already found, so where the count is
-only knowable at the end the refusal also requires no findings — a check already red has no green to refuse.
+**A level is not a scale.** `fail` fails the check; `warn` is reported and does not. A third level invites "does `major` fail the gate?", the
+question a level should answer.
 
-**Not every check has a scan set, and a few reach zero legitimately** — a single-artifact diff, a Worker with no static assets, an opt-in anchor, a
-project before its first release. Each records that at the branch, which is where a reader tempted to add a guard is standing.
+**A drift check over a generated module compares content, not layout.** Every `gen:*` script pipes its module through `bun fmt`, so both sides are
+canonicalised before comparison — whitespace removed, and the trailing comma the formatter adds when it expands a literal dropped — and the gate
+never fails on formatting the generator is not responsible for.
 
-**A level is not a scale.** `fail` fails the check; `warn` is reported and does not. A third level invites "does `major` fail the gate?", which is
-the question a level should answer.
+**Every check takes an explicit `root` (§2h) and every forge-specific allowlist as config**, which keeps it from being forge's script wearing a
+config parameter. **That configuration lives in the consuming repository's `config/steps.config.ts`**, beside the step table that already answers
+"what does this repository's gate do?", so a step is one entry: the builder for the check and the config it runs with. An allowlist too long to read
+inline goes in a plain-`.ts` data module beside the table, such as `config/exemptions.ts`; it is data, not a config module, so it keeps no
+`.config.ts` suffix ([`CONFIG_BASELINE.md`][cb-6] §6).
 
-**A drift check over a generated module compares content, not layout.** Layout is the formatter's business — every `gen:*` script pipes its written
-module through `bun fmt` — so both sides are canonicalised before comparison: whitespace removed, and the trailing comma the formatter adds when it
-expands a literal dropped. Comparing raw text would fail the gate on formatting the generator is not responsible for.
-
-**Every check takes an explicit `root` (§2h) and every forge-specific allowlist as config**, which is what keeps it from being forge's script
-wearing a config parameter. **That configuration lives in the consuming repository's `config/steps.config.ts`**, beside the step table: that file
-already answers "what does this repository's gate do?", so a step is one entry in it — the builder for the check, and the config it runs with. An
-allowlist too long to read inline goes in a plain-`.ts` data module beside the table, such as `config/exemptions.ts`, which the table imports. It is
-data, not a config module, so it keeps no `.config.ts` suffix ([`CONFIG_BASELINE.md`][cb-6] §6).
-
-**Where the tree already states a fact, the check derives it and the config field is the override.** A hand-kept path list is itself a drift
-surface: it rots silently on a rename, and the reason an entry exists ends up far from the file it excuses. So a check reads the convention the
-codebase already keeps — a filename, a path segment, an opt-in marker — and every allowlist stays accepted as config on top of it, which is what a
-consuming app whose tree says otherwise supplies. A derived default is not a forge-specific rule smuggled into a published check; a default a
-consumer cannot displace would be. **An entry that only restates what the check derives fails**, on the same terms as a stale one: an escape nobody
-can see the need for is an escape nobody notices going wrong.
+**Where the tree already states a fact, the check derives it and the config field is the override.** A hand-kept path list rots silently on a rename
+and puts an entry's reason far from the file it excuses, so a check reads the convention the codebase keeps — a filename, a path segment, an opt-in
+marker — and still accepts every allowlist as config for a consuming app whose tree says otherwise. A derived default is not a forge-specific rule
+smuggled into a published check; a default a consumer cannot displace would be. **An entry that only restates what the check derives fails**, like a
+stale one: an escape nobody can see the need for is one nobody notices going wrong.
 
 ### 2j. Task Branches and the Amend Floor
 
-**Forge develops on task branches in the clone and pushes one squashed commit per push unit to `main`.** Each session clones from the project's
-git server, a task is worked on `task/<id>`, the handoff squashes it into the one commit that is reviewed and merged into local `main`, and the push
-squashes the unit's merged commits into one ([`AGENT_WORKFLOW.md`][aw-4b] §4b and
-[`AGENT_WORKFLOW.md`][aw-5b] §5b). There are still no pull requests: no workflow runs on a branch or a pull request — the release workflow
-fires only on a pushed `v*` tag — so review is the reviewer session's verdict on a sha, and the gate is the tier the push runs on the rebased tip.
-The trunk-only rule this replaces was a fit to a host-mounted `.git`, where `git stash`, fresh branches and worktree removal broke; a clone of its
-own has none of that.
+**Forge works each task on a `task/<id>` branch in the session's own clone and pushes one squashed commit per push unit to `main`**; the flow from
+task branch to push is [`AGENT_WORKFLOW.md`][aw-4b] §4b and [`AGENT_WORKFLOW.md`][aw-5b] §5b's. There are no pull requests: no workflow runs on a
+branch or a pull request — the release workflow fires only on a pushed `v*` tag — so review is the reviewer session's verdict on a sha, and the gate
+is the tier the push runs on the rebased tip. The clone being the session's own is what makes branches safe: on a host-mounted `.git`, `git stash`,
+fresh branches and worktree removal break.
 
-**The invariant that keeps history honest is the amend floor, and it is `origin/main`.** **Above it, history is private** — amend, reword, reorder
-and rebase freely, on the one condition that a reviewed commit keeps its patch until the push squashes it ([`AGENT_WORKFLOW.md`][aw-5b] §5b). **At
-or below it, history is published**: another session, the host checkout and the next push all build on it, and the server takes fast-forward pushes
-only. Below that again, the latest `git describe --tags --abbrev=0` marks what a consumer has installed ([`FORGE_CONSUMPTION.md`][fc-4c] §4c), and
-rewriting those commits would change what the tag names without changing the version they asked for.
+**The amend floor is `origin/main`.** **Above it, history is private** — amend, reword, reorder and rebase freely, provided a reviewed commit keeps
+its patch until the push squashes it ([`AGENT_WORKFLOW.md`][aw-5b] §5b). **At or below it, history is published**: other sessions, the host checkout
+and the next push build on it, and the server takes fast-forward pushes only. Below that again, the latest `git describe --tags --abbrev=0` marks
+what a consumer has installed ([`FORGE_CONSUMPTION.md`][fc-4c] §4c), and rewriting those commits would change what the tag names without changing
+the version they asked for.
 
-**`forge release` enforces the tag floor rather than trusting it**, in a preflight run before anything is written: it refuses when the previous
-tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
-unpushed tag does not exist for a consumer, and `getLatestTag` would cut the next release on top of it regardless. Neither is a gate step: both are
+**`forge release` enforces the tag floor rather than trusting it**, in a preflight before anything is written: it refuses when the previous tag is
+not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`), because an
+unpushed tag does not exist for a consumer and `getLatestTag` would cut the next release on it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
-an offline `verify:scheduled` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal. When the tag is the
-version being released, already cut here but not pushed, there is nothing to refuse: the run is _tagged_ (§2a) and prints `git push --tags`.
+an offline `verify:scheduled` for a reason unrelated to the code. An unreachable remote is reported and non-fatal. When the unpushed tag is the
+version being released, the run is _tagged_ (§2a) and prints `git push --tags`.
 
 These habits carry the rest:
 
-1. **One commit per push unit on `main`.** Commit on the task branch as often as helps; the handoff squashes it to one commit whose `verify:unit`
-   is green, and that is the commit reviewed. The push squashes the unit's merged commits — a task under no epic, or a wave
-   ([`AGENT_WORKFLOW.md`][aw-5b] §5b) — into one, a review finding's fix included, with a short why-subject and no task id or trailer
-   ([`AGENT_WORKFLOW.md`][aw-4b] §4b). The log of `main` is the bisect surface, one push unit per step.
-2. **Never `git stash`.** Commit the work in progress and `--amend` it into shape later; `git reflog` recovers a bad amend, where a lost stash entry
-   has no such handle. The stash is also one stack per repository, shared by the review worktree.
-3. **Write the `[Unreleased]` changelog entry in the commit that earns it.** `validate-changelog` refuses an empty `[Unreleased]` at release time,
-   which catches the omission far from the change that caused it.
+1. **One commit per push unit on `main`**, a review finding's fix included, so the log of `main` is the bisect surface, one push unit per step; the
+   squash and its subject are [`AGENT_WORKFLOW.md`][aw-4b] §4b's.
+2. **Never `git stash`.** Commit the work in progress and `--amend` it later; `git reflog` recovers a bad amend, where a lost stash entry has no
+   handle, and the stash is one stack per repository, shared by the review worktree.
+3. **Write the `[Unreleased]` changelog entry in the commit that earns it.** `forge release` refuses an empty `[Unreleased]` once commits exist
+   (§2d), which catches the omission far from the change that caused it.
 
 **A commit that alters or removes a published export carries the `minor:` subject prefix** (`major:` once forge is 1.0). `resolveVersion` reads only
-the `major:` and `minor:` prefixes and defaults everything else to patch, so the prefix is the sole machine-readable "this will break you" — and
-pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, which makes that signal the only warning they get. The surface guard
-(§2b) names the prefix as the remedy for its refusal: `--allow-semver` silences the guard rather than answering it, and is for a shrink where a
-patch bump is genuinely correct.
+those two prefixes and defaults everything else to patch, so the prefix is the sole machine-readable "this will break you" — and pre-1.0 forge ships
+breaking changes with no shim while consumers pin by tag, which makes it the only warning they get. The surface guard (§2b) names the prefix as the
+remedy for its refusal: `--allow-semver` silences the guard rather than answering it, and is for a shrink where a patch bump is genuinely correct.
 
 ### 2k. `dev:forge` Is Asked For, Never Automatic
 
 **`syncForge` replaces the forge installed under a consumer's `node_modules` with this checkout, packed as it would be published** — `bun pm pack`
-into a staging tarball, extracted over the installed tree, with `--ignore-scripts` so the pack runs nothing the publish would not. A consumer
-runs it as its `dev:forge` script, never a `forge` subcommand, to exercise an unreleased change without a tag.
+into a staging tarball, extracted over the installed tree, with `--ignore-scripts` so the pack runs nothing the publish would not. A consumer runs
+it as its `dev:forge` script, never a `forge` subcommand, to exercise an unreleased change without a tag.
 
-**It is deliberately not a `postinstall` hook, and that is the capability forge does not have.** The result disagrees with the consumer's lockfile
-on purpose: the installed tree stops matching the tag the lockfile pins. Made automatic, every `bun i` in the consumer would silently swap a
-published dependency for a working copy, and a bug reproducing only on one machine, against code no tag contains, is the worst kind to diagnose.
-As a command, a plain `bun i` restores the pinned tag, because the sync deletes the installed directory, and with it the `.bun-tag` file bun
-reads to treat the package as installed; the override has to be asked for again.
+**It is deliberately not a `postinstall` hook.** The result disagrees with the consumer's lockfile on purpose: the installed tree stops matching the
+tag the lockfile pins. Made automatic, every `bun i` would silently swap a published dependency for a working copy, and a bug reproducing only on
+one machine, against code no tag contains, is the worst kind to diagnose. As a command, a plain `bun i` restores the pinned tag, because the sync
+deletes the installed directory and with it the `.bun-tag` file bun reads to treat the package as installed; the override has to be asked for again.
 
 ### 2l. A Forge Release Never Waits on a Consumer
 
 **The gate `config/release.config.ts` hands `forge release` is `verify:scheduled`, and it reads nothing outside this checkout.** A consumer depends
-on forge, never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is
-the dependency inverted.
+on forge, never the reverse, so a consumer's suite in forge's release gate would let that consumer block a forge release.
 
 **A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it
-installs, so a release that publishes a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead
-of a release, the demonstrator runs that spec after `dev:forge` (§2k).
+installs, so a release publishing a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead of a
+release, the demonstrator runs that spec after `dev:forge` (§2k).
 
 **`verify:scheduled` holds the cross-engine row, so a release needs both Playwright servers up.** At `scheduled` an absent requirement fails, and
-`forge release` refuses to tag a tree its gate has not passed. A machine without `playwright-compat` cannot cut a release
+`forge release` refuses to tag a tree its gate has not passed, so a machine without `playwright-compat` cannot cut a release
 ([`TEST_RUNNERS.md`][testing-6] §1g).
 
 ### 2m. The Bun Floor Is the Bun the Gate Runs On
 
 **`engines.bun`'s floor is `packageManager`'s version**, and `.github/workflows/release.yml` installs that version through `bun-version-file:
-package.json`, so the release gate (§2a) runs on exactly the floor. Nothing older is gated, so nothing older is claimed: a lower floor would promise
-support for a Bun no run has tested. Raising one means raising the other in the same change, and `config/release.test.ts` fails while they differ.
+package.json`, so the release gate (§2a) runs on exactly the floor. A lower floor would promise support for a Bun no run has tested. Raising one
+means raising the other in the same change, and `config/release.test.ts` fails while they differ.
 
 ### 2n. A Node-Reached Export Is Declared Under `forge.node`
 
 **A subpath a Node process imports is listed under `forge.node` in `package.json`, and its export points `import` at a generated `<stem>.node.mjs`**
-beside a `types` naming the `.ts` entry. `bun run gen:bundles` writes the `.node.mjs`; nothing else is edited. Node refuses to strip types
-under `node_modules`, and forge's extensionless imports do not resolve under Node ESM, so a `.ts` target there breaks the consumer rather than
-forge ([`NAMESPACES.md`][namespaces-3c] §3c).
+beside a `types` naming the `.ts` entry. `bun run gen:bundles` writes the `.node.mjs`; nothing else is edited. Node refuses to strip types under
+`node_modules`, and forge's extensionless imports do not resolve under Node ESM, so a `.ts` target there breaks the consumer rather than forge
+([`NAMESPACES.md`][namespaces-3c] §3c).
 
 **Everything else is derived from that list.** `nodeBundles` turns each entry into a bundle row — the `validate-<subpath>-bundle` drift check,
 watching the entry's relative-import closure — and `gen:bundles` writes the same rows. `validate-node-exports` fails a listed subpath whose export
 is missing or does not point `import` at a `.mjs`, and an `.mjs` export the list leaves out. `tests/workerd/harness-consumer.workerd.ts` loads every
-listed subpath under node from the packed tarball. Its consumer root links forge's `dependencies` and every package a listed bundle
-imports, derived from the bundles themselves.
+listed subpath under node from the packed tarball, its consumer root linking forge's `dependencies` and every package a listed bundle imports,
+derived from the bundles themselves.
 
-**A bundle is never named `<stem>.mjs`, because an extensionless import would reach it.** Inside `node_modules`, Bun resolves `../validation/mod`
-to a `mod.mjs`, `mod.js` or `mod.cjs` ahead of `mod.ts`, so forge's own modules load the bundle while their siblings load the source, and module
-state such as `safeCheck`'s registry splits in two. `validate-bundle-shadows` refuses any `.mjs`, `.js` or `.cjs`, or an `index` of one, that an
-extensionless relative import in `src/` reaches, and `config/bundles.test.ts` installs forge as `dev:forge` does and checks a `safeCheck`
-message survives `createConfig` under bun.
+**A bundle is never named `<stem>.mjs`, because an extensionless import would reach it.** Inside `node_modules`, Bun resolves `../validation/mod` to
+a `mod.mjs`, `mod.js` or `mod.cjs` ahead of `mod.ts`, so forge's own modules would load the bundle while their siblings load the source, splitting
+module state such as `safeCheck`'s registry in two. `validate-bundle-shadows` refuses any `.mjs`, `.js` or `.cjs`, or an `index` of one, that an
+extensionless relative import in `src/` reaches, and `config/bundles.test.ts` installs forge as `dev:forge` does and checks a `safeCheck` message
+survives `createConfig` under bun.
 
-**A bundle is request-free, by a build condition rather than by convention.** `bundleSource` passes esbuild the `forge-node-bundle` condition
-and nothing else resolves it. Under it, `#request-scope` in `package.json` `imports` picks `src/context/request-scope.node.ts`, which throws
-`RequestFreeBundleError` on any read or write of a request's context. Everywhere else, `default` picks `src/context/request-scope.ts`. Creating a
-context key at module load still succeeds, so a bundle loads and its request-free exports answer. A bundle's own request keys would otherwise
-split from the source's. The one split left is `validation`'s `safeCheck` registry, which fails closed ([`TEST_RUNNERS.md`][testing-7f] §7f).
+**A bundle is request-free, by a build condition rather than by convention.** `bundleSource` passes esbuild the `forge-node-bundle` condition, which
+nothing else resolves. Under it, `#request-scope` in `package.json` `imports` picks `src/context/request-scope.node.ts`, which throws
+`RequestFreeBundleError` on any read or write of a request's context; everywhere else, `default` picks `src/context/request-scope.ts`. Creating a
+context key at module load still succeeds, so a bundle loads and its request-free exports answer, and a bundle's own request keys cannot split from
+the source's. The one split left is `validation`'s `safeCheck` registry, which fails closed ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 **An export nobody lists still passes.** Nothing infers which exports Node reaches, so the declaration is the claim and the checks hold the export
 map to it.
@@ -577,8 +527,8 @@ map to it.
 
 **Every forge app states `no_nodejs_compat`, `no_nodejs_compat_v2` and `new_module_registry`, at whatever compatibility date it already carries.**
 The first two are the posture: forge targets the pure Workers/V8 surface, so a Node built-in is available only where Cloudflare offers it natively,
-and a dependency reaching for one is refused rather than shimmed. If your build refuses `node:path`, this is the rule that refused it — and the
-remedy is to drop the dependency or find its Workers-native equivalent, not to add `nodejs_compat`.
+and a dependency reaching for one is refused rather than shimmed. If your build refuses `node:path`, this is the rule that refused it — drop the
+dependency or find its Workers-native equivalent, rather than adding `nodejs_compat`.
 
 ```jsonc
 {
@@ -587,21 +537,21 @@ remedy is to drop the dependency or find its Workers-native equivalent, not to a
 }
 ```
 
-**A compatibility date is not a posture, which is why the flags are stated rather than inferred.** Past wrangler's
-`NODEJS_COMPAT_DEFAULT_ON_DATE`, `nodejs_compat` and `nodejs_compat_v2` are on by default — so an app that refuses Node only because its date
-predates that acquires the whole Node surface the moment somebody bumps it. Stating the two `no_*` flags is accepted and inert on the earlier side
-of that threshold, so it lands at an app's existing date and makes the later bump safe by construction rather than by memory.
+**A compatibility date is not a posture, which is why the flags are stated rather than inferred.** Past wrangler's `NODEJS_COMPAT_DEFAULT_ON_DATE`,
+`nodejs_compat` and `nodejs_compat_v2` are on by default, so an app that refuses Node only because its date predates that acquires the whole Node
+surface the moment somebody bumps it. The two `no_*` flags are accepted and inert before that threshold, so they land at an app's existing date and
+make the later bump safe by construction rather than by memory.
 
-**`new_module_registry` is adopted for its module semantics, and no claim is made about speed.** It is an independent opt-in with no default-on
-date of its own. It changes the class a module error is raised as, so a test asserting the old message text is the one thing expected
-to break when it goes on.
+**`new_module_registry` is adopted for its module semantics, and no claim is made about speed.** It is an independent opt-in with no default-on date
+of its own. It changes the class a module error is raised as, so a test asserting the old message text is the one thing expected to break when it
+goes on.
 
 ### 3a. What the Check Reads, and the Trap It Exists For
 
 `checkCompatibility` (`src/tooling/gate/checks/compatibility.ts`) judges **every deployment as wrangler builds it**. An environment that states a
 flag set of its own **replaces** the top level's wholesale rather than merging into it, so a `wrangler.jsonc` correct at the top and wrong in
-`env.dev` deploys a Worker with the Node surface to that environment, and the block is judged on its own. An environment that states no set
-inherits the top level's and shares its verdict: the top level's findings stand for both, and the summary counts both deployments.
+`env.dev` deploys a Worker with the Node surface to that environment, and the block is judged on its own. An environment that states no set inherits
+the top level's and shares its verdict: the top level's findings stand for both, and the summary counts both deployments.
 
 An unstated set, a value that is not a list of names, an omitted flag and a stated contradiction — `nodejs_compat` beside `no_nodejs_compat` — are
 each reported on their own, and each finding carries the literal line that fixes it. `config.require` overrides the set for a project with a
