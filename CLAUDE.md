@@ -8,9 +8,10 @@ The rules are the governing documents, served by warden: `knowledge_search` and 
 before inferring one (`AGENT_GUIDE.md` §1). The canon is on disk under `warden/canon/` and identical across the fleet, so cite it by document and
 section and put a ruling of forge's own in `docs/`. Agents are `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` and `cc-tester`, written by
 `warden sync` from `warden/claude/`; sessions are `claude -n forge-dev` and `claude -n forge-review`, the reviewer working in its own detached
-worktree `~/work/forge-review`. A task moved to review ends with the `handoff` skill, and a reviewed one reaches `main` and the push through
-`merge` (`AGENT_WORKFLOW.md` §5b). A code review starts with the `warden-review` skill. When compacting, keep the task ids and their lanes, the
-epic, the checked-out branch, any open handoff, the merged but unpushed wave with its shas, and the last check.
+worktree `~/work/forge-review`. A task moved to review ends with the `handoff` skill, and a reviewed one reaches `main` and the push through `merge`
+(`AGENT_WORKFLOW.md` §5b). A release the user asked for goes through the `release` skill (`AGENT_WORKFLOW.md` §4b). A code review starts with the
+`warden-review` skill. When compacting, keep the task ids and their lanes, the epic, the checked-out branch, any open handoff, the merged but
+unpushed wave with its shas, and the last check.
 
 ## Checks
 
