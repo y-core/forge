@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -283,6 +283,27 @@ describe("the shipped reviewer skills", () => {
   }
 });
 
+describe("the shipped session skills", () => {
+  const SKILLS = join(WARDEN_ROOT, "claude/skills/shared");
+
+  it("name each skill for its directory, so the name a session invokes is the one sync writes", () => {
+    for (const skill of readdirSync(SKILLS)) {
+      expect([skill, /^name: (.*)$/m.exec(readFileSync(join(SKILLS, skill, "SKILL.md"), "utf-8"))?.[1]]).toEqual([skill, skill]);
+    }
+  });
+
+  it("render the repository's own review worktree into review-handoff", () => {
+    const text = layerTree([SKILLS], "cornellaw").get("review-handoff/SKILL.md") ?? "";
+    expect([text.includes("~/work/cornellaw-review"), text.includes("~/work/forge-review")]).toEqual([true, false]);
+  });
+
+  // A closed task reaches main only through `merge`; a handoff whose reply names no such skill strands it in `done`.
+  it("hand a closed task from handoff to merge, which writes git and so restricts no tool", () => {
+    expect(readFileSync(join(SKILLS, "handoff/SKILL.md"), "utf-8")).toContain("invoke the `merge` skill");
+    expect(readFileSync(join(SKILLS, "merge/SKILL.md"), "utf-8")).not.toMatch(/^disallowed-tools:/m);
+  });
+});
+
 describe("the shipped fleet settings", () => {
   const settings = JSON.parse(readFileSync(join(WARDEN_ROOT, "claude/settings.json"), "utf-8"));
 
@@ -308,18 +329,56 @@ describe("the shipped fleet settings", () => {
       return regex(pattern).test(command) || (bare !== undefined && regex(bare).test(command));
     });
 
-  // With `.git` mounted read-only, every other git write fails on its own lock; these still change something.
-  const HARMFUL = ["apply p.diff", "clean -fdx", "clone https://x/y.git /tmp/y", "init /tmp/z", "push", "push origin main"];
+  // The developing session commits and pushes (AGENT_WORKFLOW.md §4b); these rewrite, discard or publish what the flow never does.
+  const HARMFUL = [
+    "apply p.diff",
+    "clean -fdx",
+    "clone https://x/y.git /tmp/y",
+    "init /tmp/z",
+    "push --force origin main",
+    "push origin main --force-with-lease",
+    "push -f origin main",
+    "push origin -f main",
+    "push -uf origin main",
+    "push --mirror origin",
+    "push --tags origin",
+    "push origin --follow-tags main",
+    "push origin --delete task/x",
+    "push -d origin task/x",
+    "push --prune origin refs/heads/*:refs/heads/*",
+    "push --all origin",
+    "push --no-verify origin main",
+    "push origin +main",
+    "push +main",
+    "push origin :task/x",
+    "push origin main +task/x",
+  ];
 
-  it("denies every git verb that still changes something with .git read-only, plainly and behind any leading global option", () => {
-    const spellings = HARMFUL.flatMap((verb) => [
-      `git ${verb}`,
-      `git -C /src/forge ${verb}`,
-      `git -c core.x=y ${verb}`,
-      `git -C . -c a=b ${verb}`,
-      `git --no-pager ${verb}`,
-    ]);
+  const spell = (verb: string) => [
+    `git ${verb}`,
+    `git -C /src/forge ${verb}`,
+    `git -c core.x=y ${verb}`,
+    `git -C . -c a=b ${verb}`,
+    `git --no-pager ${verb}`,
+  ];
+
+  it("denies every git write the flow never makes, plainly and behind any leading global option", () => {
+    const spellings = HARMFUL.flatMap(spell);
     expect(spellings.filter((command) => !denies(command))).toEqual([]);
+  });
+
+  // Config set on the command line turns a plain push into a mirror, a force or a tag push, so a push behind `-c` is denied whatever follows it.
+  it("denies a push behind a command-line config option, which can make a plain push any other kind", () => {
+    for (const command of [
+      "git -c remote.origin.mirror=true push origin",
+      "git -c remote.origin.push=+refs/heads/*:refs/heads/* push origin",
+      "git -c push.followTags=true push origin main",
+      "git -C . -c remote.origin.mirror=true push origin",
+      "git --config-env=remote.origin.mirror=MIRROR push origin",
+      "git -c remote.origin.mirror=true push",
+    ]) {
+      expect([command, denies(command)]).toEqual([command, true]);
+    }
   });
 
   it("denies pointing git at another git directory or work tree, plainly and behind `-C`", () => {
@@ -330,6 +389,16 @@ describe("the shipped fleet settings", () => {
     ]) {
       expect(denies(command)).toBe(true);
     }
+  });
+
+  // The push the flow does make: a fast-forward of `main`, or a task branch, with no option and no `+` or `:` refspec.
+  it("leaves a plain push of main or a task branch usable, plainly and behind `-C` or `--no-pager`", () => {
+    const spellings = ["push", "push origin main", "push origin task/chore-261126-05", "push origin HEAD:refs/heads/task/x"].flatMap((verb) => [
+      `git ${verb}`,
+      `git -C /src/forge ${verb}`,
+      `git --no-pager ${verb}`,
+    ]);
+    expect(spellings.filter((command) => denies(command))).toEqual([]);
   });
 
   it("leaves read-only git usable, `git -C <dir>` included", () => {

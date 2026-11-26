@@ -81,6 +81,8 @@ plan instead.
 - After `cc-dev`, hand off to `cc-test` with the Test Plan section and the changed signatures.
 - Each task closes on `verify:unit`, which `cc-dev` and `cc-test` run; the epic gate goes to `cc-tester` once (`AGENT_WORKFLOW.md` §4). A
   single scoped step you need to answer a design question is yours to run.
+- **A wave is the push unit** (`AGENT_WORKFLOW.md` §5b). Put the tasks that must reach `main` together in one wave, and keep a wave small enough
+  to review whole and rebase without a conflict; a task under no epic is pushed on its own.
 - If testing reveals an architecture problem, be available to re-plan rather than letting `cc-dev` improvise.
 - **A post-implementation review goes through the `warden-review` skill**, which reaches `CODE_REVIEW.md` through the index and holds a finding to
   the field set §1b sets. Do not re-derive a review procedure here.

@@ -132,7 +132,46 @@ When HEAD is the release commit and only the tag was missed, the check is droppe
 Then run `bun run release` here to confirm.
 ```
 
-With `.git` writable, the run commits and tags itself and prints only the push.
+With `.git` writable, the run commits and tags itself and prints only the push, unless `tagOn` is `"host"`.
+
+### A clone whose server refuses tags
+
+A clone that can commit but whose git server refuses tags says so in its release config:
+
+```ts
+// config/release.config.ts
+export default defineReleaseConfig({ tagOn: "host" });
+```
+
+The release then runs in this order:
+
+1. Run `bun run release` in the clone. It runs the gate, writes and commits the release, cuts no tag, and prints the steps below. The summary's
+   `commit:` row reads `here; the tag on the host after the push`.
+2. Push the release commit to the publishing branch through the repository's push flow. The run prints no `git push` for it. In an agent
+   clone, the `merge` skill pushes it as its own unit and keeps its subject, `chore: release <version>`.
+3. Run the host step on the host.
+4. Run `git fetch --tags` and `bun run release` in the clone. It prints `Already at <version> — nothing to release.`
+
+```text
+The server refuses tags, so v<version> is cut on the host once the release commit reaches <publishing>.
+The commit reaches <publishing> through the repository's push flow (in an agent clone, the `merge` skill). Then on the host:
+  test "$(git log -1 --format='%T %s' <publishing>)" = "<tree> chore: release <version>" && git tag v<version> <publishing>
+  git push && git push --tags
+Then run `git fetch --tags` and `bun run release` here to confirm.
+```
+
+`<publishing>` is the branch the remote publishes from, `origin/HEAD`, never the branch the clone is on: a release run on `task/<id>` under
+`--allow-branch` still tags the publishing branch. The `test` checks that its tip holds the tree the gate passed and the release subject. The push
+may give the commit a new sha, so the check never names one. When the release files were already committed under another subject, it checks the tree
+alone. **If the `test` fails, do not tag**: the pushed tip is not what the gate saw. Run the release again in the clone for fresh steps.
+
+When the host has tagged and the clone has not fetched yet, the run writes nothing and prints:
+
+```text
+v<version> is already on the remote. Run `git fetch --tags` and `bun run release` here to confirm.
+```
+
+`tagOn: "host"` is for a clone whose server refuses tags. Running the release on the host itself is not the supported path.
 
 ---
 
@@ -149,6 +188,7 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 | The previous tag is not an ancestor of HEAD | Recover the rewritten commits with `git reflog` and rebuild HEAD on the tag — no flag reaches this one |
 | A reachable remote does not carry the previous tag | `git push --tags`, then release |
 | HEAD is detached | Check out the branch you are releasing; `--allow-branch` if you meant it |
+| The remote names no publishing branch, with `tagOn: "host"` | `git remote set-head origin --auto`, then release — no flag reaches this one |
 | HEAD is not on the branch the remote publishes from | Switch branch; `--allow-branch` for a deliberate release branch |
 | The gate failed | Fix what it reported; `--allow-unverified` tags a tree no gate has passed |
 | The gate could not be run | Name this project's gate with `gateCommand`; `--allow-unverified` releases without one |
@@ -174,7 +214,7 @@ and by `git remote set-head`, so a repository created locally and pushed has non
 
 The surface guard compares the exports the previous tag published against the working tree's and names each entry that has gone. It runs only on an
 auto-patch with a previous tag — an explicit version and a `minor:`/`major:` bump have already said what they are
-([`BUILD_TOOLING.md`][bt-2b] §2b). The ancestry and push checks are the amend floor's ([`BUILD_TOOLING.md`][bt-2j] §2j).
+([`BUILD_TOOLING.md`][bt-2b] §2b). The ancestry and tag-push checks enforce the tag floor ([`BUILD_TOOLING.md`][bt-2j] §2j).
 
 ---
 
@@ -285,7 +325,7 @@ gate record covers that commit.
 [bt-2b]: ../../../docs/BUILD_TOOLING.md#2b-the-export-surface-a-release-compares
 [bt-2c]: ../../../docs/BUILD_TOOLING.md#2c-git-and-manifest-internals
 [bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
-[bt-2j]: ../../../docs/BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
+[bt-2j]: ../../../docs/BUILD_TOOLING.md#2j-task-branches-and-the-amend-floor
 [cli-readme]: ../cli/README.md
 [fc-4c]: ../../../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [gate-readme]: ../gate/README.md

@@ -155,6 +155,12 @@ Update the ledger yourself once the task check is green.
 
 What you supply is the evidence: the task check and the test files that now carry it, against the task's own `Done when:`.
 
+## Your Branch
+
+You work on the `task/<id>` branch the session checked out, and you commit on it as often as helps; the session squashes it into one commit at
+handoff, and the push into its unit's commit on `main` (`AGENT_WORKFLOW.md` §4b). **Never switch branch, rebase, push or touch `main`** — merging
+and pushing are the session's (`AGENT_WORKFLOW.md` §5b).
+
 ## Delegation
 
 Delegate only a sizeable, independent track — for example, authoring tests for several independent files at once. Keep the split and the synthesis,

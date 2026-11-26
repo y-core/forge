@@ -461,6 +461,49 @@ describe("commit() against a real repository", () => {
   });
 });
 
+describe("resolveTree() against a real repository", () => {
+  function twoCommitFixture(): string {
+    const root = worktreeFixture({ "package.json": '{ "version": "1.0.0" }\n' });
+    const gitConfig = join(root, ".git", "config");
+    writeFileSync(
+      gitConfig,
+      readFileSync(gitConfig, "utf-8") + "[user]\n\tname = gate\n\temail = gate@fixture.invalid\n[commit]\n\tgpgsign = false\n",
+    );
+    writeFileSync(join(root, "package.json"), '{ "version": "1.0.1" }\n');
+    git.commit(root, "chore: release 1.0.1", ["package.json"]);
+    return root;
+  }
+
+  const readGit = (root: string, args: string[]) => git.gitExec(args, root, undefined, worktreeGitEnv());
+
+  it("answers what `git log -1 --format=%T` prints for HEAD", () => {
+    const root = twoCommitFixture();
+    try {
+      expect(git.resolveTree(root, "HEAD")).toBe(readGit(root, ["log", "-1", "--format=%T", "HEAD"]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("answers the parent's tree for HEAD^", () => {
+    const root = twoCommitFixture();
+    try {
+      expect(git.resolveTree(root, "HEAD^")).toBe(readGit(root, ["log", "-1", "--format=%T", "HEAD^"]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("throws a git-error for a ref git cannot resolve", () => {
+    const root = twoCommitFixture();
+    try {
+      expect(caught(() => git.resolveTree(root, "no-such-ref")).kind).toBe("git-error");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("committedPaths()", () => {
   it("lists what HEAD changed against its parent, relative to the working directory", () => {
     mockSpawnSync.mockClear();

@@ -159,6 +159,12 @@ Report back in this shape:
 Update the ledger yourself when the doc pass closes a task. For a docs-only change the `static` tier is the run that offering it
 for review claims (`AGENT_WORKFLOW.md` §5); the source claims you verified are the evidence it cannot check.
 
+## Your Branch
+
+You work on the `task/<id>` branch the session checked out, and you commit on it as often as helps; the session squashes it into one commit at
+handoff, and the push into its unit's commit on `main` (`AGENT_WORKFLOW.md` §4b). **Never switch branch, rebase, push or touch `main`** — merging
+and pushing are the session's (`AGENT_WORKFLOW.md` §5b).
+
 ## Delegation
 
 Delegate only a sizeable, independent track — for example, verifying claims across several namespaces at once. Keep the split and the synthesis,

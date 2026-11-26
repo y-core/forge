@@ -67,7 +67,8 @@ export const GOLDEN: readonly GoldenQuery[] = [
   { query: "can I put the API key in the finding", expect: "canon:AGENT_WORKFLOW.md#7", within: 4, dimension: "prohibition" },
   { query: "the requested scope is what I deliver", expect: "canon:AGENT_WORKFLOW.md#1a", dimension: "procedure" },
   { query: "when does a sub-agent earn its cost", expect: "canon:AGENT_WORKFLOW.md#4a", dimension: "rationale" },
-  { query: "can I commit my changes", expect: "canon:AGENT_WORKFLOW.md#4b", dimension: "prohibition" },
+  { query: "can I commit my changes", expect: "canon:AGENT_WORKFLOW.md#4b", dimension: "procedure" },
+  { query: "how do I push to main", expect: "canon:AGENT_WORKFLOW.md#5b", dimension: "procedure" },
   { query: "should I use a subagent", expect: "canon:AGENT_WORKFLOW.md#4a", dimension: "rationale" },
   { query: "can I bun add a new package", expect: "canon:AGENT_WORKFLOW.md#1", dimension: "prohibition" },
 

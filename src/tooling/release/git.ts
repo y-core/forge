@@ -113,6 +113,11 @@ export function resolveCommit(cwd: string, ref: string, spawn?: SpawnSync): stri
   return gitExec(["rev-parse", "--verify", `${ref}^{commit}`], cwd, spawn, worktreeGitEnv());
 }
 
+/** The tree sha `ref` names, throwing a {@link ReleaseError} when git cannot resolve it. */
+export function resolveTree(cwd: string, ref: string, spawn?: SpawnSync): string {
+  return gitExec(["rev-parse", "--verify", `${ref}^{tree}`], cwd, spawn, worktreeGitEnv());
+}
+
 /** False when the git directory of the work tree at `cwd` is read-only, so a commit or a tag has to be made elsewhere. */
 export function gitWritable(cwd: string, spawn?: SpawnSync): boolean {
   const dir = gitExec(["rev-parse", "--absolute-git-dir"], cwd, spawn, worktreeGitEnv());

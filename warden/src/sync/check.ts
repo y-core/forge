@@ -84,7 +84,7 @@ export function checkGit(repo: string, synced: readonly CorpusFile[]): Divergenc
     if (verdicts.get(path) === true)
       problems.push({ code: "ignored", detail: `${path} — sync writes it to be committed; .gitignore must not ignore it` });
   }
-  // A tracked copy already deleted from the working tree is a removal awaiting the user's commit, which no agent can stage.
+  // A tracked copy already deleted from the working tree is a removal awaiting its commit, so it is not reported as still tracked.
   const lines = (args: string[]) => git(args).stdout.split("\n").filter(Boolean);
   const pending = new Set(lines(["ls-files", "--deleted", "--", ":(glob)**/settings.local.json"]));
   for (const path of lines(["ls-files", "--", ":(glob)**/settings.local.json"]).filter((file) => !pending.has(file))) {

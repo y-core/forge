@@ -288,7 +288,7 @@ checks every tracked file the step's sources cover against that function, so a s
 **A block comment that opens on a rule — a run of separator or box-drawing characters — is a banner**, and the step fails it whatever its length.
 
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
-[bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
+[bt-2j]: ./BUILD_TOOLING.md#2j-task-branches-and-the-amend-floor
 [cr]: ../warden/canon/shared/CODE_RULES.md
 [cr-5a]: ../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [cr-5b]: ../warden/canon/shared/CODE_RULES.md#5b-forbidden-outright

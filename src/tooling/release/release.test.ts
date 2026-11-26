@@ -46,6 +46,7 @@ interface MockDeps {
   readFileAtRef: Mock<(cwd: string, ref: string, path: string) => string | null>;
   lastCommitSubject: Mock<(cwd: string) => string>;
   resolveCommit: Mock<(cwd: string, ref: string) => string>;
+  resolveTree: Mock<(cwd: string, ref: string) => string>;
   worktreeChanges: Mock<(cwd: string) => readonly string[] | undefined>;
   readWorkingFile: Mock<(cwd: string, path: string) => string | null>;
   readGateRecord: Mock<(cwd: string, tag: string) => GateRecord | null>;
@@ -78,6 +79,7 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     ),
     lastCommitSubject: mock((_cwd: string): string => "feat: a thing"),
     resolveCommit: mock((_cwd: string, ref: string): string => (ref === "HEAD" ? "a".repeat(40) : "b".repeat(40))),
+    resolveTree: mock((_cwd: string, ref: string): string => (ref === "HEAD" ? "c".repeat(40) : "d".repeat(40))),
     worktreeChanges: mock((_cwd: string): readonly string[] | undefined => []),
     readWorkingFile: mock((_cwd: string, path: string): string | null => (path === "package.json" ? '{ "version": "1.0.0" }\n' : null)),
     readGateRecord: mock((_cwd: string, _tag: string): GateRecord | null => null),
@@ -1250,6 +1252,12 @@ describe("defineReleaseConfig()", () => {
 
     expect(defineReleaseConfig(config)).toBe(config);
   });
+
+  it("returns a host-tag config unchanged", () => {
+    const config = { tagOn: "host" as const };
+
+    expect(defineReleaseConfig(config)).toEqual({ tagOn: "host" });
+  });
 });
 
 const SECTIONS_FILE = "config/changelog-sections.json";
@@ -1270,6 +1278,7 @@ const RESUME_FLAGS = {
 
 interface Repo {
   head: Record<string, string>;
+  parentHead: Record<string, string>;
   work: Record<string, string>;
   headSha: string;
   parentSha: string;
@@ -1283,6 +1292,13 @@ interface Repo {
   records: Map<string, GateRecord>;
 }
 
+/** A stand-in tree id: equal for equal contents, whatever commit carries them. */
+function treeOf(files: Record<string, string>): string {
+  return createHash("sha1")
+    .update(JSON.stringify(Object.entries(files).sort()))
+    .digest("hex");
+}
+
 function differingPaths(a: Record<string, string>, b: Record<string, string>): string[] {
   return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((path) => a[path] !== b[path]);
 }
@@ -1292,6 +1308,7 @@ function fakeRepo(seed: Partial<Repo> = {}) {
   const head = seed.head ?? { "package.json": MANIFEST_1_0_0, "CHANGELOG.md": WRITTEN, [SECTIONS_FILE]: "{}\n" };
   const repo: Repo = {
     head,
+    parentHead: {},
     work: { ...head },
     headSha: FIRST_HEAD,
     parentSha: FIRST_PARENT,
@@ -1313,6 +1330,7 @@ function fakeRepo(seed: Partial<Repo> = {}) {
     sequence += 1;
     repo.parentSha = repo.headSha;
     repo.headSha = String(sequence).repeat(40);
+    repo.parentHead = repo.head;
     const next = { ...repo.head };
     for (const path of changed) {
       const content = repo.work[path];
@@ -1367,6 +1385,11 @@ function fakeRepo(seed: Partial<Repo> = {}) {
       if (ref === "HEAD^") return repo.parentSha;
       throw new Error(`the fake resolves HEAD and HEAD^ only, not ${ref}`);
     }),
+    resolveTree: mock((_cwd: string, ref: string): string => {
+      if (ref === "HEAD") return treeOf(repo.head);
+      if (ref === "HEAD^") return treeOf(repo.parentHead);
+      throw new Error(`the fake resolves HEAD and HEAD^ only, not ${ref}`);
+    }),
     worktreeChanges: mock((_cwd: string): readonly string[] | undefined =>
       [...new Set([...differingPaths(repo.head, repo.work), ...repo.untracked])].sort(),
     ),
@@ -1384,7 +1407,14 @@ function fakeRepo(seed: Partial<Repo> = {}) {
     for (const fn of Object.values(deps)) fn.mockClear();
   };
 
-  return { repo, deps, land, run, clear };
+  /** The merge skill's squash: a new sha over the same trees and subject. */
+  const squash = (parentSha = repo.parentSha): void => {
+    sequence += 1;
+    repo.headSha = String(sequence).repeat(40);
+    repo.parentSha = parentSha;
+  };
+
+  return { repo, deps, land, run, clear, squash };
 }
 
 function outcomeOf(run: () => unknown): string {
@@ -1455,6 +1485,13 @@ function hostStepsIn(logs: readonly string[]): string[] {
   return start === -1 ? [] : logs.slice(start);
 }
 
+const HOST = { tagOn: "host" as const };
+
+function hostTagStepsIn(logs: readonly string[]): string[] {
+  const start = logs.findIndex((line) => line.startsWith("\nThe server refuses tags"));
+  return start === -1 ? [] : logs.slice(start);
+}
+
 describe("createReleaseCommand() — resuming a release from the state the repository is in", () => {
   type Start = "fresh" | "written" | "committed" | "tagged" | "bumped-only" | "version-mismatch";
 
@@ -1492,6 +1529,25 @@ describe("createReleaseCommand() — resuming a release from the state the repos
       const { fake, args } = startIn(start, writable);
 
       const seen = [outcomeOf(() => fake.run(args)), outcomeOf(() => fake.run(args))];
+
+      expect({ outcomes: seen, calls: releaseCalls(fake.deps) }).toEqual({ outcomes, calls });
+    });
+  }
+
+  const hostCases: { start: Start; outcomes: string[]; calls: Record<string, number> }[] = [
+    { start: "fresh", outcomes: ["ok", "ok"], calls: { updatePackageVersion: 1, writeChangelog: 1, commit: 1, createTag: 0 } },
+    { start: "written", outcomes: ["ok", "ok"], calls: { ...none, commit: 1 } },
+    { start: "committed", outcomes: ["ok", "ok"], calls: none },
+    { start: "tagged", outcomes: ["ok", "ok"], calls: none },
+    { start: "bumped-only", outcomes: ["ok", "ok"], calls: { ...none, writeChangelog: 1, commit: 1 } },
+    { start: "version-mismatch", outcomes: ["version-mismatch", "version-mismatch"], calls: none },
+  ];
+
+  for (const { start, outcomes, calls } of hostCases) {
+    it(`${start}, .git writable, tagOn host: two consecutive runs write and commit at most once and never tag`, () => {
+      const { fake, args } = startIn(start, true);
+
+      const seen = [outcomeOf(() => fake.run(args, RESUME_FLAGS, HOST)), outcomeOf(() => fake.run(args, RESUME_FLAGS, HOST))];
 
       expect({ outcomes: seen, calls: releaseCalls(fake.deps) }).toEqual({ outcomes, calls });
     });
@@ -1891,8 +1947,9 @@ describe("createReleaseCommand() — a release already tagged", () => {
 describe("createReleaseCommand() — the gate record", () => {
   const SKIPPED = "\n`bun run verify` already passed on these v1.1.0 files — not running it again.";
 
-  it("records the version, HEAD, each staged file's sha256, the gate command and when it passed", () => {
+  it("records the version, HEAD's tree, each staged file's sha256, the gate command and when it passed", () => {
     const fake = fakeRepo({ writable: false });
+    const baseTree = treeOf(fake.repo.head);
 
     fake.run();
 
@@ -1902,7 +1959,7 @@ describe("createReleaseCommand() — the gate record", () => {
         "v1.1.0",
         {
           version: "1.1.0",
-          base: FIRST_HEAD,
+          baseTree,
           files: Object.fromEntries(RELEASE_FILES.map((path) => [path, sha256Hex(fake.repo.work[path] ?? "")])),
           gateCommand: ["bun", "run", "verify"],
           passedAt: new Date(2026, 1, 3).toISOString(),
@@ -1921,7 +1978,8 @@ describe("createReleaseCommand() — the gate record", () => {
 
   it("runs the gate again on a written release when HEAD is no longer the record's base", () => {
     const fake = writtenRepo();
-    fake.repo.headSha = "9".repeat(40);
+    fake.repo.head["src/b.ts"] = "export const b = 1;\n";
+    fake.repo.work["src/b.ts"] = "export const b = 1;\n";
 
     fake.run();
 
@@ -1932,7 +1990,7 @@ describe("createReleaseCommand() — the gate record", () => {
     const fake = writtenRepo();
     const record = fake.repo.records.get("v1.1.0");
     if (record === undefined) throw new Error("expected a gate record");
-    fake.repo.records.set("v1.1.0", { ...record, base: FIRST_PARENT });
+    fake.repo.records.set("v1.1.0", { ...record, baseTree: treeOf(fake.repo.parentHead) });
 
     fake.run();
 
@@ -2002,7 +2060,7 @@ describe("createReleaseCommand() — the gate record", () => {
 
   it("runs the gate again on a committed release whose parent is not the record's base", () => {
     const fake = committedRepo();
-    fake.repo.parentSha = "9".repeat(40);
+    fake.repo.parentHead = { ...fake.repo.parentHead, "src/b.ts": "export const b = 1;\n" };
 
     fake.run();
 
@@ -2013,7 +2071,7 @@ describe("createReleaseCommand() — the gate record", () => {
     const fake = fakeRepo({ writable: false });
     fake.repo.records.set("v1.1.0", {
       version: "1.1.0",
-      base: FIRST_HEAD,
+      baseTree: treeOf(fake.repo.head),
       files: {},
       gateCommand: ["bun", "run", "verify"],
       passedAt: "2026-01-01T00:00:00.000Z",
@@ -2111,6 +2169,202 @@ function chmodDeniesWrites(): boolean {
 }
 
 const CHMOD_DENIES = chmodDeniesWrites();
+
+describe("createReleaseCommand() — tagging on the host when the server refuses tags", () => {
+  const SKIPPED = "\n`bun run verify` already passed on these v1.1.0 files — not running it again.";
+
+  function stepsFor(fake: ReturnType<typeof fakeRepo>, ref = "main"): string[] {
+    return [
+      `\nThe server refuses tags, so v1.1.0 is cut on the host once the release commit reaches ${ref}.`,
+      `The commit reaches ${ref} through the repository's push flow (in an agent clone, the \`land\` skill). Then on the host:`,
+      `  test "$(git log -1 --format='%T %s' ${ref})" = "${treeOf(fake.repo.head)} chore: release 1.1.0" && git tag v1.1.0 ${ref}`,
+      "  git push && git push --tags",
+      "Then run `git fetch --tags` and `bun run release` here to confirm.",
+    ];
+  }
+
+  it("commits a fresh release, never tags it, and prints the host's guarded tag", () => {
+    const fake = fakeRepo();
+
+    const steps = hostTagStepsIn(fake.run([], RESUME_FLAGS, HOST));
+
+    expect({
+      commits: fake.deps.commit.mock.calls,
+      tag: fake.deps.createTag.mock.calls.length,
+      gate: fake.deps.runGate.mock.calls.length,
+      steps,
+    }).toEqual({ commits: [["/project", "chore: release 1.1.0", RELEASE_FILES]], tag: 0, gate: 1, steps: stepsFor(fake) });
+  });
+
+  it("reprints the same steps on the unpushed release commit, skipping the gate", () => {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, HOST);
+    fake.clear();
+
+    const logs = fake.run([], RESUME_FLAGS, HOST);
+
+    expect({
+      commit: fake.deps.commit.mock.calls.length,
+      tag: fake.deps.createTag.mock.calls.length,
+      gate: fake.deps.runGate.mock.calls.length,
+      skipped: logs.includes(SKIPPED),
+      steps: hostTagStepsIn(logs),
+    }).toEqual({ commit: 0, tag: 0, gate: 0, skipped: true, steps: stepsFor(fake) });
+  });
+
+  it("reads the squashed release commit as committed, keeping its subject and trees", () => {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, HOST);
+    fake.squash();
+    fake.clear();
+
+    const logs = fake.run([], RESUME_FLAGS, HOST);
+
+    expect({
+      commit: fake.deps.commit.mock.calls.length,
+      tag: fake.deps.createTag.mock.calls.length,
+      gate: fake.deps.runGate.mock.calls.length,
+      steps: hostTagStepsIn(logs),
+    }).toEqual({ commit: 0, tag: 0, gate: 0, steps: stepsFor(fake) });
+  });
+
+  it("skips the gate after a squash that gave the release commit's parent a new sha over the same tree", () => {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, HOST);
+    fake.squash("e".repeat(40));
+    fake.clear();
+
+    fake.run([], RESUME_FLAGS, HOST);
+
+    expect(fake.deps.runGate.mock.calls.length).toBe(0);
+  });
+
+  it("runs the gate again when the squash moved the release commit onto a parent with other content", () => {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, HOST);
+    fake.squash("e".repeat(40));
+    fake.repo.parentHead = { ...fake.repo.parentHead, "src/b.ts": "export const b = 1;\n" };
+    fake.clear();
+
+    fake.run([], RESUME_FLAGS, HOST);
+
+    expect(fake.deps.runGate.mock.calls.length).toBe(1);
+  });
+
+  it("reads the host's tag, once fetched, as nothing to release", () => {
+    const fake = fakeRepo();
+    fake.run([], RESUME_FLAGS, HOST);
+    fake.squash();
+    fake.repo.tags.push("v1.1.0");
+    fake.repo.remote = ["v1.0.0", "v1.1.0"];
+
+    const logs = fake.run([], RESUME_FLAGS, HOST);
+
+    expect({ logs, commit: fake.deps.commit.mock.calls.length, tag: fake.deps.createTag.mock.calls.length }).toEqual({
+      logs: ["Already at 1.1.0 — nothing to release."],
+      commit: 1,
+      tag: 0,
+    });
+  });
+
+  for (const dry of [false, true]) {
+    it(`asks for a fetch when the remote carries the tag the clone lacks${dry ? ", under --dry" : ""}`, () => {
+      const fake = fakeRepo();
+      fake.repo.remote = ["v1.0.0", "v1.1.0"];
+
+      const logs = fake.run([], { ...RESUME_FLAGS, dry }, HOST);
+
+      expect({ logs, gate: fake.deps.runGate.mock.calls.length, writes: writesBy(fake.deps), calls: releaseCalls(fake.deps) }).toEqual({
+        logs: ["\nv1.1.0 is already on the remote. Run `git fetch --tags` and `bun run release` here to confirm."],
+        gate: 0,
+        writes: 0,
+        calls: { updatePackageVersion: 0, writeChangelog: 0, commit: 0, createTag: 0 },
+      });
+    });
+  }
+
+  it("checks the tree alone when the release files were committed under another subject", () => {
+    const fake = writtenRepo();
+    fake.land("chore: bump", RELEASE_FILES);
+    fake.repo.writable = true;
+
+    const logs = fake.run([], RESUME_FLAGS, HOST);
+
+    expect({ commit: fake.deps.commit.mock.calls.length, guard: hostTagStepsIn(logs)[2] }).toEqual({
+      commit: 0,
+      guard: `  test "$(git log -1 --format=%T main)" = ${treeOf(fake.repo.head)} && git tag v1.1.0 main`,
+    });
+  });
+
+  it("tags the publishing branch, never HEAD's, and prints no push, on another branch under --allow-branch", () => {
+    const fake = fakeRepo();
+    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => "task/x");
+
+    const steps = hostTagStepsIn(fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
+
+    expect({
+      steps,
+      namesTaskBranch: steps.some((line) => line.includes("task/x")),
+      pushesFromHere: steps.some((line) => line.includes("git push origin")),
+    }).toEqual({ steps: stepsFor(fake), namesTaskBranch: false, pushesFromHere: false });
+  });
+
+  it("tags the publishing branch from a detached HEAD under --allow-branch", () => {
+    const fake = fakeRepo();
+    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => null);
+
+    const steps = hostTagStepsIn(fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
+
+    expect(steps).toEqual(stepsFor(fake));
+  });
+
+  it("refuses a remote that names no publishing branch before the gate and every write, even under --allow-branch", () => {
+    const fake = fakeRepo();
+    fake.deps.defaultBranch.mockImplementation((_cwd: string): string | null => null);
+
+    const kind = outcomeOf(() => fake.run([], { ...RESUME_FLAGS, "allow-branch": true }, HOST));
+
+    expect({ kind, gate: fake.deps.runGate.mock.calls.length, writes: writesBy(fake.deps), calls: releaseCalls(fake.deps) }).toEqual({
+      kind: "wrong-branch",
+      gate: 0,
+      writes: 0,
+      calls: { updatePackageVersion: 0, writeChangelog: 0, commit: 0, createTag: 0 },
+    });
+  });
+
+  it("quotes a publishing branch name the shell would expand", () => {
+    const fake = fakeRepo();
+    fake.deps.currentBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
+    fake.deps.defaultBranch.mockImplementation((_cwd: string): string | null => "rel$ease");
+
+    const steps = hostTagStepsIn(fake.run([], RESUME_FLAGS, HOST));
+
+    expect(steps).toEqual(stepsFor(fake, "'rel$ease'"));
+  });
+
+  it("keeps the read-only steps when .git is read-only", () => {
+    const fake = fakeRepo({ writable: false });
+
+    const logs = fake.run([], RESUME_FLAGS, HOST);
+
+    expect({
+      readOnly: hostStepsIn(logs).length > 0,
+      hostTag: hostTagStepsIn(logs),
+      row: logs.includes("  commit:    on the host (.git is read-only)"),
+    }).toEqual({ readOnly: true, hostTag: [], row: true });
+  });
+
+  it("names the host's tag in the commit row of a dry run, writing nothing", () => {
+    const fake = fakeRepo();
+
+    const logs = fake.run([], { ...RESUME_FLAGS, dry: true }, HOST);
+
+    expect({ row: logs.includes("  commit:    here; the tag on the host after the push"), writes: writesBy(fake.deps) }).toEqual({
+      row: true,
+      writes: 0,
+    });
+  });
+});
 
 describe("forge release end to end in a real repository", () => {
   const CHANGELOG = "# Changelog\n\n## [Unreleased]\n\n- a thing\n\n---\n\n## [1.0.0] — 2026-01-01\n\nbody\n";
@@ -2858,6 +3112,6 @@ describe("createReleaseCommand() — the gate's place around the write", () => {
 
     fake.run();
 
-    expect(fake.repo.records.get("v1.1.0")?.base).toBe(fake.repo.headSha);
+    expect(fake.repo.records.get("v1.1.0")?.baseTree).toBe(treeOf(fake.repo.head));
   });
 });

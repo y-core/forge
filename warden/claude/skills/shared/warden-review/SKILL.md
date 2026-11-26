@@ -4,11 +4,11 @@ description: >
   Reviews code against this repository's governing corpus — the blocking invariants, the tiered
   detection commands, the severity calibration and the known-correct patterns that the canon's
   CODE_REVIEW.md owns — and reports findings that cite the chunk id each rule came from. Use when
-  the user asks for a review of code — a diff, a branch or PR, a path, or the whole codebase — or a
-  check before committing, or asks whether a change is secure, production-ready or architecturally
-  sound. Takes an optional scope — a branch, a PR, a path, or "everything" — and defaults to the
-  uncommitted working tree.
-argument-hint: "[branch|PR|path|everything]"
+  the user asks for a review of code — a diff, a commit or a range, a branch, a path, or the whole
+  codebase — or a check before committing, or asks whether a change is secure, production-ready or
+  architecturally sound. Takes an optional scope — a commit, a range, a branch, a path, or
+  "everything" — and defaults to the uncommitted working tree.
+argument-hint: "[commit|range|branch|path|everything]"
 disallowed-tools: Edit, Write
 ---
 
@@ -25,7 +25,9 @@ Take the scope from the request. Default to the **uncommitted working tree** whe
 | The user said | Review |
 | --- | --- |
 | nothing, "my changes", "the diff" | `git diff HEAD` plus untracked files |
-| a branch or a PR number | that branch's diff against the merge base |
+| a commit, or `<sha>^!` | `git show <sha>` — that commit alone, as a handoff hands it over |
+| a range, `<a>..<b>` | `git diff <a>..<b>`, and `git log <a>..<b>` for the messages |
+| a branch | that branch's diff against the merge base |
 | a path or a namespace | every file under it |
 | "the codebase", "everything" | the whole tree, namespace by namespace |
 
@@ -35,9 +37,10 @@ Take the scope from the request. Default to the **uncommitted working tree** whe
    chunk id it returns (`AGENT_GUIDE.md` §1). Do not name a path: the canon is not on disk in a
    consuming repository, and the section numbers below are that document's own.
 2. **Establish a green baseline first** (§1a). Before reading anything, run the `unit` tier with
-   `--reuse` (`AGENT_WORKFLOW.md` §4), so a pre-existing failure is not attributed to the change
-   under review. The author's task-check receipt for this exact tree answers it in one line; the
-   full gate is not part of a review.
+   `--reuse` (`AGENT_WORKFLOW.md` §4) on the tree under review — for a commit, the worktree checked
+   out at it (`AGENT_WORKFLOW.md` §5b) — so a pre-existing failure is not attributed to the change.
+   The author's task-check receipt for this exact tree answers it in one line; the full gate is not
+   part of a review.
 3. **Work the tiers in order** — §3a gated, §3b ripgrep with the triage class each command states,
    §3c judgement. A tier-1 rule the gate already proves is not re-inspected by hand.
 4. **Verify before reporting** (§5): try to disprove each finding, and keep it only if that fails.

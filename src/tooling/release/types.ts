@@ -63,13 +63,15 @@ export interface ReleaseCommandConfig {
   sectionsFile?: string;
   /** The gate run before the tag is cut, as argv. Defaults to `["bun", "run", "verify"]`. */
   gateCommand?: string[];
+  /** Where the release tag is cut: `"here"`, or `"host"` for a writable clone whose git server refuses tags, which commits and prints the host's `git tag` step for after the push. Defaults to `"here"`. */
+  tagOn?: "here" | "host";
 }
 
-/** A green gate on `base`, with the release files forge derived from it, so a resumed release on the same bytes can skip running it again. */
+/** A green gate on `baseTree`, with the release files forge derived from it, so a resumed release on the same bytes can skip running it again. */
 export interface GateRecord {
   version: string;
-  /** The commit the gate passed on, and the release commit's parent. */
-  base: string;
+  /** The tree the gate passed on: HEAD's, or the release commit's parent's for _committed_. */
+  baseTree: string;
   /** Each staged path's sha256, as it is committed. */
   files: Record<string, string>;
   gateCommand: string[];
@@ -115,6 +117,8 @@ export interface ReleaseDeps {
   lastCommitSubject: (cwd: string) => string;
   /** The commit sha `ref` names. */
   resolveCommit: (cwd: string, ref: string) => string;
+  /** The tree sha `ref` names. */
+  resolveTree: (cwd: string, ref: string) => string;
   /** Every path the working tree changes against HEAD, or `undefined` outside a work tree. */
   worktreeChanges: (cwd: string) => readonly string[] | undefined;
   /** Reads a working-tree file, or `null` when it does not exist. */

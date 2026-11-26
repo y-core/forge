@@ -36,9 +36,10 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 
 That rationale is also the boundary:
 
-- **The full cross-cutting gate comes here, once, when an epic closes** (`AGENT_WORKFLOW.md` §4). `bun run verify`, the gate an epic closes
-  on, and any suite whose output is voluminous or whose failure could belong to more than one owner. A
-  bare `verify` runs no browser spec, so a verdict on it never says a page works in a browser.
+- **The full cross-cutting gate comes here, once, when an epic closes** (`AGENT_WORKFLOW.md` §4) — on the rebased tip of its last wave, before
+  that wave's push (`AGENT_WORKFLOW.md` §5b), so a red verdict holds the push. `bun run verify`, the gate an epic closes on, and any suite whose
+  output is voluminous or whose failure could belong to more than one owner. A bare `verify` runs no browser spec, so a verdict on it never says
+  a page works in a browser.
 - **`verify:scheduled` never comes here.** It belongs to the release command and the daily cron (`TESTING.md` §6); a request for it is refused,
   named as refused, and nothing runs.
 - **The task check does not, nor does an interim check.** An owning agent closes each task on the `unit` tier itself and checks in the interim on

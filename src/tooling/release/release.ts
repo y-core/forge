@@ -23,6 +23,7 @@ import {
   readFileAtRef,
   remoteTags,
   resolveCommit,
+  resolveTree,
   tagExists,
   tagIsAncestorOfHead,
 } from "./git";
@@ -149,12 +150,12 @@ function isReleaseCommit(changed: readonly string[], staged: readonly string[], 
 
 function gateRecordCovers(
   record: GateRecord,
-  wanted: { version: string; gateCommand: readonly string[]; base: string; files: Record<string, string> },
+  wanted: { version: string; gateCommand: readonly string[]; baseTree: string; files: Record<string, string> },
 ): boolean {
   const paths = Object.keys(wanted.files);
   return (
     record.version === wanted.version &&
-    record.base === wanted.base &&
+    record.baseTree === wanted.baseTree &&
     record.gateCommand.length === wanted.gateCommand.length &&
     record.gateCommand.every((word, i) => word === wanted.gateCommand[i]) &&
     Object.keys(record.files).length === paths.length &&
@@ -164,10 +165,10 @@ function gateRecordCovers(
 
 function isGateRecord(value: unknown): value is GateRecord {
   if (typeof value !== "object" || value === null) return false;
-  const { version, base, files, gateCommand, passedAt } = value as Record<string, unknown>;
+  const { version, baseTree, files, gateCommand, passedAt } = value as Record<string, unknown>;
   return (
     typeof version === "string" &&
-    typeof base === "string" &&
+    typeof baseTree === "string" &&
     typeof passedAt === "string" &&
     Array.isArray(gateCommand) &&
     gateCommand.every((word) => typeof word === "string") &&
@@ -227,6 +228,7 @@ export function createReleaseCommand(
     readFileAtRef: (cwd, ref, path) => readFileAtRef(cwd, ref, `./${path}`),
     lastCommitSubject: getLastCommitMessage,
     resolveCommit,
+    resolveTree,
     worktreeChanges,
     readWorkingFile: readChangelog,
     readGateRecord,
@@ -240,6 +242,7 @@ export function createReleaseCommand(
     changelogFile = "CHANGELOG.md",
     sectionsFile = "config/changelog-sections.json",
     gateCommand = [...DEFAULT_GATE_COMMAND],
+    tagOn = "here",
   } = config;
 
   const releaseFiles = [...new Set(["package.json", changelogFile, sectionsFile])];
@@ -412,6 +415,14 @@ export function createReleaseCommand(
         return;
       }
 
+      if (tagOn === "host") {
+        const remote = published === undefined ? deps.remoteTags(cwd) : published;
+        if (remote !== null && remote.includes(tag)) {
+          console.log(`\n${tag} is already on the remote. Run \`git fetch --tags\` and \`bun run release\` here to confirm.`);
+          return;
+        }
+      }
+
       if (!allowSemver && result.reason === "auto-patch" && result.previous !== null) {
         const removed = deps.removedSurfaceSince(cwd, result.previous);
         if (removed.length > 0) {
@@ -497,6 +508,7 @@ export function createReleaseCommand(
       }
 
       const writable = deps.gitWritable(cwd);
+      const hostTag = tagOn === "host" && writable;
 
       // One definition list rather than four literals whose alignment lived inside the label
       // strings, where renaming one silently misaligned the other three.
@@ -507,7 +519,10 @@ export function createReleaseCommand(
           ...(result.evidence ? [{ term: "because:", description: becauseRow(result.evidence, result.previous) }] : []),
           { term: "tag:", description: tag },
           { term: "changelog:", description: changelogNote },
-          { term: "commit:", description: writable ? "here" : "on the host (.git is read-only)" },
+          {
+            term: "commit:",
+            description: !writable ? "on the host (.git is read-only)" : hostTag ? "here; the tag on the host after the push" : "here",
+          },
         ],
         { indent: 2, gap: 1 },
       )) {
@@ -521,6 +536,7 @@ export function createReleaseCommand(
 
       // The tag is the publish trigger and CI runs the gate only after it is public, so a red gate
       // there leaves a fetchable tag with no asset and a version that cannot be reused.
+      let publishesFrom: string | null = null;
       if (!allowBranch) {
         const branch = deps.currentBranch(cwd);
         // Answered without the remote, so it is answered whether or not the remote answers its own.
@@ -532,7 +548,7 @@ export function createReleaseCommand(
               "Check out the branch you are releasing, or use --allow-branch.",
           );
         }
-        const publishesFrom = deps.defaultBranch(cwd);
+        publishesFrom = deps.defaultBranch(cwd);
         if (publishesFrom === null) {
           console.log(`  (remote names no publishing branch — could not confirm ${branch} is the one it publishes from)`);
         } else if (branch !== publishesFrom) {
@@ -543,14 +559,25 @@ export function createReleaseCommand(
           );
         }
       }
+      let hostBranch: string | null = null;
+      if (hostTag) {
+        hostBranch = allowBranch ? deps.defaultBranch(cwd) : publishesFrom;
+        if (hostBranch === null) {
+          throw new ReleaseError(
+            "wrong-branch",
+            'The remote names no publishing branch, and with `tagOn: "host"` the host tags the branch the release commit is pushed to, so there is none to name.\n' +
+              "Set it with `git remote set-head origin --auto`, then release again.",
+          );
+        }
+      }
 
-      const snapshot = (): { base: string; files: Record<string, string> } => {
+      const snapshot = (): { baseTree: string; files: Record<string, string> } => {
         const files: Record<string, string> = {};
         for (const path of staged) {
           const content = state === "committed" ? headContent(path) : contentOf(path);
           if (content !== null) files[path] = sha256(content);
         }
-        return { base: deps.resolveCommit(cwd, state === "committed" ? "HEAD^" : "HEAD"), files };
+        return { baseTree: deps.resolveTree(cwd, state === "committed" ? "HEAD^" : "HEAD"), files };
       };
 
       const partWritten = (err: unknown): ReleaseError =>
@@ -656,6 +683,20 @@ export function createReleaseCommand(
             );
           }
         }
+      }
+
+      if (hostBranch !== null) {
+        const ref = shellWord(hostBranch);
+        const tree = deps.resolveTree(cwd, "HEAD");
+        const check = committed
+          ? `test "$(git log -1 --format='%T %s' ${ref})" = "${tree} ${message}"`
+          : `test "$(git log -1 --format=%T ${ref})" = ${tree}`;
+        console.log(`\nThe server refuses tags, so ${tag} is cut on the host once the release commit reaches ${ref}.`);
+        console.log(`The commit reaches ${ref} through the repository's push flow (in an agent clone, the \`land\` skill). Then on the host:`);
+        console.log(`  ${check} && git tag ${tag} ${ref}`);
+        console.log("  git push && git push --tags");
+        console.log("Then run `git fetch --tags` and `bun run release` here to confirm.");
+        return;
       }
 
       try {

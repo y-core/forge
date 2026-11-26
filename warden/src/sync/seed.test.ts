@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { WARDEN_ROOT } from "../paths";
 import { seed, seedFiles } from "./seed";
 
 const roots: string[] = [];
@@ -77,5 +78,18 @@ describe("seed()", () => {
     seed(repo, [{ file: "CLAUDE.md", from: join(source, "CLAUDE.md") }], "starter");
 
     expect(readFileSync(join(repo, "CLAUDE.md"), "utf-8")).toBe("/mcp/starter");
+  });
+
+  // AGENT_WORKFLOW.md §5b puts each repository's reviewer in its own worktree; a shared literal would point two reviewers at one.
+  it("names the repository's own review worktree in each shipped CLAUDE.md seed", () => {
+    for (const kind of ["libs", "apps"] as const) {
+      const repo = mkdtempSync(join(tmpdir(), `warden-seed-review-${kind}-`));
+      roots.push(repo);
+
+      seed(repo, seedFiles(join(WARDEN_ROOT, "claude"), kind), "cornellaw");
+
+      const text = readFileSync(join(repo, "CLAUDE.md"), "utf-8");
+      expect([kind, text.includes("`~/work/cornellaw-review`"), text.includes("~/work/forge-review")]).toEqual([kind, true, false]);
+    }
   });
 });

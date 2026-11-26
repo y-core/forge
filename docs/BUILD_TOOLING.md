@@ -23,7 +23,7 @@ audience: internal
 - §1c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
 - §1d CommandBase and Command Are Not Mergeable: the variance that forces two interfaces
 - §2 tooling/gate and tooling/release — Project Tooling: the blessed release path and the published gate
-- §2a createReleaseCommand — Automated Release Workflow: the ordered steps, the refusals, the resume states and the host commit
+- §2a createReleaseCommand — Automated Release Workflow: the ordered steps, the refusals, the resume states, and where the commit and tag are cut
 - §2b The Export Surface a Release Compares: the symbol set behind the shrink guard, and what it ignores
 - §2c Git and Manifest Internals: the unpublished helpers the two factories are built from
 - §2d Changelog Promotion — the Unreleased Contract: what release does to `CHANGELOG.md`
@@ -32,7 +32,7 @@ audience: internal
 - §2g cloudflareWorkerSteps — the Fleet Preset: a step-table factory, not new machinery
 - §2h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
-- §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
+- §2j Task Branches and the Amend Floor: a branch per task in the clone, one squashed commit per push on `main`, and what may still be rewritten
 - §2k `dev:forge` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
 - §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:scheduled` alone, and where component coverage is checked
 - §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
@@ -149,7 +149,7 @@ writes: `package.json`, `changelogFile` and `sectionsFile`.
 | --- | --- | --- |
 | fresh | Nothing of V is written: `package.json` is not at V, and the changelog has no `[V]` heading | Guards, gate, write, then commit and tag |
 | open | V is written, in the working tree or in a commit, and is untagged, and HEAD is not a committed release with nothing changed since | Write what differs, gate, then commit what differs from HEAD and tag |
-| committed | HEAD is forge's release commit for V: its subject, its `package.json` at V, only staged paths and every release file. No release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag |
+| committed | HEAD is forge's release commit for V: its subject, its `package.json` at V, only staged paths and every release file. No release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag; with `tagOn: "host"`, print the host's step instead |
 | tagged | V's tag exists | Reports that V is already released and stops. When a reachable remote lacks the tag, it prints `git push --tags` instead of refusing |
 
 **An open release is rebuilt, not replayed.** `reopenRelease` folds `[V]`'s body back into `[Unreleased]`, merging the two by `###` subsection
@@ -173,8 +173,9 @@ What an open release still refuses:
 - **The lower layer refuses a second promotion** (§2d): `promoteUnreleased` an existing `[V]`, `reopenRelease` a `[V]` that is not newest.
 
 **A green gate is recorded, and a later run reruns it unless the record matches.** The record, `.forge/release/<tag>.json` under the ignored
-`.forge/`, binds the version to the base commit, a hash of each staged file as committed, and the gate command. The base is HEAD, or `HEAD^` with
-HEAD's blobs for _committed_. Forge only reads the record, never executes it, and a record it cannot write is reported, not refused.
+`.forge/`, binds the version to the base tree, a hash of each staged file as committed, and the gate command. The base is HEAD's tree, or `HEAD^`'s
+with HEAD's blobs for _committed_. A squash keeps every tree and no sha ([`AGENT_WORKFLOW.md`][aw-5b] §5b), so the record survives the push. Forge
+only reads the record, never executes it, and a record it cannot write is reported, not refused.
 
 **When `.git` is read-only, the run stops before the commit and prints the host's steps.** `gitWritable` resolves the git directory and tests it for
 write access; `EROFS` and `EACCES` both read as read-only. The summary's `commit:` row reports it before the gate runs, `--dry` included. The steps
@@ -182,6 +183,16 @@ are printed, never written as a script: a script the workspace writes and the ho
 checking that HEAD is still the commit the run saw, and the blob ids of any file it commits, so a host whose tree has moved stops before it writes.
 Every step fails harmlessly when repeated, and the next run lands in _tagged_. The output and the sequence of runs are
 [`src/tooling/release/README.md`][release-reopen]'s.
+
+**Where the clone is writable and its git server refuses tags, the release commit is made in the clone and the tag on the host.** The release commit
+reaches `main` as a task under no epic, its own push unit (§2j), and the push's squash keeps forge's release subject verbatim, because the
+_committed_ state recognises the commit by it. The tag is the user's, cut on the host on the publishing branch after the push: the host checkout is
+the server's repository, so the tag is where `tag-unpushed` looks for it, and the clone's next fetch brings it back. A tag made in the clone would
+name a sha the push may still replace and could not be pushed, so the run stops after the commit and prints the host's `git tag` step instead. The
+mode is stated as `tagOn: "host"` in the release config rather than read from a refusal, because the run never pushes and so has nothing to read.
+The host step names the branch the remote publishes from, never HEAD's branch, and tags it after checking that its tip carries the gated tree and
+the release subject, which the squash keeps and the sha does not. The run prints no `git push`: the push is the repository's push flow, `merge` in
+an agent clone. A remote that names no publishing branch is refused in this mode, with no override.
 
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error` as `Error: <message>` and exits 1 (§1c), so the
 operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
@@ -460,20 +471,23 @@ consuming app whose tree says otherwise supplies. A derived default is not a for
 consumer cannot displace would be. **An entry that only restates what the check derives fails**, on the same terms as a stale one: an escape nobody
 can see the need for is an escape nobody notices going wrong.
 
-### 2j. Trunk-Only Development and the Amend Floor
+### 2j. Task Branches and the Amend Floor
 
-**Forge develops on the trunk: no branches, no pull requests, no worktrees.** No workflow runs on a branch or a pull request — the release
-workflow fires only on a pushed `v*` tag — so a pull request has nothing to run and nobody to review it. The gate is `bun run verify`, run locally
-before the commit that claims it. And branch-shaped git is the unreliable part of this
-container: `git stash`, fresh branches and worktree removal have each broken here, where commit, amend and tag have not. Trunk-only is therefore a
-fit to the machinery that works, not a preference about workflow.
+**Forge develops on task branches in the clone and pushes one squashed commit per push unit to `main`.** Each session clones from the project's
+git server, a task is worked on `task/<id>`, the handoff squashes it into the one commit that is reviewed and merged into local `main`, and the push
+squashes the unit's merged commits into one ([`AGENT_WORKFLOW.md`][aw-4b] §4b and
+[`AGENT_WORKFLOW.md`][aw-5b] §5b). There are still no pull requests: no workflow runs on a branch or a pull request — the release workflow
+fires only on a pushed `v*` tag — so review is the reviewer session's verdict on a sha, and the gate is the tier the push runs on the rebased tip.
+The trunk-only rule this replaces was a fit to a host-mounted `.git`, where `git stash`, fresh branches and worktree removal broke; a clone of its
+own has none of that.
 
-**The invariant that replaces the discipline a branch would have provided is the amend floor.** `git describe --tags --abbrev=0` marks it. **Above
-the floor, history is private** — amend, reword and reorder freely. **At or below it, history is published**: a consumer has installed the tarball
-released at that tag ([`FORGE_CONSUMPTION.md`][fc-4c] §4c), so rewriting those commits changes what the tag names without changing the version
-they asked for.
+**The invariant that keeps history honest is the amend floor, and it is `origin/main`.** **Above it, history is private** — amend, reword, reorder
+and rebase freely, on the one condition that a reviewed commit keeps its patch until the push squashes it ([`AGENT_WORKFLOW.md`][aw-5b] §5b). **At
+or below it, history is published**: another session, the host checkout and the next push all build on it, and the server takes fast-forward pushes
+only. Below that again, the latest `git describe --tags --abbrev=0` marks what a consumer has installed ([`FORGE_CONSUMPTION.md`][fc-4c] §4c), and
+rewriting those commits would change what the tag names without changing the version they asked for.
 
-**`forge release` enforces the floor rather than trusting it**, in a preflight that runs before anything is written: it refuses when the previous
+**`forge release` enforces the tag floor rather than trusting it**, in a preflight run before anything is written: it refuses when the previous
 tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
 unpushed tag does not exist for a consumer, and `getLatestTag` would cut the next release on top of it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
@@ -482,10 +496,12 @@ version being released, already cut here but not pushed, there is nothing to ref
 
 These habits carry the rest:
 
-1. **Commit per verified unit** — one coherent change, at the point `bun run verify` is green for it. A later fix to that same unit is `--amend`; a
-   different concern is a new commit. Below the tag the log is the only bisect surface there is.
+1. **One commit per push unit on `main`.** Commit on the task branch as often as helps; the handoff squashes it to one commit whose `verify:unit`
+   is green, and that is the commit reviewed. The push squashes the unit's merged commits — a task under no epic, or a wave
+   ([`AGENT_WORKFLOW.md`][aw-5b] §5b) — into one, a review finding's fix included, with a short why-subject and no task id or trailer
+   ([`AGENT_WORKFLOW.md`][aw-4b] §4b). The log of `main` is the bisect surface, one push unit per step.
 2. **Never `git stash`.** Commit the work in progress and `--amend` it into shape later; `git reflog` recovers a bad amend, where a lost stash entry
-   has no such handle.
+   has no such handle. The stash is also one stack per repository, shared by the review worktree.
 3. **Write the `[Unreleased]` changelog entry in the commit that earns it.** `validate-changelog` refuses an empty `[Unreleased]` at release time,
    which catches the omission far from the change that caused it.
 
@@ -601,6 +617,8 @@ flags from source, not from any config, and this check cannot see it.
 
 [ap]: ./ASSET_PIPELINE.md
 [ap-4d]: ./ASSET_PIPELINE.md#4d-the-service-workers-input-record
+[aw-4b]: ../warden/canon/shared/AGENT_WORKFLOW.md#4b-commits-and-the-push
+[aw-5b]: ../warden/canon/shared/AGENT_WORKFLOW.md#5b-a-tasks-path-to-main
 [canon-testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
 [cb-6]: ../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
 [fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library

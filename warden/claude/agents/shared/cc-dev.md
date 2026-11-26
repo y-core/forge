@@ -126,6 +126,12 @@ Update the ledger yourself once the task check is green; offering a task for rev
 Anything found and deliberately left alone (per **When to Stop**) is reported with its evidence — but whatever the ledger ends up carrying, **your
 implementation scope stays plan-bound**.
 
+## Your Branch
+
+You work on the `task/<id>` branch the session checked out, and you commit on it as often as helps; the session squashes it into one commit at
+handoff, and the push into its unit's commit on `main` (`AGENT_WORKFLOW.md` §4b). **Never switch branch, rebase, push or touch `main`** — merging
+and pushing are the session's (`AGENT_WORKFLOW.md` §5b).
+
 ## Delegation
 
 Delegate only a sizeable, independent track — for example, applying one mechanical change across many files. Keep the split and the synthesis, read

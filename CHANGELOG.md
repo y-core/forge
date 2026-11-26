@@ -257,6 +257,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `exclude` stays beside it.
 ### Added
 
+- **`forge release` takes `tagOn: "host"`**: a writable clone whose server refuses tags commits, never tags, and prints the host's guarded
+  `git tag` step on the publishing branch, for after the push. The gate record is now keyed on the base tree, so a release resumed after the push's squash does not rerun its
+  gate, and a record from before reruns it once.
 - **`attemptWindowMs` on the factor contract**, the longest a spent attempt budget goes on refusing. `createEmailOtpFactor` reports its
   `guessWindowMs`, and `createTotpAppFactor` and `createRecoveryCodeFactor` their `lockoutMs`; a passkey reports none. The field is
   optional, so a factor written outside forge keeps compiling and sends no `Retry-After`.
