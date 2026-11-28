@@ -216,6 +216,8 @@ export interface CommentBudgetCheckConfig {
   sources: readonly string[];
   /** Files whose leading `//` run is an upstream licence notice, each mapped to the attribution it carries. */
   licences?: ReadonlyMap<string, string>;
+  /** Also fail every `.ts`, `.tsx` and `.css` file in the git work tree that `sources` leaves unscanned. */
+  coverTracked?: boolean;
 }
 
 /** What the packaging check needs to judge a module against the published tarball. @public */
@@ -232,6 +234,12 @@ export interface PackagingCheckConfig {
   entries?: readonly string[];
   /** Files the tarball must carry, relative to `root` — each must exist and survive the `files` array. */
   required?: readonly string[];
+  /** The `scripts` map, verbatim from `package.json`; none may reach outside the checkout through `../`. */
+  scripts?: Readonly<Record<string, string>>;
+  /** `packageManager`, verbatim; a `bun@x.y.z` pin requires `engines.bun` to be `>=x.y.z`. */
+  packageManager?: string;
+  /** The `engines` map, verbatim. */
+  engines?: Readonly<Record<string, string>>;
 }
 
 /** A colour scheme the theme is audited in. */
@@ -356,6 +364,8 @@ export interface CssSourcesCheckConfig {
   readme: string;
   /** Directories under `uiDir` that emit no utility class, each mapped to the reason — a claim pass B re-checks. */
   classFree?: ReadonlyMap<string, string>;
+  /** Files, relative to `root`, whose class-shaped strings are quoted as data and never rendered, each mapped to the reason; pass B skips them. */
+  quotedClasses?: ReadonlyMap<string, string>;
   /** Directories under `uiDir` that declare classes but are opt-in, each mapped to the exact `@source` line an app must add. */
   consumerScanned?: ReadonlyMap<string, string>;
   /** The specifier a README's stylesheet `@import` line begins with. */
@@ -945,4 +955,12 @@ export interface ConfigFileCheckConfig {
   root: string;
   /** Also hold `.oxlintrc.json`, `.oxfmtrc.json` and `tsconfig.json` to forge's application bases. */
   baseline?: boolean;
+  /** Repository-relative files a tool writes into `config/`, the only files there besides modules. Defaults to `CONFIG_STATE_FILES`. */
+  stateFiles?: readonly string[];
+  /** Repository-relative directories under `config/` a tool writes, whose contents are its own. Defaults to `CONFIG_STATE_DIRS`. */
+  stateDirs?: readonly string[];
+  /** The table runs `validate-markdown`, so `.oxfmtrc.json` must ignore `**\/*.md` and the two never rewrite the same bytes. */
+  markdown?: boolean;
+  /** The subpaths `forge.node` lists; `playwright.config.ts` reaches forge only through one, by specifier or by its source directory. */
+  nodeSubpaths?: readonly string[];
 }

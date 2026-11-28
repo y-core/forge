@@ -1,0 +1,13 @@
+diff --git a/src/ui/core/description-list.test.tsx b/src/ui/core/description-list.test.tsx
+index 64d36bd4..ee7006b7 100644
+--- a/src/ui/core/description-list.test.tsx
++++ b/src/ui/core/description-list.test.tsx
+@@ -34,7 +34,7 @@ describe("DescriptionList.Term", () => {
+     const html = await render(<DescriptionList.Term href='/people/ada'>Owner</DescriptionList.Term>);
+ 
+     expect(tagOf(html).startsWith("<dt ")).toBe(true);
+-    expect(attrOf(html, "href", 'data-slot="description-list-link"')).toBe("/people/ada");
++    expect(html).toContain('<a data-slot="description-list-link" href="/people/ada"');
+     expect(html.split(/<[^>]+>/).filter(Boolean)).toEqual(["Owner"]);
+   });
+ 

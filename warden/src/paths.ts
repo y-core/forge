@@ -10,6 +10,9 @@ export const WARDEN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), ".."
 /** The canon root — the fleet corpus, served rather than copied. @public */
 export const CANON_ROOT = resolve(WARDEN_ROOT, "canon");
 
+/** The canon's rule files, one per canon document, mirroring the canon tree. @public */
+export const RULES_CANON_ROOT = resolve(WARDEN_ROOT, "src/rules/canon");
+
 /** The only tree a sync writes from. @public */
 export const CLAUDE_ROOT = resolve(WARDEN_ROOT, "claude");
 

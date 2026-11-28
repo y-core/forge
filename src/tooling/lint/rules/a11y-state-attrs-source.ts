@@ -1,6 +1,5 @@
 import { classLiteralVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 /** Every key `STATE_ATTRS` registers, which is what a styling hook is read from. */
 export const STATE_ATTR_KEYS: readonly string[] = [
@@ -21,13 +20,12 @@ export const STATE_ATTR_KEYS: readonly string[] = [
 const ARIA_STATE = new RegExp(`(?<![a-z0-9])aria-\\[?(${STATE_ATTR_KEYS.join("|")})(?![a-z0-9-])`);
 
 /** A Tailwind variant that styles from an `aria-*` state `STATE_ATTRS` gives a `data-*` hook. */
-export const a11yStateAttrsSource: LintRule = {
+export const a11yStateAttrsSource = defineLintRule("forge-ui-a11y-state-attrs-source", {
   meta: {
     type: "problem",
     docs: { description: "State is read in CSS from the `data-*` hook `STATE_ATTRS` registers, never from its `aria-*` counterpart." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-state-attrs-source");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = new Map<string, string>();
       for (const token of found.text.split(/\s+/)) {
@@ -39,4 +37,4 @@ export const a11yStateAttrsSource: LintRule = {
       }
     });
   },
-};
+});

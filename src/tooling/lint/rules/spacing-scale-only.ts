@@ -1,7 +1,6 @@
 import { classLiteralVisitor } from "../ast.ts";
 import { SPACING_ROOTS, SPACING_STEPS, SPACING_UNIT } from "../data/design-scale.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 const ROOTS = new Set(SPACING_ROOTS);
 
@@ -30,13 +29,12 @@ function stepFor(value: string): { step: string; negative: boolean } | undefined
 }
 
 /** An arbitrary length on a spacing utility where the scale already states that value. */
-export const spacingScaleOnly: LintRule = {
+export const spacingScaleOnly = defineLintRule("forge-ui-spacing-scale-only", {
   meta: {
     type: "problem",
     docs: { description: "Spacing comes from the scale the design system declares, so one edit to `--spacing` moves the whole layout." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-spacing-scale-only");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = new Set<string>();
       for (const match of found.text.matchAll(ARBITRARY)) {
@@ -55,4 +53,4 @@ export const spacingScaleOnly: LintRule = {
       }
     });
   },
-};
+});

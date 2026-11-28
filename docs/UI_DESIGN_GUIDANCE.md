@@ -7,7 +7,7 @@ audience: consumer
 # UI Design Guidance
 
 > Owns the scheme the consumer-facing design corpus at `src/ui/design/` is written against: the two tiers a rule may occupy, the identifier every
-> normative sentence carries, the admission test a candidate rule must pass, the anti-drift contract with the design gate, and forge's ratified dial
+> rule carries, the admission test a candidate rule must pass, the anti-drift contract with the design gate, and forge's ratified dial
 > defaults.
 >
 > It governs the corpus's _shape_, never its content. No design rule is stated here.
@@ -24,15 +24,15 @@ audience: consumer
 - §1a Termination in a Forge Primitive: the property that makes most rules grep-checkable
 - §2 Rule Tiers — Floor and Defaults: the only two strengths a corpus rule may have
 - §2a Floor — Verify and Refuse: bare imperatives, split into the two halves
-- §2b Defaults — Rebuttable Aesthetic Guidance: the literal `Default:` opener and the mandatory override condition
+- §2b Defaults — Rebuttable Aesthetic Guidance: the `Default:` opener, the mandatory `unless …` condition, and a tell's prose order
 - §2c Override Authority — the Written Brief: who may rebut a Default, and who may not
 - §3 Rule Identifier Scheme: the corpus's stable citation anchor
-- §3a Marker Syntax and Placement: the trailing HTML comment, one per normative sentence
+- §3a Marker Syntax and Placement: the HTML comment opening its block, with the register's statement rendered there
 - §3b Identifier Stability and Citation: ids are never renamed, never renumbered, never reused; the retired list
 - §3c The Forge-Primitive Admission Test: what a candidate rule must name to be admitted
 - §4 Anti-Drift Contract with the Design Gate: the corpus may not describe an API forge lacks
 - §4a Gate Enforcement Across Both Tiers: the gate's second direction, and why a gated rule is not thereby a Floor rule
-- §4b Enforcement Mechanisms: the check steps, the oxlint plugin and the browser set, and the two registers that keep them honest
+- §4b Enforcement Mechanisms: the check steps, the oxlint plugin and the browser set, and the register naming which one catches each rule
 - §4c Code Fences Compile Against the Exports: every tsx fence is a module; forge names imported, app context free
 - §5 Three-Way Documentation Boundary: which of three homes owns a given statement
 - §5a Routing Rule for a New Design Rule: design rules and anti-patterns never land in `docs/`
@@ -49,8 +49,7 @@ Forge's `ui` namespace is documented for _calling_, not for _composing_. The cor
 API reference can wire every component correctly and still ship output that type-checks, passes its tests, and reads as a defect. The corpus names
 those patterns; `src/ui/design/floor.md` and `src/ui/design/tells.md` own the catalogue, and this document carries no second copy of it (§5a).
 
-Its job is **not** to restate design literature. Reproducing a chapter on visual hierarchy produces prose an agent cannot act on and a gate cannot
-check.
+Its job is **not** to restate design literature, which an agent cannot act on and a gate cannot check.
 
 ### 1a. Termination in a Forge Primitive
 
@@ -67,13 +66,13 @@ enforces.
 
 ## 2. Rule Tiers — Floor and Defaults
 
-A corpus rule occupies exactly one of two tiers. There is no third strength, and a rule that cannot be placed in one of them is not yet a rule.
+A corpus rule occupies exactly one of two tiers; a rule that fits neither is not yet a rule.
 
 ### 2a. Floor — Verify and Refuse
 
-**Tier 1, the Floor, is invariant.** A Floor rule is never overridden, by anyone, for any brief. Floor rules are checkable against a named forge
-primitive by a reviewer (§1a) — not necessarily by a command — anchored to that primitive, and stated as bare imperatives — no hedging, no "prefer",
-no "consider".
+**Tier 1, the Floor, is invariant: no brief, from anyone, overrides a Floor rule.** Each is checkable by a reviewer against a named forge primitive
+(§1a), not necessarily by a command, and its statement, which the register holds (§3a), is a bare imperative — no hedging, no "prefer", no
+"consider".
 
 The Floor is split into two halves, and the split is structural rather than cosmetic:
 
@@ -88,62 +87,59 @@ produces a list that serves neither.
 **Tier 2, the Defaults, are rebuttable.** They carry forge's aesthetic position, including the catalogue of AI tells — the recurring output patterns
 that mark work as machine-composed rather than designed.
 
-Every Default rule obeys two formal requirements:
+<!-- rule:forge-design-default-form --> Every Default rule's statement, which the register holds (§3a), obeys two formal requirements:
 
 1. It opens with the literal token `Default:`. The token is what distinguishes a rebuttable position from a Floor imperative when the two sit on
    adjacent lines, and it is what a reader scanning for "what may I change" matches on.
-2. It ends with its **override condition** — the circumstance under which departing is correct. A Default with no stated override condition is
-   either a Floor rule that was misfiled, or a preference with no argument behind it. Both are defects.
+2. It ends with its **override condition** — the circumstance under which departing is correct, as an `unless …` clause.
+   A Default with no stated override condition is either a Floor rule that was misfiled, or a preference with no argument behind it. Both are
+   defects.
+
+The prose after the marker argues the default and restates neither the opener nor the override condition.
+
+A tell in `src/ui/design/tells.md` names in its statement the pattern it avoids. Its prose runs in a fixed order: the pattern, the reason it reads
+as generated, then whatever of the remedy the statement does not carry.
 
 ### 2c. Override Authority — the Written Brief
 
 A Default is overridable **only by an explicit written brief from the consumer**.
 
-It is never overridable by the agent's own aesthetic preference, by a judgement that the default looks plain in this instance, or by inference from
-the surrounding code. An agent that rebuts a Default without a brief has not exercised judgement; it has deleted the guidance.
-
-The Floor (§2a) admits no override at all, brief or otherwise. A brief that contradicts a Floor rule is a brief that is refused.
+Never the agent's own preference, a judgement that the default looks plain here, or inference from the surrounding code: rebutting a Default without
+a brief deletes the guidance. A brief that contradicts a Floor rule (§2a) is refused.
 
 ---
 
 ## 3. Rule Identifier Scheme
 
-Every normative sentence in the corpus carries a stable identifier. The scheme is the corpus's load-bearing mechanism: it is what lets a checklist
-item, a detector finding, and a review report all point at the same sentence, exactly as `§N` numbers are cited across `docs/`.
+Every rule in the corpus carries a stable identifier. The scheme is the corpus's load-bearing mechanism: it is what lets a checklist item, a
+detector finding, and a review report all point at the same rule, exactly as `§N` numbers are cited across `docs/`.
 
 ### 3a. Marker Syntax and Placement
 
-The identifier is written as a trailing HTML comment on the sentence it governs:
+The identifier is written as an HTML comment that opens the paragraph, list item or table cell arguing the rule, followed by the rationale:
 
-    <!-- rule:forge-ui-color-token-only -->
+    <!-- rule:forge-ui-color-token-only --> No `#hex`, no `rgb()` …
 
-Form: kebab-case, always prefixed `forge-ui-`, unique corpus-wide.
+<!-- rule:forge-design-marker-prefix --> Form: kebab-case.
 
-An HTML comment is the chosen carrier for one reason — it is invisible when the markdown is rendered, so a human reader sees clean prose, while
-`rg 'rule:forge-ui-'` enumerates the entire normative surface in one pass. A visible identifier would tax every human read of the corpus to serve a
-tooling need.
+The rule's sentence is not in the file. It is the statement `config/rules.config.ts` declares for the id, and warden renders it in bold ahead of the
+marker when it serves the section, so a reader through warden gets the rule and then its argument ([`SOURCE_OF_TRUTH.md`][sot-5a] §5a).
+`validate-rules` fails a marker with prose before it in its block, which is a sentence the register already holds.
 
-One marker per normative sentence. A paragraph of three rules carries three markers, because a finding that cites the paragraph tells a reader which
-paragraph, not which rule.
+An HTML comment carries it because it is invisible when rendered, while `rg 'rule:forge-ui-'` enumerates the whole normative surface in one pass.
+
+One marker per rule, and each opens a block of its own: two rules argued together are two paragraphs, because a finding that cites a paragraph
+tells a reader which paragraph, not which rule.
 
 ### 3b. Identifier Stability and Citation
 
-**Identifiers are never renamed, never renumbered, and never reused.** An id is a public citation anchor the moment it ships, and it is cited from
-outside the corpus — by checklists, by detector output, and by review reports that outlive the phrasing of the sentence.
+**Identifiers are never renamed, never renumbered, and never reused**, because an id is cited from outside the corpus — by checklists, detector
+output and review reports — the moment it ships. The consequences are the ones [`AGENT_GUIDE.md`][ag-2c] §2c draws for section numbers: the sentence
+may be reworded freely, a deleted rule's id stays retired, and a rule that splits keeps its id on the half that inherits its meaning. Ids carry no
+sequence and no hierarchy; grouping is the headings' job.
 
-Consequences, and they are the same ones [`AGENT_GUIDE.md`][ag-2c] §2c draws for section numbers:
-
-- The sentence may be reworded freely; the id may not change.
-- A deleted rule leaves its id retired. Reassigning a retired id to a different rule silently redirects every existing citation to the wrong
-  sentence, which is worse than a dangling one.
-- A rule that splits in two keeps the original id on the half that inherits its meaning, and mints a new id for the other.
-
-Ids are unordered. They carry no sequence and no hierarchy — grouping is the corpus's headings' job, not the identifier's.
-
-**The corpus's section numbers carry the same obligation, for the same reason.** They are never renamed, never renumbered, and never reused once
-published, exactly as [`AGENT_GUIDE.md`][ag-2c] §2c requires of every governing document's. A section number is the address `knowledge_read`
-resolves, so renumbering silently redirects a saved citation to a different chunk. A new section appends, or takes a `###` child number under the
-section it belongs to; a deleted one leaves its number retired.
+**The corpus's section numbers carry the same obligation** that [`AGENT_GUIDE.md`][ag-2c] §2c places on every governing document's, because a
+section number is the address `knowledge_read` resolves.
 
 **Retired ids.** `forge-ui-viewport-units` is retired. `h-screen` and `w-screen` are two class names, which is a restriction list rather than a rule
 that admits judgement, and the guidance prose in `floor.md` states it as well without one. The id stays retired rather than reassigned: a citation
@@ -151,14 +147,9 @@ that outlived it lands on nothing rather than on a different sentence.
 
 ### 3c. The Forge-Primitive Admission Test
 
-**A rule that cannot name a forge component, token, utility, or class does not belong in the corpus.** This is the admission test, and it is applied
-before an id is minted.
-
-Material that fails it is not deleted — it is a general design principle, true and useful, that forge has no standing to restate (§7). It belongs in
-the corpus's `## Sources` footer, credited to whoever argued it first.
-
-The test's value is that it bounds the corpus. Without it, a corpus about composing forge components drifts into a design textbook that duplicates
-its own sources, cannot be checked, and grows without a stopping condition.
+**A rule that cannot name a forge component, token, utility, or class does not belong in the corpus**; the test is applied before an id is minted,
+and it is what stops the corpus drifting into an unchecked design textbook. Material that fails it is a general principle forge has no standing to
+restate (§7), so it goes to the corpus's `## Sources` footer, credited to whoever argued it first.
 
 ---
 
@@ -168,11 +159,10 @@ The corpus makes claims about forge's API on nearly every line — it names comp
 claims drift the moment the API moves, and a corpus that teaches a component forge does not have is worse than one that teaches nothing, because it
 is followed.
 
-The contract is one sentence: **the corpus may not describe an API forge does not have.**
-
-Enforcement is a gate step. `warden/src/checks/design.ts` owns the policy — what is asserted, what fails, in what order, with what message — and
-`src/tooling/gate/checks/design-parse.ts` owns the matchers it decides on: how a claim is extracted from prose, and how it is resolved against
-forge's real exports. The split is the one described for the barrel and namespace-graph checks in [`AGENT_GUIDE.md`][ag-8] §8.
+<!-- rule:forge-design-api-exists --> Enforcement is a gate step. `warden/src/checks/design.ts` owns the policy — what is asserted, what fails, in
+what order, with what message — and `src/tooling/gate/checks/design-parse.ts` owns the matchers it decides on: how a claim is extracted from prose,
+and how it is resolved against forge's real exports. The split is the one described for the barrel and namespace-graph checks in
+[`AGENT_GUIDE.md`][ag-8] §8.
 
 **Neither the assertion list nor its failure modes are restated here.** Restating a check list in prose produces a second copy that is
 indistinguishable from an amendment the first time the two disagree. A reader asking "what exactly is checked" reads the script; this section owns
@@ -195,9 +185,11 @@ than a property of where a walk happens to start.
 
 **An enforced rule is not thereby a Floor rule.** Which rules are checked statically is decided by mechanical checkability (§1a) alone, so the
 enforced set spans both tiers, and a Tier-2 Default that the AST reveals is checked exactly as a Floor rule is. That does not promote it. An
-enforced Default remains rebuttable in the sense §2b defines: every rule takes a per-site `oxlint-disable-next-line forge/<key> -- <why>` carrying a
-**mandatory written reason**, which is the form §2c's written brief takes inside forge's own source — stated, attached to the line it excuses, and
-reviewable, rather than inferred or silent. `forge/suppression-needs-reason` is what makes the reason mandatory rather than customary.
+enforced Default remains rebuttable in the sense §2b defines, through a per-site `oxlint-disable-next-line forge/<key> -- <why>`.
+
+<!-- rule:forge-suppression-needs-reason --> The written reason is the form §2c's written brief takes inside forge's own source — stated, attached
+to the line it excuses, and reviewable, rather than inferred or silent. `forge/suppression-needs-reason` is what makes it mandatory rather than
+customary.
 
 The suppression mechanism itself is uniform across rule ids; the tiers are not encoded in it, and could not usefully be. What §2a and §2c decide is
 who may write one and on what grounds — a stated reason for a Default, and nothing at all for a Floor rule, where a suppression is a defect to
@@ -221,36 +213,25 @@ all.
 
 **`validate-faded-text`** owns the part of that rule a class does state: a fade below full strength — an `opacity-*` or a text colour's `/alpha`
 modifier in a class string, or either one in a stylesheet's `@apply` — which the contrast audit measures at 100%. A fade that paints only the
-disabled state is exempt. What holds such a site is [`THEME_GENERATION.md`][tg-3a] §3a's. It is a gate step rather than a plugin rule because a
-site is held by the audited pair register under `ui/contracts/theme`, and `tooling/lint` is a leaf that may not import it.
+disabled state is exempt. What holds such a site is [`THEME_GENERATION.md`][tg-3a] §3a's.
+
+<!-- rule:forge-lint-no-theme-import --> That is why it is a gate step rather than a plugin rule: a site is held by the audited pair register under
+`ui/contracts/theme`.
 
 **The browser set** owns `forge-ui-hit-target`: a target's box exists only once an engine lays it out, so `src/ui/hit-target.browser.ts` measures
 every component the `core` and `chrome` barrels publish, in every engine.
 
 **What a plugin rule cannot own** is a rule needing more than one file — an import graph, an export map, a compiled stylesheet, a README held
 against a barrel. oxlint judges one file at a time, which is why those checks stay gate steps and why `validate-design` still runs: it holds the
-corpus against forge's API, and the two registers against the plugin, neither of which is a per-file question.
+corpus's citations — subpaths, exported names, custom properties and rule ids — and its `tsx` fences against forge's API (§4c), none of which is a
+per-file question.
 
-The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and never hand-kept. **The registers name the
-mechanisms, one register per rule family**, and an author adding a rule declares its enforcer in the register that already holds the rule:
+**The rule register names each rule's detectors.** A rule's entry in `config/rules.config.ts` lists every mechanism above that catches it, and a
+plugin rule carries the id it reports under. `validate-rules` holds the two against each other, so a detector deleted on either side fails the gate
+by id ([`SOURCE_OF_TRUTH.md`][sot-5b] §5b).
 
-- `src/tooling/lint/design-rules.ts` routes every corpus rule to each mechanism that enforces it, through `RULE_ENFORCER`. It imports nothing,
-  deliberately: the plugin reaches it through `lint/report.ts` and ships as raw TypeScript, so a module it loads may not drag `tailwindcss` or
-  `oxlint` in behind it ([`NAMESPACES.md`][namespaces-3c] §3c).
-- `src/tooling/lint/modern-css-rules.ts` routes every modern-platform rule, through the optional `enforcer` field on the rule's own row — absent
-  meaning the modern-CSS check's own detector. `design-rules.ts` names no platform rule at all.
-
-`validate-design` holds each register's rows against the mechanism they name — so deleting a plugin rule fails the gate by name — and holds the
-plugin in the other direction against both registers together: a rule the plugin registers that neither register
-routes fails too, because its findings would print an id no register states. The exemptions are the plugin rules that state no corpus rule at all —
-`suppression-needs-reason` and `data-slot-before-spread`, each named in `design.ts` with its reason, neither having a corpus id to route.
-
-That guarantee is bounded by what "enabled" means: the check takes the union of the top-level `rules` block and every `overrides` entry, so a rule
-enabled only in an override counts — and a rule turned off in one still reads as enabled, because the question asked is whether it is on anywhere,
-not everywhere.
-
-**Which rules are enforced, by which mechanism, and what each matches is not restated here**, for the reason §4 gives: the plugin and each
-register own it.
+**Which rules are enforced, by which mechanism, and what each matches is not restated here**, for the reason §4 gives: the register and the plugin
+own it.
 
 Some plugin rules resolve a class against the design system itself — which utility roots take a spacing value, which take a colour, and what
 steps the scale offers. Those facts are generated from the compiled stylesheet into `src/tooling/lint/data/design-scale.ts` and held there by
@@ -265,14 +246,9 @@ same eight pixels; `p-[7px]` is not, because no step is seven. The promise worth
 flagged the off-scale value would be a different rule, arguing that off-scale lengths are wrong in themselves — a case the corpus does not make and
 this one does not pretend to.
 
-**A class list bound to a module-scope `const` and passed by name is judged where the name is used.** Forge writes most of its recipes that way, so
-a plugin reading only inline literals would be blind to most of the class strings it exists to check. An initializer that is already a class
-position of its own — `const R = cva(…)` — is judged where it is written and not a second time through the name. A `const` declared inside a
-function is not resolved: a class list written there is not the shared recipe this reaches for. A module-scope string `const` named `*_CLASS` or
-`*_CLASSES` is a class position of its own, judged where it is declared whether or not its file uses it, because forge publishes such constants for
-other files to apply, and a rule reading only use sites never sees one. It is judged there and not again where the name is used, so it must carry
-its own ring. `DARK_CLASS` is exempt: it names the class the theme script toggles, not a class list. A name bound to another same-file constant is
-followed to the class list at the end of the chain.
+**A class list bound to a module-scope `const` is judged where the name is used**, because forge writes most of its recipes that way and a plugin
+reading only inline literals would be blind to them. Which bindings are followed, and the `*_CLASS` / `*_CLASSES` constants judged where they are
+declared, are `src/tooling/lint/ast.ts`'s.
 
 ### 4c. Code Fences Compile Against the Exports
 
@@ -284,8 +260,7 @@ breach §4 forbids, written in code rather than in prose.
 - **Any other name a fence uses without defining is app context** — `errors`, `rows`, `hrefFor`, an `AppIcon` bound elsewhere. The check declares
   it `any`; the fence never declares it.
 - **A top-level JSX expression ends in `;`**, or the next one parses as its continuation.
-- **A Wrong example still compiles.** It shows a design mistake, never an API forge lacks. Markup that is not TSX is tagged `html`, `ts` or
-  `text`, and is not compiled.
+- <!-- rule:forge-design-wrong-example-compiles --> Markup that is not TSX is tagged `html`, `ts` or `text`, and is not compiled.
 - **A diagnostic outside a fence fails the check.** It means the run compiled something other than the fences: a missing ambient declaration, or a
   forge source that breaks under consumer options.
 
@@ -314,13 +289,12 @@ missing.
 
 ### 5a. Routing Rule for a New Design Rule
 
-**A new design rule or anti-pattern goes to `src/ui/design/`, never to `docs/`.**
+<!-- rule:forge-design-rule-in-corpus --> The rule is stated as an absolute because the failure it prevents is silent. A design rule written into a
+governing document is read by forge's own contributors and never by the consumers it was written for, while the corpus that should carry it develops
+a gap nobody notices.
 
-The rule is stated as an absolute because the failure it prevents is silent. A design rule written into a governing document is read by forge's own
-contributors and never by the consumers it was written for, while the corpus that should carry it develops a gap nobody notices.
-
-The reverse direction holds too: a constraint on forge's own source — what a component must render, what it must never accept — is a
-governing-document rule that does not belong in a consumer-facing corpus, however design-shaped it sounds.
+The reverse holds too: a constraint on forge's own source — what a component must render or never accept — is a governing-document rule, however
+design-shaped it sounds.
 
 ---
 
@@ -336,9 +310,8 @@ The reason is retrieval, not house style. Warden indexes the corpus, and the Qui
 one-line summary a search result prints under the heading trail, and a ranked column in its own right, weighted far above the section's body text. A
 corpus with no Quick Reference forfeits that column and prints a bare heading to every reader who searches it.
 
-The size thresholds bind for the same reason. A section is what `knowledge_read` returns whole, so a section too large to be an answer is a section
-nobody can usefully be handed — and a section that cannot be summarised in one Quick Reference line is carrying more than one idea and wants `###`
-children. The Quick Reference is therefore the forcing function on size, not a description of it.
+The size thresholds bind for the same reason: `knowledge_read` returns a section whole, and a section that cannot be summarised in one Quick
+Reference line carries more than one idea and wants `###` children.
 
 A numbered section and a rule id (§3) address different things and neither replaces the other: **a rule id names a sentence; a section number names
 a chunk.** A finding cites the sentence it rests on. Only the section number is addressable by `knowledge_read`.
@@ -376,9 +349,7 @@ page.
 palette a forge stylesheet resamples, with its version and license, rather than an argument re-derived in forge's terms. The colour-authoring
 reference is in that position, because its subject is values forge carries rather than judgements forge re-argued.
 
-**A file with no such source carries no footer, and that is the correct state rather than a gap.** A `## Sources` section listing what a page did
-not draw on credits nobody, and a corpus where every file carries one teaches a reader to skip the two that mean something. Adding a footer is
-warranted by a source, never by symmetry.
+**A file with no such source carries no footer**, because a `## Sources` section on every file teaches a reader to skip the two that mean something.
 
 ---
 
@@ -405,7 +376,8 @@ The dials are Defaults, not Floor — each is rebuttable per §2b, and each rebu
 [ag-2c]: ../warden/canon/shared/AGENT_GUIDE.md#2c-renumbering-is-atomic
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
-[namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
+[sot-5a]: ./SOURCE_OF_TRUTH.md#5a-what-an-entry-holds-and-what-it-derives
+[sot-5b]: ./SOURCE_OF_TRUTH.md#5b-the-round-trip-is-checked
 [tg-3a]: ./THEME_GENERATION.md#3a-audited-pairs-and-criteria
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucc-1c]: ./UI_CLASS_COMPOSITION.md#1c-the-table-is-derived-from-the-compiled-design-system

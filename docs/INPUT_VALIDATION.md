@@ -43,14 +43,10 @@ audience: consumer
 
 ### 1a. `v` Namespace — Complete valibot Re-Export
 
-`v` is the complete valibot namespace, re-exported as one import.
-
-**Never import `valibot` directly — always use `v` from `@y-core/forge/validation`.** The facade is what keeps the valibot version single-sourced
-and lets forge bound its surface.
+The facade is what keeps the valibot version single-sourced and lets forge bound its surface ([`FORGE_REVIEW.md`][fr-3b] §3b holds the import rule).
 
 **`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue helpers, and they are named exports sitting _beside_
-`v`, never members of it: `formText`, `formMultilineText` and `formDigits` (§1d), `safeCheck` (§1b), and `describeValidationIssue` (§1b).
-`src/validation/mod.ts` is authoritative for the list. `src/validation/README.md` shows the import and a worked schema.
+`v`, never members of it; `src/validation/mod.ts` is authoritative for the list. `src/validation/README.md` shows the import and a worked schema.
 
 **A helper sits beside `v` only while it carries behaviour the pinned valibot does not.** Where valibot covers the behaviour itself, forge ships no
 second name for it: the unknown-key guarantee in §1d is `v.strictObject`'s own, and nothing wraps it.
@@ -61,38 +57,36 @@ second name for it: the unknown-key guarantee in §1d is `v.strictObject`'s own,
 count is half of why: one issue reaches the fragment however many fields a caller chose to break, so a submission cannot multiply the refusal it
 receives.
 
-**Render issues through `describeValidationIssue` — never `issue.message`.** It names the failing field and nothing else, bounded in depth and in
+<!-- rule:forge-validation-issue-message --> `describeValidationIssue` names the failing field and nothing else, bounded in depth and in
 per-segment length, so the refusal varies only with _which_ field failed and not with what was sent. The parts it refuses to reproduce are
 each a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and
 `issue.input` is the submission itself.
 
-**No forge renderer reproduces `issue.message` on any channel.** There is no operator-facing counterpart that does, because a log is not a safe home
-for a rejected value either ([`BOUNDARIES.md`][boundaries-4a] §4a): the env validator's throw reaches the app logger, the KV log channel and the
-debug `500` body, so a message carrying the value would persist a malformed secret verbatim on every request. Env validation renders `field: reason`
-from `issue.type` (`missing` for an absent binding) — a closed valibot vocabulary that can carry neither caller text nor schema text.
-`issue.expected` stays out for the same reason it does in a caller-facing refusal: it can be a `v.regex` source.
+**No forge renderer reproduces `issue.message` on any channel, an operator's included**: a log is no safe home for a rejected value
+([`BOUNDARIES.md`][boundaries-4a] §4a), and the env validator's throw reaches the logger, the KV log channel and the debug `500` body. Env
+validation renders `field: reason` from `issue.type`, a closed vocabulary that carries neither caller text nor schema text.
 
 **`safeCheck` is the one message that survives, and only because its author vouched for it.** Every `v.check` in a schema shares the single issue
 type `check`, so the type alone tells an operator nothing: a rule whose sentence was written for a deployer reads as `site.url: check`.
 `safeCheck(requirement, message)` registers `message` against the requirement function, and `describeEnvIssue` surfaces a registered one verbatim; a
-plain `v.check` still renders as `check`. Nothing can decide statically whether a message interpolates its input, so the author states it — and the
-default is the safe one, so forgetting it costs detail rather than disclosure. **A vouched message names the requirement, never an env key**: the
-schema validates a value, and which key supplies it is the consuming app's choice, so `SITE_ORIGIN must use https` sends an operator whose repo
-supplies it under another key looking for a variable that does not exist. The `<field>:` prefix already locates it.
+plain `v.check` still renders as `check`. Only the author can tell whether a message interpolates its input, and forgetting to vouch costs detail,
+not disclosure.
 
-**Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an API response rather than a progressive form. An
-enumerating refusal is one a caller can lengthen by adding fields, so choose it deliberately rather than by omission.
+<!-- rule:forge-vouched-message-env-key --> The schema validates a value, and which key supplies it is the consuming app's choice, so `SITE_ORIGIN
+must use https` sends an operator whose repo supplies it under another key looking for a variable that does not exist. The `<field>:` prefix already
+locates it.
+
+**Omit `abortEarly` only where a response must enumerate every failing field**, as an API's may: a caller can lengthen such a refusal by adding
+fields.
 
 ### 1d. `defineAction` — The Schema Contract
 
-`defineAction` (from the app's `createHandlerFactory`, [`ROUTING_AND_MIDDLEWARE.md`][ram-2e] §2e) wires a POST handler that reads the body,
-runs the route's body-content guards, validates against a declared schema, and delegates to `handle`, returning a structured fragment for each
-failure mode. `ActionDefinition` (`src/app/types.ts`) is authoritative for the option list.
+`defineAction` ([`ROUTING_AND_MIDDLEWARE.md`][ram-2e] §2e) reads the body, runs the route's body-content guards, validates against the schema and
+delegates to `handle`; `ActionDefinition` (`src/app/types.ts`) holds the options.
 
 **The schema is the only way in.** `handle` is unreachable except through a passing `v.safeParse` of `schema`, and it receives the schema's
-_output_, so a transform arrives as the type it actually is. A `parse`/`validate` pair of arbitrary callbacks is the shape this refuses: such a pair
-fixes the order the two run in and nothing more — neither has to involve a schema, so a `validate` that returns its own argument compiles and is
-accepted. **Order is a weaker guarantee than validation, and only the second one is worth stating.**
+_output_, so a transform arrives as the type it actually is. A `parse`/`validate` callback pair is refused because it guarantees only the order the
+two run in, and a `validate` returning its argument would pass.
 
 **forge reads the body, so no named-field reader is needed or offered.** Every entry the caller sent reaches the schema, which is what gives
 `v.strictObject` something to refuse; an **absent field stays absent** rather than becoming `""`, which is what keeps `v.optional` reachable and
@@ -102,34 +96,25 @@ required-ness a presence check; a **repeated key arrives as an array**, so a sca
 **A guard that consumes a field is what removes it.** A form carries entries the request itself does not assert — a CSRF token, a CAPTCHA token —
 and a strict schema has no reason to declare either of them, so each is dropped before validation. **Nothing is dropped on a guess.** The Turnstile
 field is dropped because this pipeline checked it (§4a); the CSRF field is dropped because the CSRF policy recorded which field it took the token
-from (§3a). A route that renames one of those fields therefore declares the name once, to the guard that reads it, and never a second time to the
-schema. What happens on a request where no guard ran is the derive-only rule, owned by [`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b.
+from (§3a). That derive-only rule, and a renamed field's one declaration, are [`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b's.
 
 **Declare a body schema with `v.strictObject`, not `v.object`.** An undeclared field is then _refused_ rather than silently stripped, and the
 guarantee holds for every key a caller can send — a key colliding with an `Object.prototype` name (`__proto__`, `constructor`, `toString`) among
 them, nested inside a `v.object` and behind a `v.union` alike. `src/validation/validation.test.ts` is where that guarantee is pinned.
 
 **Normalizing form text is the schema's job, not the reader's** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`
-(§1a). The reader hands the schema exactly what was submitted, and that is a deliberate split rather than an omission. It does not only see strings,
-so trimming there would mean one special case for a `File` and another for the array a repeated key produces. `" "` has to stay representable, or a
-schema that wants to refuse whitespace-only input cannot — by the time it runs, an all-spaces submission and a well-formed one would be
-indistinguishable. A normalization the schema cannot see makes the parsed output differ from the declared input for reasons written down nowhere in
-the schema. And line-ending folding is right for a `<textarea>` and wrong for an `<input>`, a
-distinction the reader cannot make, because it sees a name and a value and never the control that produced them.
+(§1a). The reader hands the schema exactly what was submitted: `" "` must stay representable for a schema that refuses whitespace-only input, a
+normalization the schema cannot see is written down nowhere, and the reader never sees which control produced a value, so it cannot tell a
+`<textarea>` from an `<input>`.
 
 **`formMultilineText()` folds CRLF, and that is what makes a length check mean one thing:** under `v.pipe(formMultilineText(), v.maxLength(500))`
-each line break counts once, so the limit means the same whether the newline arrived as LF or CRLF rather than silently halving the budget. The
-benefit belongs to the fold's _presence_, not to where it sits relative to the trim — that position is not observable from anywhere, including from
-a check the caller appends, and `src/validation/form-text.ts` records why.
-
+each line break counts once, so the limit means the same whether the newline arrived as LF or CRLF rather than silently halving the budget.
 **`formDigits()` removes every non-digit, for the same reason and with a sharper edge:** under `v.pipe(formDigits(), v.length(16))` a card number
 means one string however the user grouped it, so the length counts digits rather than the separators a rendering happened to carry. It only
 _removes_ — it never throws, never coerces, and never refuses, because a throwing pipe action is a route defect answered `500` rather than the `422`
-a bad value has earned, so refusing stays the job of a `v.length` or `v.minLength` composed after it. `v.string()` heads the pipe, so a `File` or
-the array a repeated key produces still yields a clean type issue carrying the field's path. The strip is `\D` without the `u` flag — exactly
-`[0-9]`, so a non-ASCII digit is discarded rather than accepted, and widening it to `\p{Nd}` would let a schema's length check pass on characters no
-payment processor will take. Unlike its siblings it discards significant characters, a leading `+` among them, so it is the wrong shape for a field
-that must preserve one.
+a bad value has earned, so refusing stays the job of a `v.length` or `v.minLength` composed after it. Only ASCII digits survive, so a length check
+never passes on characters a payment processor refuses. Unlike its siblings it discards significant characters, a leading `+` among them, so it is
+the wrong shape for a field that must preserve one.
 
 **`defineAction` calls `parseFormData(c)` internally**, so it enforces the body cap and surfaces `413` on oversized bodies (§2c). A refused body
 answers **`422`** — a well-formed request the server understood and declined — carrying one `<li>` that names the failing field and nothing else
@@ -152,8 +137,7 @@ a decision only the consuming app can make. The default chooses the field name a
 **Transport guards attach to the controller action object `{ middleware, handler }`; body-content guards live inside `defineAction`.** The line it
 draws is what the guard needs in order to decide. A **transport** guard decides from the request's envelope — an origin, a header, a signed token it
 minted itself — and needs to know nothing about what this route's form contains; that is why origin and rate-limit guards sit in the `middleware`
-array, CSRF sits in the chain's policy (§3a), and each refuses before any route builder runs (one exception follows). (The CSRF policy falls back to
-reading a field out of the body, which is a lookup of the one field the policy itself owns and named, not a reading of the route's own fields.) A
+array, CSRF sits in the chain's policy (§3a), and each refuses before any route builder runs (one exception follows). A
 **body-content** guard decides from a field that is part of the form's design — a CAPTCHA token the widget wrote — so it belongs where the body is
 read, and where the field it consumes is dropped in the same step. Neither kind crosses: no middleware runs inside `defineAction`, and no
 body-content guard is expressible as middleware. A rate limit keyed by identity or a route param is the one transport guard inside: `defineAction`'s
@@ -165,8 +149,7 @@ body-content guard is expressible as middleware. A rate limit keyed by identity 
 
 ### 2c. `parseFormData` — Body Read with Size Limit
 
-`parseFormData(c, options?)` reads the request body as `ReadonlyFormData` with a byte cap. It takes the request **context**, not a raw `Request`,
-and **memoizes the parse per request** so CSRF verification and the action handler share one body read without re-consuming the stream.
+`parseFormData` takes the request context and **memoizes the parse per request**, so CSRF verification and the action handler share one body read.
 
 **The cap is enforced two ways, and both matter:**
 
@@ -179,9 +162,8 @@ The streaming counter is what closes the header-only bypass — a request with a
 `FORM_MAX_BYTES_DEFAULT` applies when `maxBytes` is omitted; `src/form/config.ts` owns its value.
 
 **The first call for a request meters the stream; every later call re-checks the bytes actually read against its own `maxBytes`.** A body is
-readable once, so a stricter caller gets its own `413` off the shared parse rather than a re-read. The consequence is an ordering rule: a route that
-raises `defineAction`'s `maxBytes` must raise the CSRF policy's to match, because the policy parses first and would otherwise reject before the
-handler runs. The policy is the app's one, so its cap is app-wide (§3a).
+readable once, so a stricter caller gets its own `413` off the shared parse rather than a re-read. **A route that raises `defineAction`'s `maxBytes`
+must raise the CSRF policy's to match**, since the policy parses first; that cap is app-wide (§3a).
 
 Forgetting that rule reports itself. When the cached parse **rejected** at a smaller cap and a later caller asks for a larger one, the stream is
 already gone and no cap can serve it — so `parseFormData` throws a distinct wiring error naming both caps and the remedy, rather than replaying the
@@ -260,25 +242,14 @@ shares no key with them.
 
 ### 3c. `mintCsrf` — Token Minting for Form Injection
 
-`mintCsrf(c, path)` creates a signed token using the minter the app's CSRF policy installed (§3a).
-
-**`path` is required and scopes the token to one action URL** — verification fails with `path-mismatch` if it does not match the request pathname,
-preventing reuse across endpoints. It **throws** when `path` is missing or empty, or when no minter is on the context (the policy's `paths` do not
-cover the route, or its `exclude` does).
-
-When the form POSTs back to the path it was rendered on, mint with `mintCsrf(c, c.url.pathname)`. **Mint one token per form render; never
-cache across requests.**
+**`mintCsrf(c, path)` scopes a token to one action URL** — `c.url.pathname` when the form posts back to where it was rendered — and throws on a
+route the policy installed no minter for (§3a). **Mint one token per form render; never cache one across requests.**
 
 ### 3d. `createCsrfToken` and `verifyCsrfToken` — Lower-Level API
 
-Both are path-scoped: `createCsrfToken(ring, path, options?)` embeds the path, and `verifyCsrfToken(ring, token, path, options?)` checks it
-along with the signature and a freshness window. The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`; **there is no bare
-`number` overload.** Its `maxAgeMs` defaults to the policy's default (§3a), so a token is equally fresh under either API.
-
-`verifyCsrfToken` takes the `KeyRing` the token was minted under, or one that still holds its key, and returns a `CsrfResult` — a `GuardResult`
-alias with the reason code in `error`. **Inspect `result.ok`; never echo `result.error` to a client.**
-
-**Use this API only when the chain's policy cannot cover the route** — a custom JSON API with non-standard token transport.
+**Use this API only when the chain's policy cannot cover the route** — a custom JSON API with non-standard token transport. It is path-scoped like
+`mintCsrf`, its freshness default is the policy's (§3a), and its `CsrfResult` reason code is never sent to a client ([`FORGE_ERRORS.md`][eh-1c]
+§1c).
 
 ---
 
@@ -286,8 +257,7 @@ alias with the reason code in `error`. **Inspect `result.ok`; never echo `result
 
 ### 4a. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
-`verifyTurnstile` calls the siteverify API and reads the token field itself. **The token field and connecting IP live inside the options object**,
-not beside it: `tokenField` defaults to `TURNSTILE_FIELD_DEFAULT` (`src/form/constants.ts`, which owns the name the Cloudflare widget writes).
+`verifyTurnstile` reads the token field itself; `src/form/constants.ts` owns the default name the widget writes.
 
 **A `defineAction` route does not call it — it names `turnstile`,** and the pipeline verifies the token and drops the token field in one step (§1d).
 The split inside that option is deliberate: `tokenField` is fixed when the route is defined, because the field is dropped whether or not
@@ -305,12 +275,11 @@ itself ([`AUTH_MOUNTING.md`][am-8] §8).
 **`expectedHostname` is required, and an empty one is a refusal.** It is the anti-replay pin: a token minted on an attacker-controlled site carries
 that site's hostname. Called directly with an empty `expectedHostname`, `verifyTurnstile` answers `hostname-mismatch` without calling siteverify.
 
-**Cloudflare's testing secrets are accepted only in a Worker run by `forge cf dev`, and only those literals.** The published secrets — `1x…AA`
-(always passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` and no `action` or `cdata`,
-so an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Under
-`forge cf dev`, `verifyTurnstile` skips the hostname, action and cdata comparisons **only when `secretKey` is one of those literals**; a real secret
-is compared normally there too. Every other build — `wrangler deploy`, and a plain `wrangler dev` — compares every secret normally. The `success`
-check and `expectedHostname`'s fail-closed guard still run.
+**Cloudflare's testing secrets are accepted only in a Worker run by `forge cf dev`, and only those literals.** They make siteverify answer a fixed
+`hostname` and no `action` or `cdata`, so an app pinning its own hostname would refuse **every** local submission. Under `forge cf dev`,
+`verifyTurnstile` skips the hostname, action and cdata comparisons **only when `secretKey` is one of those literals**; a real secret is compared
+normally there too. Every other build — `wrangler deploy`, and a plain `wrangler dev` — compares every secret normally. The `success` check and
+`expectedHostname`'s fail-closed guard still run.
 
 **There is no env var and no option, so nothing the deployed Worker reads can turn it on.** The testing-secret list lives in
 `src/form/turnstile.dev.ts`, which `verifyTurnstile` reaches only through the `#relax/turnstile` import; its default target refuses every testing
@@ -329,7 +298,7 @@ which is what lets two widgets live in one form. Both are named in [`UI_CLIENT_R
 **An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says nothing about the caller, so the submission is
 refused anyway, and `onBotDetected` receives the reason so an app can tell an outage from an attack.
 
-**`secretKey` is server-side only and must never appear in a client bundle**; `siteKey` is the client-side half.
+<!-- rule:forge-turnstile-secret-server-only --> `siteKey` is the client-side half.
 
 ### 4b. Guard Refusal Shape and Its Residual Oracle
 
@@ -352,9 +321,9 @@ is unchanged; only the server-side record is.
 
 ### 5a. `CsrfConfigSchema` — CSRF Secret Validation
 
-Expects a key ring: comma-separated hex secrets of at least 64 hex characters each — the length half of [`SECURITY_HARDENING.md`][sh-8] §8,
-checked at parse. **Parse environment-sourced CSRF config through it at startup via the config store — never pass a raw `c.env` string to
-`parseKeyRingSecrets`.**
+It holds a key ring to the length half of [`SECURITY_HARDENING.md`][sh-8] §8 at parse.
+
+<!-- rule:forge-csrf-config-via-store --> `parseKeyRingSecrets` only splits the value, so a raw string skips that check.
 
 ### 5b. `TurnstileConfigSchema` — Turnstile Credentials Validation
 
@@ -374,6 +343,7 @@ surface each step calls.
 [boundaries-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
 [boundaries-apps-2c]: ../warden/canon/apps/BOUNDARIES.md#2c-guard-order-within-a-route
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[fr-3b]: ./FORGE_REVIEW.md#3b-tier-2--pattern-sweep-with-triage
 [namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline

@@ -86,6 +86,8 @@ that names this namespace's runtime as its JSX source:
 
 ```tsx
 /** @jsxImportSource @y-core/forge/render/pdf */
+import { Field, Heading } from "@y-core/forge/render/pdf";
+
 const doc = {
   title: "Declaration of interest",
   content: (
@@ -101,6 +103,8 @@ A container takes JSX children the same way, one or several:
 
 ```tsx
 /** @jsxImportSource @y-core/forge/render/pdf */
+import { Box, KeepTogether, Row, Stack, Text } from "@y-core/forge/render/pdf";
+
 const contact = (
   <Stack gap={6}>
     <Box padding={4}>
@@ -255,12 +259,17 @@ no `/StructParents` — so the file makes no accessibility claim rather than a p
 each page, at the rectangle it occupies there rather than the one it was measured in.
 
 ```tsx
-<Link to={{ uri: "https://example.org/terms" }}>
-  <Text>The full terms</Text>
-</Link>
-<Link to={{ page: 2 }}>
-  <Text>See Part C</Text>
-</Link>
+/** @jsxImportSource @y-core/forge/render/pdf */
+import { Link, Text } from "@y-core/forge/render/pdf";
+
+<>
+  <Link to={{ uri: "https://example.org/terms" }}>
+    <Text>The full terms</Text>
+  </Link>
+  <Link to={{ page: 2 }}>
+    <Text>See Part C</Text>
+  </Link>
+</>
 ```
 
 A destination is an address outside the document or a page inside it. In a tagged document a link is **reachable as well as clickable**: its
@@ -313,12 +322,17 @@ Every shape the engine draws is one path: a pen records moves, lines, curves, re
 A rule and a rounded panel are the same mechanism, which is why a per-corner radius costs nothing to reach for.
 
 ```tsx
+/** @jsxImportSource @y-core/forge/render/pdf */
+import { createPdfPen, Panel, Path, Text } from "@y-core/forge/render/pdf";
+
 const chevron = createPdfPen().move(0, 0).line(6, 6).line(0, 12).commands();
 
-<Path commands={chevron} height={12} stroke="…" weight={1.5} />
-<Panel radius={{ topLeft: 12, bottomRight: 4 }} padding={12} fill={[0.96, 0.96, 0.96]}>
-  <Text>Declared under oath</Text>
-</Panel>
+<>
+  <Path commands={chevron} height={12} stroke={[0.2, 0.2, 0.2]} weight={1.5} />
+  <Panel radius={{ topLeft: 12, bottomRight: 4 }} padding={12} fill={[0.96, 0.96, 0.96]}>
+    <Text>Declared under oath</Text>
+  </Panel>
+</>
 ```
 
 `Panel` sizes its box to what its children measure and **keeps them whole** — a background that broke across a page would print on one page and not
@@ -328,6 +342,9 @@ the next.
 circles, and a shading needs two stops because the type says so:
 
 ```tsx
+/** @jsxImportSource @y-core/forge/render/pdf */
+import { Path } from "@y-core/forge/render/pdf";
+
 <Path commands={chevron} height={12} alpha={0.4} fill={{ kind: "axial", from: [0, 0], to: [0, 12], stops: [{ at: 0, ink: [1, 1, 1] }, { at: 1, ink: [0, 0, 0] }] }} />
 ```
 
@@ -419,9 +436,8 @@ if (findings.length > 0) throw new Error(findings.map((finding) => finding.messa
 **Each finding says what to do as well as what is wrong.** It reads no bytes: it answers from the document and the options, before a render is
 made.
 
-It reads `content`, and a container's children through it, so a `Table` or a drawing nested in a `Stack` is reported as a bare one is. It says
-nothing about `header` or `footer`: a running band is painted as a pagination artifact, and PDF/UA-1 exempts an artifact from the structure tree
-and from `alt` alike — so an `alt` added there would reach no byte of the file. **Put anything a reader must hear in `content`.**
+It reads `content`, containers included, and says nothing about `header` or `footer`: those are painted as artifacts, which PDF/UA-1 exempts from
+`alt`. **Put anything a reader must hear in `content`.**
 
 ---
 
@@ -430,6 +446,9 @@ and from `alt` alike — so an `alt` added there would reach no byte of the file
 `createPdfImage` takes JPEG and PNG bytes, palette and alpha PNGs included, and answers a `Result`:
 
 ```tsx
+/** @jsxImportSource @y-core/forge/render/pdf */
+import { createPdfImage, Image } from "@y-core/forge/render/pdf";
+
 const logo = await createPdfImage(bytes);
 if (!logo.ok) throw new Error(logo.error.message);
 
@@ -504,7 +523,7 @@ const fonts = read.data;
 ```
 
 **Hand every metric over in the face's own units**, never pre-scaled to a 1000-unit em: the engine applies that scale itself, so an adapter that
-scales too is invisible on a 1000-upem face and shrinks every other one to `1000/unitsPerEm` of its true size.
+scales too shrinks every face whose em is not 1000 units.
 
 ### Making a tagged document that passes a conformance check
 
@@ -734,19 +753,12 @@ async function readInvoice(bytes: Uint8Array) {
 }
 ```
 
-**Each file comes back as the `PdfAttachment` a render takes**, so a file read from one PDF can be attached to the next. Its `name` is the
-specification's `/UF` where it has one, its `bytes` are inflated, and a `relationship` the file does not declare reads as `Unspecified`.
+**Each file comes back as the `PdfAttachment` a render takes**, so a file read from one PDF can be attached to the next; its fields are the type's.
 
 **The read is bounded, because the bytes are hostile until proved otherwise**: each decoded stream is charged to its own limit and to a total.
 **Entries naming the same embedded stream share one `bytes` array**, so a write through one is seen through every other. Pass `limits` to tighten or
-widen any bound:
-
-| Limit | Default | Refuses |
-| --- | --- | --- |
-| `maxInputBytes` | 6 MiB | a larger file, before a byte of it is parsed |
-| `maxObjects` | 100,000 | a file carrying more objects, packed ones included |
-| `maxInflatedBytes` | 6 MiB | a stream inflating past it — decompression is cancelled there, never finished and then measured |
-| `maxTotalDecodedBytes` | 6 MiB | the streams read so far decoding past it together, stored or inflated, any inflation cancelled the same way |
+widen any bound; `PdfAttachmentLimits` names each bound and its default, and an inflating stream is cancelled at its bound rather than finished and
+then measured.
 
 **The defaults are sized for a Worker's 128 MB isolate**, because a read holds several times its input at its peak. A browser reading larger
 files raises `maxInputBytes`, `maxInflatedBytes` and `maxTotalDecodedBytes` together, and should expect the same multiple of whatever it allows.

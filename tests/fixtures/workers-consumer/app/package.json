@@ -1,0 +1,8 @@
+{
+  "name": "workers-consumer-app",
+  "private": true,
+  "type": "module",
+  "warden": {
+    "kind": "apps"
+  }
+}

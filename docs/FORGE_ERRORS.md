@@ -47,15 +47,13 @@ audience: consumer
 
 ### 1a. The Unified `Result` Primitive, `ok`/`err`, `result` and `toError`
 
-forge has exactly **one** result primitive, published from `@y-core/forge/result` as the type `Result<T, E>` plus the values `ok`, `err`, `result`
-and `toError`. **`src/result/mod.ts` is authoritative for every one of those signatures**, including `ok`'s void overload and `result`'s
-sync/async/promise overloads; `src/result/README.md` shows them in use.
+forge has exactly **one** result primitive, `Result<T, E>` from `@y-core/forge/result`. **`src/result/mod.ts` holds every signature** beside it,
+and `src/result/README.md` shows them in use.
 
-**Return `Result` from any function that can fail predictably.** Never return `null | T` and never throw for an expected failure.
+**Return `Result` from any function that can fail predictably** ([`ERROR_HANDLING.md`][eh-5a] §5a). **Its one failure field is `error`**, which
+every domain alias reuses.
 
-**There is exactly one failure field: `error`.** No `errors`, no `reason` — every domain shape reuses that one channel. Success carries `data`.
-
-**Build values with `ok()` / `err()`, never object literals.** They are the one documented exception to the `create*` factory-naming rule
+<!-- rule:forge-result-by-helpers --> `ok()` and `err()` are the one documented exception to the `create*` factory-naming rule
 ([`NAMESPACES.md`][namespaces-5e] §5e): they construct values, not configured objects.
 
 ### 1b. Narrowing a Result
@@ -64,16 +62,13 @@ See [`ERROR_HANDLING.md`][eh-1b] §1b for the guard shape, the early-return rule
 
 ### 1c. `GuardResult` and `ValidationResult` Domain Aliases
 
-Both are plain aliases of §1a, declared in `src/result/mod.ts`. The discriminant stays `ok`; the failure channel stays `error`.
-`ValidationResult` is re-exported from `@y-core/forge/validation`.
+Both are aliases of §1a, declared in `src/result/mod.ts`.
 
-**`ValidationResult<T>` carries the per-field message list in `error`.** A flat list of already-formatted messages (`"Email is required"`). Do not
-collapse the issues into a single `Error` — the list feeds `renderValidationErrors` (§2c) so every failing field surfaces at once.
+**Keep `ValidationResult`'s `error` a list of formatted per-field messages, never one collapsed `Error`**: the list feeds
+`renderValidationErrors` (§2c), so every failing field surfaces at once.
 
-**`GuardResult<R>` is for predicate checks that produce no success value** (origin, CSRF, Turnstile). `R` is typically a string-literal union of
-reason codes. Construct with `ok()` and `err(reason)`.
-
-**Never echo a `GuardResult` reason code to a client.** It is a server diagnostic.
+**`GuardResult` is for a predicate check with no success value** (origin, CSRF, Turnstile), and **its reason code is a server diagnostic, never
+sent to a client** ([`ERROR_HANDLING.md`][eh-3b] §3b).
 
 ---
 
@@ -82,8 +77,7 @@ reason codes. Construct with `ok()` and `err(reason)`.
 Each renders HTMX-compatible partial HTML — never a full `<html>` document — and returns `SafeHtml`, not a `Response`. Import from
 `@y-core/forge/render/htmx`.
 
-**Set the status on `fragmentResponse(body, status?, headers?)`, not on the renderer.** `fragmentResponse` fixes `content-type` to
-`text/html; charset=utf-8`; passing a `content-type` key (case-insensitive) **throws** rather than being silently ignored.
+**Set the status on `fragmentResponse`, not on the renderer.** It owns the `content-type`, and throws on one passed in rather than ignore it.
 
 **`serveObject` is the one ratified exception to "return `SafeHtml`, not `Response`."** As an HTTP-boundary method it owns its full response — see
 §5e.
@@ -105,7 +99,7 @@ Success uses the `fragmentResponse` default status `200` so HTMX swaps the targe
 
 ### 2c. `renderValidationErrors` — Validation Error Fragment
 
-Renders the flat message list as a `<ul>`. Pass the `error` list from a `ValidationResult` (§1c) directly.
+Pass the `error` list from a `ValidationResult` (§1c) directly.
 
 **The banner carries `ANNOUNCE_FAILURE_ATTR` holding its lead, "Please correct the following fields."**, not the list, so a failed submission is
 announced in one sentence rather than message by message. `defineAction`'s `422` is this banner (§5d).
@@ -116,7 +110,7 @@ announced in one sentence rather than message by message. `defineAction`'s `422`
 
 **Every option _class_ value is HTML-escaped before interpolation**, so a hostile class string cannot break out of the attribute.
 
-**`successAttr` is interpolated verbatim** — it is by contract a developer-supplied raw attribute fragment. Never pass user input to it.
+**Never pass user input to `successAttr`**: it is interpolated verbatim, as a developer-supplied attribute fragment.
 
 ---
 
@@ -126,26 +120,16 @@ announced in one sentence rather than message by message. `defineAction`'s `422`
 
 ### 3a. `htmlResponse` Pattern
 
-`htmlResponse(body, status?, headers?)` is the primary full-page return. It guarantees a leading `<!DOCTYPE html>` and fixes
-`content-type: text/html; charset=utf-8` — passing a `content-type` key **throws**. `body` is a string or `SafeHtml`.
-
-**For HTMX partials that must not carry a DOCTYPE, use `fragmentResponse` (§2).**
+`htmlResponse` is the full-page return: it adds the `<!DOCTYPE html>` and, like `fragmentResponse`, owns the `content-type`. **A partial that
+must carry no DOCTYPE uses `fragmentResponse` (§2).**
 
 ### 3b. `html` Tagged Template
 
-`html` returns a `SafeHtml`-branded value (test membership with `isSafeHtml`). It escapes interpolated strings by default; `rawHtml(...)` opts a
-pre-trusted fragment out.
+`html` escapes interpolated strings; `rawHtml(...)` opts a pre-trusted fragment out.
 
 **Prefer JSX components over `html`.** Use the tag only when building raw string fragments for injection into pre-existing HTML strings.
 
 ### 3c. `escapeHtml`
-
-Escapes `&`, `<`, `>`, `"`, `'` to their entity equivalents.
-
-```ts
-escapeHtml('<script>alert("xss")</script>');
-// → '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
-```
 
 **Required for any dynamic string injected via `rawHtml` or raw concatenation.** The JSX runtime and the `html` tag auto-escape, so `escapeHtml` is
 only needed outside those paths.
@@ -209,22 +193,18 @@ import { applyMiddlewareChain } from "@y-core/forge/app";
 import { htmlResponse } from "@y-core/forge/http";
 
 applyMiddlewareChain(app, {
-  // ...
+  securityHeaders,
   onRefuse: (_c, refusal) =>
     refusal.guard === "csrf" || refusal.guard === "origin" ? htmlResponse(refusedPage(refusal.status), refusal.status) : undefined,
 });
 ```
 
-**A path whose CSRF refusal must be answered its own way needs a group that verifies it.** Only a group with an origin check, a rate limit or
-`guards[]` carries a verify stage ([`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f), so an override on a group with none never runs, and a path only the
-router's final stage verifies is answered by the chain's hook. Where two such groups cover a path, the later-registered answers, and a
-contribution's groups register after the root's. A staff-only sign-out redirect is a group override on the staff paths, and leaves every other
-path's refusal alone.
+**A path whose CSRF refusal must be answered its own way needs a group that verifies it** — one with an origin check, a rate limit or `guards[]`
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f); an override on any other group never runs. A staff-only sign-out redirect is such an override on the
+staff paths.
 
-**The hook picks the representation, never the outcome.** It has no `next`, so it cannot pass a refused request on; declining passes on the
-answer, never the request. It may answer with the
-refusal's status in another medium, or redirect to a remedy page, as the sign-out confirm does ([`AUTH_MOUNTING.md`][am-1] §1). It may branch on
-`isHxRequest` to choose between a fragment and a page, never to decide whether to refuse.
+**The hook picks the representation, never the outcome.** It has no `next`, so it answers the refusal's status in another medium or redirects to a
+remedy page, as the sign-out confirm does ([`AUTH_MOUNTING.md`][am-1] §1); `isHxRequest` may choose a fragment or a page, never whether to refuse.
 
 **forge ships one answer per medium for an app to pass as its hook:**
 
@@ -241,9 +221,8 @@ refusal's status in another medium, or redirect to a remedy page, as the sign-ou
 
 **A `429` carries `Retry-After`, and nothing else about the limit.** Its value is the binding's `period` in seconds, read from wrangler's
 `ratelimits` entry through the generated table ([`SECURITY_HARDENING.md`][sh-4e] §4e). forge sets it on whatever answers the `429`, unless the
-hook's response already carries one. The binding reports no remaining count and no reset time, so the period is an honest upper bound, and the
-`RateLimit` and `RateLimit-Policy` headers are not sent. A `rateLimit` on a request no chain published `rateLimits` for knows no period, so its
-refusal carries no `retryAfter` and its `429` no `Retry-After`, rather than a guessed one.
+hook's response already carries one. The binding reports nothing more, so the period is an honest upper bound. A `rateLimit` on a request no chain
+published `rateLimits` for knows no period, so its refusal carries no `retryAfter` and its `429` no `Retry-After`, rather than a guessed one.
 
 **Every refusal is logged once, as `security.<guard>.refused`** — `security.csrf.refused`, `security.origin.refused`,
 `security.rate-limit.refused`, `security.admin.refused` — at `warn` for a 4xx and `error` for a 5xx
@@ -305,7 +284,7 @@ fragment renderer (§2) returned through `fragmentResponse`, and never as a thro
 
 ### 5b. Unexpected Errors — The Router Error Boundary
 
-Programming mistakes that cannot be recovered at the call site. **The app needs no per-route `try/catch`** — the router installs an error boundary
+Programming mistakes that cannot be recovered at the call site. **The app needs no per-route `try/catch`**: the router installs an error boundary
 as a global middleware, at two depths: one innermost, one wrapped around the path-scoped guard stack.
 
 The paths carry different header guarantees, and one entry below is not an error at all:
@@ -343,12 +322,11 @@ from `requestIdCtx`, escaped — the opaque internal identifier [`ERROR_HANDLING
 ticket. **Neither generates one:** without the `requestId` middleware there is no id, and the line is omitted. On the out-of-chain path no
 middleware ran, so a throw before `requestId` carries neither the line nor the header.
 
-- **Cancellation** (the client disconnected before the handler finished) — **not an error.** `@remix-run/fetch-router` races every handler against
-  `request.signal` and rejects with the signal's reason, which reaches the boundary like any throw. The boundary checks `request.signal.aborted`
-  first and answers a bodyless **499**: no `onError` override is called, no error page is rendered, and nothing is logged — not by the boundary, and
-  not by `requestLogger`, whose own error record is suppressed on the same condition. There is no client left to receive a page, and a disconnect is
-  not a defect to page anyone about. `definePage` and `defineAction` rethrow on the same condition, so neither an `onError` page nor the generic
-  fragment is built for a gone client — **this is the one case `defineAction` rethrows** (§5d).
+- **Cancellation** (the client disconnected before the handler finished) — **not an error.** The boundary checks `request.signal.aborted` first and
+  answers a bodyless **499**: no `onError` override is called, no error page is rendered, and nothing is logged — not by the boundary, and not by
+  `requestLogger`, whose own error record is suppressed on the same condition. There is no client left to receive a page, and a disconnect is not a
+  defect to page anyone about. `definePage` and `defineAction` rethrow on the same condition, so neither an `onError` page nor the generic fragment
+  is built for a gone client — **this is the one case `defineAction` rethrows** (§5d).
 
 The boundary logs via `createLogger("app")` and includes the escaped `err.message` only in a Worker run by `forge cf dev`, whose
 `#relax/error-page` module discloses it to both the fallback 500 and `createErrorPage` ([`NAMESPACES.md`][namespaces-5i] §5i). There is no option
@@ -382,12 +360,11 @@ full-page boundary. A `defineAction` HTMX call swaps a fragment into an existing
 the client receives, never in whether the error is recorded.
 
 **One error, one record, written by the layer that terminates it.** A `definePage` with no `onError` logs nothing and re-throws — the boundary is
-the terminating layer and reports it there, and it stays the one that reports when a `createApp` `onError` renders the answer: it records
-`Unhandled error` before calling the override, which logs nothing of its own (§5b). A builder that recovers the error itself logs it, because
-the boundary never will: `definePage` with an `onError` at error level, `defineAction` at **warn** when its `onError` recovers and at error
-when it renders the generic 500. Every one of those records carries `serializeError(error)`, so the shape is the same wherever it was
-written. `requestLogger`'s per-request summary is a separate record by design — it carries the `method`, `path` and `duration` the error
-record does not.
+the terminating layer and reports it there, and it stays the one that reports when a `createApp` `onError` renders the answer (§5b). A builder that
+recovers the error itself logs it, because the boundary never will: `definePage` with an `onError` at error level, `defineAction` at **warn** when
+its `onError` recovers and at error when it renders the generic 500. Every one of those records carries `serializeError(error)`, so the shape is the
+same wherever it was written. `requestLogger`'s per-request summary is a separate record by design — it carries the `method`, `path` and `duration`
+the error record does not.
 
 **A throwing `onError` is attributed to the hook, not folded into the original.** Every hook — `createApp`'s, `definePage`'s and `defineAction`'s —
 logs its own failure with the original error alongside it, then falls through as if no hook had been supplied. For `createApp`'s that is a second
@@ -410,15 +387,13 @@ runtime renders its own error page rather than the app's — deliberate: the two
 response would hide a defect that costs the deployment its request logs, its D1 schema observation and its audit writes.
 
 **Env and config failures throw the normalized shape `Invalid environment: <field>: <reason>; …`** produced by `formatEnvIssues`
-(`src/validation/format-issues.ts`, `@internal`) — never hand-roll the formatting, and never reproduce `issue.message`, which embeds the rejected
-value ([`INPUT_VALIDATION.md`][iv-1b] §1b).
+(`src/validation/format-issues.ts`, `@internal`) — never hand-roll the formatting ([`INPUT_VALIDATION.md`][iv-1b] §1b).
 
 **The dividing line: resolving a binding throws ([`BOUNDARIES.md`][boundaries-5a] §5a); operating on a resolved store returns `Result` (§5a).** See
 [`STORAGE_BINDINGS.md`][sb-4a] §4a.
 
 **The free `serveObject(backend, …)` (`storage/r2`) is the one ratified exception to "operating returns `Result`."** It sits on the HTTP boundary
-and returns a `Response` — `200` / `206` (range) / `304` (conditional) / `404` (missing) / `416` (unsatisfiable range). Callers hand its return
-value straight back from the handler.
+and returns a `Response`, which the handler returns as it is.
 
 **The bound `store.serveObject` is not the exception, and returns `Result<Response>`** — a rejected key and a backend fault are failures, not
 rendered ones, and the store's other operations already say so ([`STORAGE_BINDINGS.md`][sb-3b] §3b).

@@ -115,7 +115,15 @@ export function checkCssSources(config: CssSourcesCheckConfig): CheckResult {
   }
   for (const name of listFiles(ui, (file) => /\.tsx?$/.test(file) && !isTestSource(file))) suspects.push(resolve(ui, name));
 
+  const quoted = config.quotedClasses ?? new Map<string, string>();
+  for (const [file, reason] of quoted) {
+    if (!existsSync(resolve(root, file)))
+      findings.push(fail("is registered as quoting classes, but does not exist on disk — delete the entry", { file }));
+    else if (reason.trim() === "")
+      findings.push(fail("is registered as quoting classes with no reason — say why its class strings are never rendered", { file }));
+  }
   for (const file of suspects.sort()) {
+    if (quoted.has(relative(root, file))) continue;
     for (const { literal, anchors } of findClassDeclarations(readFileSync(file, "utf-8"))) {
       findings.push(
         fail(`string literal declares utility classes — ${anchors.join(" ")}`, {

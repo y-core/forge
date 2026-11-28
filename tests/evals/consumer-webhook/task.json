@@ -1,0 +1,24 @@
+{
+  "id": "consumer-webhook",
+  "tree": "consumer",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "accept": ["tests/webhooks.accept.ts"],
+  "traps": [
+    {
+      "id": "cors-global",
+      "rules": ["dependency:forge/SECURITY_HARDENING.md#3a", "canon:BOUNDARIES.md#2b"],
+      "detector": { "kind": "rg", "pattern": "\\.use\\(\\s*\"\\*\"\\s*,\\s*cors\\(", "paths": ["src"] }
+    },
+    {
+      "id": "local-signature",
+      "rules": ["canon:FORGE_CONSUMPTION.md#3d", "canon:CODE_REVIEW.md#3c"],
+      "detector": { "kind": "rg", "pattern": "crypto\\.subtle|createHmac|\\bHMAC\\b|timingSafeEqual", "paths": ["src"] }
+    },
+    {
+      "id": "fetch-in-controller",
+      "rules": ["canon:APP_ARCHITECTURE.md#2c", "canon:CODE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "\\bfetch\\(", "paths": ["src/controllers"] }
+    }
+  ]
+}

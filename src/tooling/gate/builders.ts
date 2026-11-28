@@ -33,6 +33,7 @@ import { checkMarkdown, fixMarkdown } from "./checks/markdown";
 import { checkMenuNaming } from "./checks/menu-naming";
 import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
+import { checkNoBuild } from "./checks/no-build";
 import { checkPackaging } from "./checks/packaging";
 import { playwrightServerStatus } from "./checks/playwright-server";
 import { checkServiceWorker } from "./checks/service-worker";
@@ -73,8 +74,8 @@ import type { SsrBoundaryCheckConfig } from "./checks/types";
 import type { DeclaredGraph } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
 import { PLAYWRIGHT_RESULTS } from "./playwright-results";
-import type { BrowserProbes, CheckStep, CommandStep, StepRequirement } from "./types";
-import type { SourceStepOptions, StepOptions } from "./types";
+import type { BrowserProbes, CheckStep, CommandStep, Step, StepRequirement } from "./types";
+import type { PlaywrightStepOptions, SourceStepOptions, StepOptions } from "./types";
 
 function prerequisite(
   override: StepRequirement | null | undefined,
@@ -283,7 +284,7 @@ export function browserRequired(server: PlaywrightServer, probes: Partial<Browse
 }
 
 /** `playwright test --project=chromium` under node, behind the Playwright server. Always run whole. @public */
-export function browserStep(options: StepOptions = {}): CommandStep {
+export function browserStep(options: PlaywrightStepOptions = {}): CommandStep {
   return {
     label: "test:browser",
     tail: 120,
@@ -293,25 +294,25 @@ export function browserStep(options: StepOptions = {}): CommandStep {
     // The probe targets the server, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at connect.
     ...prerequisite(options.requires, options.requires === undefined ? browserRequired(PRIMARY_SERVER) : undefined),
-    ...watching(options.watches),
     results: PLAYWRIGHT_RESULTS,
   };
 }
 
 /** `playwright test --project=firefox --project=webkit` on the compat server. Always run whole. @public */
-export function crossEngineStep(options: StepOptions = {}): CommandStep {
+export function crossEngineStep(options: PlaywrightStepOptions = {}): CommandStep {
   return {
     label: "test:browser:cross-engine",
     tail: 120,
     cmd: ["playwright", "test", "--project=firefox", "--project=webkit"],
     ...prerequisite(options.requires, options.requires === undefined ? browserRequired(COMPAT_SERVER) : undefined),
-    ...watching(options.watches),
     results: PLAYWRIGHT_RESULTS,
   };
 }
 
 /** `playwright test --project=workerd` over `sources` (default every spec the project matches), behind the workerd runtime. Always run whole. @public */
-export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } & SourceStepOptions = {}): CommandStep {
+export function workerdStep(
+  options: { hint?: string; leavesNoTemp?: boolean; sources?: readonly string[] } & PlaywrightStepOptions = {},
+): CommandStep {
   return {
     label: "test:workerd",
     tail: 120,
@@ -326,7 +327,6 @@ export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } &
       probe: hasWorkerd,
       hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
     }),
-    ...watching(options.watches),
   };
 }
 
@@ -428,7 +428,16 @@ export function coLocationStep(config: CoLocationCheckConfig, options: StepOptio
 
 /** Checks every comment against the budget, so prose the code already states cannot accumulate unseen. @public */
 export function commentBudgetStep(config: CommentBudgetCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-comment-budget", () => checkCommentBudget(config), options, { watches: sourceWatches(config.sources) });
+  // Under `coverTracked` a file anywhere can be the one left out, so no path list bounds the row.
+  const watches = config.coverTracked === true ? undefined : sourceWatches(config.sources);
+  return checkStep("validate-comment-budget", () => checkCommentBudget(config), options, watches === undefined ? {} : { watches });
+}
+
+/** Fails any row of the table `steps` returns that builds the library; called when the step runs, so the table declaring it can pass its own rows. @public */
+export function noBuildStep(config: { steps: () => readonly Step[] }, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-no-build", () => checkNoBuild(config.steps()), options, {
+    watches: ["config/steps.config.ts", "src/tooling/gate/**"],
+  });
 }
 
 /** Checks that the published tarball carries no module only a test imports. @public */
@@ -463,7 +472,11 @@ export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions
 
 /** Holds every `config/*.config.ts` to one default export that calls an imported `define*` helper. @public */
 export function configFileStep(config: ConfigFileCheckConfig, options: StepOptions = {}): CheckStep {
-  const watches = ["config/*.config.ts", ...(config.baseline === true ? [".oxlintrc.json*", ".oxfmtrc.json*", "tsconfig.json*"] : [])];
+  const watches = [
+    "config/**",
+    ...(config.baseline === true ? [".oxlintrc.json*", ".oxfmtrc.json*", "tsconfig.json*"] : config.markdown === true ? [".oxfmtrc.json*"] : []),
+    ...(config.nodeSubpaths === undefined ? [] : ["playwright.config.ts", "package.json"]),
+  ];
   return checkStep("validate-config-files", () => checkConfigFiles(config), options, { watches });
 }
 

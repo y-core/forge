@@ -136,7 +136,7 @@ describe("validateCommentBudget() — §5a form 1, one line of TSDoc", () => {
   it("fails one that does not, and reports its opening line", () => {
     const source = "const a = 1;\n/** Renders a fragment.\n *  Twice, for two reasons.\n */\nexport function render(): void {}\n";
 
-    expect(messages(source)).toEqual(["TSDoc spans 3 lines — §5a permits one"]);
+    expect(messages(source)).toEqual(["TSDoc spans 3 lines — the comment budget permits one"]);
     expect(lines(source)).toEqual([2]);
   });
 
@@ -152,14 +152,14 @@ describe("validateCommentBudget() — §5a form 2, the allow-listed tags", () =>
 
   it("fails `@example`, whose usage belongs in the unit's README", () => {
     expect(messages("/** Builds a config. @example `buildConfig()` @public */\n")).toEqual([
-      "`@example` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@example` — the comment budget permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
   it("fails `@param` and `@defaultValue`, which restate the signature", () => {
     expect(messages("/** One. @param one - the first @public */\n/** Two. @defaultValue `0` */\n")).toEqual([
-      "`@param` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
-      "`@defaultValue` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@param` — the comment budget permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@defaultValue` — the comment budget permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
@@ -169,13 +169,13 @@ describe("validateCommentBudget() — §5a form 2, the allow-listed tags", () =>
 
   it("fails `@default`, which no allow-list entry names", () => {
     expect(messages("/** Two. @default 0 */\n")).toEqual([
-      "`@default` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@default` — the comment budget permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
   it("fails a tag nobody has heard of, so the list permits rather than forbids", () => {
     expect(messages("/** Two. @remarkable */\n")).toEqual([
-      "`@remarkable` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@remarkable` — the comment budget permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
@@ -202,7 +202,7 @@ describe("validateCommentBudget() — §5a form 3, a one-or-two-line inline why"
   it("fails three, and reports the line the run opens on", () => {
     const source = "const a = 1;\n// one\n// two\n// three\nconst b = 2;\n";
 
-    expect(messages(source)).toEqual(["3 consecutive `//` lines — §5a form 3 caps an inline why at two"]);
+    expect(messages(source)).toEqual(["3 consecutive `//` lines — the comment budget caps an inline why at two"]);
     expect(lines(source)).toEqual([2]);
   });
 
@@ -222,7 +222,7 @@ describe("validateCommentBudget() — §5a form 3, a one-or-two-line inline why"
 
   it("passes a two-line block-form why, and fails a three-line one", () => {
     expect(messages("/* one\n   two */\nconst a = 1;\n/* one\n   two\n   three */\nconst b = 2;\n")).toEqual([
-      "inline why spans 3 lines — §5a form 3 caps one at two",
+      "inline why spans 3 lines — the comment budget caps one at two",
     ]);
   });
 });
@@ -276,7 +276,7 @@ describe("validateCommentBudget() — a stylesheet", () => {
 
   it("holds a `/**` block to the inline-why cap, since a stylesheet exports nothing to document", () => {
     expect(messagesIn("src/a.css", "/** One.\n   Two. */\n")).toEqual([]);
-    expect(messagesIn("src/a.css", "/** One.\n   Two.\n   Three. */\n")).toEqual(["inline why spans 3 lines — §5a form 3 caps one at two"]);
+    expect(messagesIn("src/a.css", "/** One.\n   Two.\n   Three. */\n")).toEqual(["inline why spans 3 lines — the comment budget caps one at two"]);
   });
 
   it("passes a `modern-css-allow:` directive", () => {
@@ -299,13 +299,13 @@ describe("validateCommentBudget() — §5f, a field gloss that earns nothing", (
 
   it("fails a gloss whose words reduce to the field's own name", () => {
     expect(messages(field("/** The user's name. */", "name: string;"))).toEqual([
-      "`name` — the gloss spells the field name back; §5f budgets nothing for that",
+      "`name` — the gloss spells the field name back, which the comment budget has no room for",
     ]);
   });
 
   it("fails the same gloss written on the field's own line", () => {
     expect(messages("interface Options {\n  /** Repository root. */ root: string;\n}\n")).toEqual([
-      "`root` — the gloss spells the field name back; §5f budgets nothing for that",
+      "`root` — the gloss spells the field name back, which the comment budget has no room for",
     ]);
   });
 
@@ -328,7 +328,7 @@ describe("validateCommentBudget() — §5f, a field gloss that earns nothing", (
   it("splits a camel-case field name before comparing", () => {
     expect(messages(field("/** The maximum bytes. */", "maxBytes?: number;"))).toEqual([]);
     expect(messages(field("/** Max bytes. */", "maxBytes?: number;"))).toEqual([
-      "`maxBytes` — the gloss spells the field name back; §5f budgets nothing for that",
+      "`maxBytes` — the gloss spells the field name back, which the comment budget has no room for",
     ]);
   });
 
@@ -338,7 +338,7 @@ describe("validateCommentBudget() — §5f, a field gloss that earns nothing", (
 
   it("reads past the visibility tags, which are markers rather than words", () => {
     expect(messages(field("/** Repository root. @internal */", "root: string;"))).toEqual([
-      "`root` — the gloss spells the field name back; §5f budgets nothing for that",
+      "`root` — the gloss spells the field name back, which the comment budget has no room for",
     ]);
   });
 });
@@ -405,12 +405,32 @@ describe("validateCommentBudget() — the licence allowance", () => {
   });
 
   it("holds the same run when it is not", () => {
-    expect(messages(`${header}const a = 1;\n`)).toEqual(["3 consecutive `//` lines — §5a form 3 caps an inline why at two"]);
+    expect(messages(`${header}const a = 1;\n`)).toEqual(["3 consecutive `//` lines — the comment budget caps an inline why at two"]);
   });
 
   it("waives the leading run alone — a later one is prose, listed or not", () => {
     expect(messages(`${header}const a = 1;\n// one\n// two\n// three\n`, true)).toEqual([
-      "3 consecutive `//` lines — §5a form 3 caps an inline why at two",
+      "3 consecutive `//` lines — the comment budget caps an inline why at two",
     ]);
+  });
+});
+
+describe("validateCommentBudget() — the rule each finding reports under", () => {
+  const rules = (source: string) => validateCommentBudget("src/a.ts", source).map((finding) => finding.rule);
+  const ledgerId = ["feat", "261121", "07"].join("-");
+
+  it("reports a comment over the budget's size or tags under the budget rule", () => {
+    expect(rules("/** One.\n *  Two.\n */\nexport const a = 1;\n")).toEqual(["code-rules-comment-budget"]);
+    expect(rules("/** Renders. @example */\nexport const a = 1;\n")).toEqual(["code-rules-comment-budget"]);
+    expect(rules("const a = 1;\n/* one\n   two\n   three */\n")).toEqual(["code-rules-comment-budget"]);
+    expect(rules("// one\n// two\n// three\nconst a = 1;\n")).toEqual(["code-rules-comment-budget"]);
+  });
+
+  it("reports a gloss that spells the field back under the field-gloss rule", () => {
+    expect(rules("interface Options {\n  /** Repository root. */ root: string;\n}\n")).toEqual(["code-rules-field-gloss"]);
+  });
+
+  it("reports a ledger id in a comment under the forbidden-comment rule", () => {
+    expect(rules(`// see ${ledgerId}\nconst a = 1;\n`)).toEqual(["code-rules-comment-forbidden"]);
   });
 });

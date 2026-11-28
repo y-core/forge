@@ -6,7 +6,7 @@ import { noInlineStyle } from "./no-inline-style.ts";
 describe("no-inline-style", () => {
   it("reports a `style` attribute, whatever value it carries", () => {
     expect(runRule(noInlineStyle, element("div", attribute("style", literal("color:red"))))).toEqual([
-      "`style=` attribute — the renderer drops it; express the rule as a class (forge-ui-no-inline-style — src/ui/design/floor.md)",
+      "[forge-ui-no-inline-style] `style=` attribute — the renderer drops it; express the rule as a class",
     ]);
   });
 

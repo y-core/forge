@@ -1,77 +1,40 @@
 ---
 name: handoff
 description: >
-  Hand finished work to the forge-review session — make each task's one commit, check the tasks are
-  in review with their sha, then ring the reviewer's doorbell over SendMessage. Use when work moves
-  to `review`. Takes task ids, an epic or a wave, and defaults to what this session just moved.
+  Hand finished work to review — make each task's one commit, check the tasks are in review with
+  their sha, then dispatch the `cc-reviewer` agent in the background with a brief of ids and shas
+  alone. Use when work moves to `review`. Takes task ids, an epic or a wave, and defaults to what
+  this session just moved.
 argument-hint: "[task-ids|epic|wave]"
 ---
 
 # Handoff
 
-You are the **`forge-dev`** session. The peer is **`forge-review`**.
+You own the work; the reviewer is **`cc-reviewer`**, which starts with nothing but the ledger. **The ledger is
+the payload and the brief is only a doorbell** — prose in the brief is a second copy that can disagree with the
+record and anchors a reader whose worth is having no opinion yet.
 
-**The ledger is the payload and this message is only a doorbell.** Everything the reviewer needs —
-the resolution, the commit it names, the criterion it was filed against, any constraint on how to
-read the code — is already on the task. Prose in the message is a second copy of a record that
-exists, free to disagree with it.
+1. **Settle the set.** The ids you were given, else the tasks this session moved to `review`. An epic or a wave
+   names a set; it never widens one.
+2. **Make each task's one commit and check it** (`AGENT_WORKFLOW.md` §4b, §5b) — one call:
 
-## Settle the set
+   ```bash
+   bun .claude/skills/handoff/scripts/handoff.ts <id>[@<base>] … [--message "<why, in the repo's convention>"]
+   ```
 
-Resolve what you were given to a list of task ids. Given nothing, that is the tasks this session
-moved, or is about to move, to `review`. An epic or a wave identifies a set; neither widens one past
-the ids you were handed.
+   It rebases `task/<id>` onto its base (`main`, or a sibling's handed-off sha after `@`), squashes it to one
+   commit, runs `bun run verify:unit` with the stream to a file, and prints each resolution prefix and the brief.
+   `--message` is required when the branch holds more than one commit: a release-tooling prefix kept, no task
+   id, trailer or file list. **A non-zero exit is not a handoff** — fix, commit, run it again.
+3. **Move each task to `review`** with the printed `sha: …; check: verify:unit green;` and what was done. A task
+   already in review keeps its commit only if that sha is still its branch's tip and only commit.
+4. **Dispatch** one background `Agent`, `subagent_type: cc-reviewer`, whose prompt is the printed brief and
+   nothing else — no summary, no hint where to look, no expected verdict.
 
-## Make each task's one commit
+**Never review in this thread**, or by an agent that wrote the work. **One review per sha**: only a new sha gets
+a new review. **The verdict is the reviewer's**: do not close, reopen or re-word what it wrote. Tell the user the
+review is running and stop; the notification is the verdict.
 
-A task reaches review as one commit on its own branch (`AGENT_WORKFLOW.md` §4b, §5b). For each id,
-on `task/<id>`:
-
-1. **Rebase onto its base.** The base is local `main`, or — for a task started on a sibling that has
-   not been merged yet — the sibling's handed-off sha. `git rebase <base>`.
-2. **Squash to one commit.** `git reset --soft <base>`, then one `git commit`: a short summary of
-   why in the repository's convention, a prefix its release tooling reads kept, and no task or epic
-   id, trailer or file list.
-3. **Run the task check on that commit** — `bun run verify:unit`, its stream to a file
-   (`AGENT_WORKFLOW.md` §3). A red check is not a handoff: fix, amend, run it again.
-4. **Move it to `review`** with a resolution that starts
-   `sha: <git rev-parse HEAD>; check: verify:unit green;` and goes on to say what was done.
-
-A task already in `review` keeps its commit if its resolution's sha is still `task/<id>`'s tip and
-the only commit above its base. Otherwise it is redone from step 1 — a sha that moved is a different
-claim. Say so and stop if a task cannot be brought to that state.
-
-## Check the reviewer is up
-
-`ListAgents`. If no `forge-review` session is listed, stop and tell the user the handoff was not
-sent. Do not review your own work, and do not spawn a subagent to stand in for it — a review by the
-session that wrote the code is the thing this split exists to prevent.
-
-## Ring
-
-`SendMessage` to `forge-review`:
-
-```text
-handoff: <n> task(s) in review
-ids: <task-id>, <task-id>, ...
-sha: <task-id> <short sha>, <task-id> <short sha>, ...
-action: invoke the `review-handoff` skill on the ids above — /review-handoff
-```
-
-**The `action` line is not decoration.** A cross-session message is not the user typing a command,
-so the reviewer's trigger is not guaranteed to fire on the `handoff:` line alone.
-
-## Then stop
-
-Tell the user what you sent. **Do not close the tasks yourself** — `move_lane` reaches `done` only
-from `review`. Do not poll; the reply wakes this session on its own.
-
-## When the reply comes
-
-- **Tasks closed** — invoke the `merge` skill on the reply. It merges each reviewed sha into local
-  `main`, and pushes once the push unit is complete; the full gate that closes an epic runs there,
-  before its push.
-- **Findings filed or tasks reopened** — fix each filed bug on the branch of the task it was found
-  in, never on a branch of its own (`AGENT_WORKFLOW.md` §5b). Squash that branch to its one commit
-  again and hand off the task and its bugs together, each bug's resolution naming the task's new
-  sha. A wave holding an open finding is not pushed.
+**On the verdict:** for closed tasks, invoke the `merge` skill. A filed finding is fixed on the branch of the task it
+was found in, never on one of its own; hand off the task and its bugs together, each bug's resolution naming the
+new sha. A wave holding an open finding is not pushed.

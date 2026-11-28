@@ -474,12 +474,10 @@ Workflow run, or query traces and logs, so it does not write throwaway code to r
 
 ### Writing local data where the app reads it
 
-**Do not seed the app's development data with Cloudflare's `cf` CLI and `--local`.** Under `--local`, `cf` keeps its data in one directory that
-every project on the machine shares: `~/.config/cloudflare/state/v3` on Linux, `~/Library/Preferences/cloudflare/state/v3` on macOS
-([Cloudflare's `cf` local data](https://developers.cloudflare.com/cf/projects/#local-resource-data)). `forge cf dev` runs `wrangler dev`, which
-keeps the app's data in `.wrangler/state` in the project
-([Cloudflare's local data guide](https://developers.cloudflare.com/workers/local-development/local-data/)). So a row written with
-`cf d1 raw … --local` is one the app never sees, and a row the app writes is one `cf` never sees.
+**Do not seed the app's development data with Cloudflare's `cf` CLI and `--local`**: `cf` keeps local data in one directory every project on the
+machine shares ([Cloudflare's `cf` local data](https://developers.cloudflare.com/cf/projects/#local-resource-data)), while `forge cf dev` runs
+`wrangler dev`, which keeps the app's data in the project's `.wrangler/state`
+([Cloudflare's local data guide](https://developers.cloudflare.com/workers/local-development/local-data/)), so a row one writes the other never sees.
 
 Write local data through Local Explorer, or through a `wrangler` command run with `--local`, which uses `.wrangler/state` too.
 

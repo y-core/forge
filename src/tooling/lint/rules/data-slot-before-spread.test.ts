@@ -4,7 +4,7 @@ import { attribute, container, element, literal, memberElement, other, runRule, 
 import { dataSlotBeforeSpread } from "./data-slot-before-spread.ts";
 
 const DETAIL =
-  '`<div>` has a literal `data-slot=\'card-header\'` before `{...rest}` — the spread wins and the token is lost; destructure `"data-slot": inherited` and write `data-slot={slotToken("card-header", inherited)}`';
+  '[forge-data-slot-before-spread] `<div>` has a literal `data-slot=\'card-header\'` before `{...rest}` — the spread wins and the token is lost; destructure `"data-slot": inherited` and write `data-slot={slotToken("card-header", inherited)}`';
 
 describe("data-slot-before-spread", () => {
   it("reports a literal `data-slot` a later spread overwrites", () => {

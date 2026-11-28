@@ -1,4 +1,5 @@
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 /** One name of an import statement; `importKind` is `"type"` for an inline `type X` specifier. */
 interface SpecifierNode extends AstNode {
@@ -13,14 +14,14 @@ interface ImportNode extends AstNode {
 }
 
 /** A type smuggled into a value import as an inline `type` specifier. */
-export const typeImportSeparation: LintRule = {
+export const typeImportSeparation = defineLintRule("forge-type-import-separation", {
   meta: {
     type: "problem",
     docs: {
       description: "A type is imported on its own `import type` line, so what a file needs at runtime is legible from the import block alone.",
     },
   },
-  create(context) {
+  create(_context, report) {
     return {
       ImportDeclaration(node: AstNode) {
         const statement = node as ImportNode;
@@ -28,11 +29,11 @@ export const typeImportSeparation: LintRule = {
         const inline = (statement.specifiers ?? []).filter((specifier) => specifier.importKind === "type");
         if (inline.length === 0) return;
         const named = inline.map((specifier) => `\`${specifier.local?.name ?? "?"}\``).join(", ");
-        context.report({
-          message: `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone (docs/FORGE_STRUCTURE.md §8).`,
-          loc: node.loc,
-        });
+        report(
+          `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone.`,
+          node.loc,
+        );
       },
     };
   },
-};
+});

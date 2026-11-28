@@ -1,0 +1,13 @@
+diff --git a/src/security/body-limit.ts b/src/security/body-limit.ts
+index 2dc52b05..01953da2 100644
+--- a/src/security/body-limit.ts
++++ b/src/security/body-limit.ts
+@@ -27,7 +27,7 @@ async function readCapped(body: ReadableStream<Uint8Array>, maxBytes: number): P
+     },
+   });
+   try {
+-    return new Uint8Array(await new Response(body.pipeThrough(counter)).arrayBuffer());
++    return new Uint8Array(await Bun.readableStreamToArrayBuffer(body.pipeThrough(counter)));
+   } catch (thrown) {
+     if (overflowed) return null;
+     throw thrown;

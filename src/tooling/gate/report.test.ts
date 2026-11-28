@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { createColorize } from "../term/color";
 import { checkResult, fail, warn } from "./finding";
 import {
+  commandFailures,
+  findingFailures,
   formatDuration,
   formatFailureExcerpt,
   formatFindingBlock,
@@ -346,5 +348,41 @@ describe("report colour", () => {
 
   it("emits nothing but text when no styler is given", () => {
     expect(formatStepLine("lint", true, 700)).toBe("✓ lint (0.7s)");
+  });
+});
+
+describe("commandFailures()", () => {
+  it("reads each tsc, linter and test failure a command printed", () => {
+    const output = [
+      "src/a.ts(4,2): error TS2322: Type 'string' is not assignable to type 'number'.",
+      "src/b.ts:7:1: error eslint(no-shadow): 'x' is already declared",
+      "(fail) form > rejects an empty body [0.21ms]",
+      "noise",
+    ].join("\n");
+
+    expect(commandFailures("gate", output, 5)).toEqual([
+      { step: "gate", file: "src/a.ts", line: 4, message: "TS2322: Type 'string' is not assignable to type 'number'." },
+      { step: "gate", file: "src/b.ts", line: 7, message: "eslint(no-shadow): 'x' is already declared" },
+      { step: "gate", message: "test failed: form > rejects an empty body" },
+    ]);
+  });
+
+  it("falls back to the output's tail, unindented, when nothing in it is located", () => {
+    expect(commandFailures("gate", "one\ntwo\nthree\n", 2)).toEqual([{ step: "gate", message: "two\nthree" }]);
+  });
+});
+
+describe("findingFailures()", () => {
+  it("keeps only fail-level findings, with what each one locates", () => {
+    expect(
+      findingFailures("check", [
+        { level: "fail", message: "bad", file: "a.ts", line: 2, rule: "forge-a" },
+        { level: "warn", message: "meh" },
+        { level: "fail", message: "also bad" },
+      ]),
+    ).toEqual([
+      { step: "check", rule: "forge-a", file: "a.ts", line: 2, message: "bad" },
+      { step: "check", message: "also bad" },
+    ]);
   });
 });

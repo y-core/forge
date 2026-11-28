@@ -3,10 +3,10 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, literal, other, runRule } from "../lint.fixture.ts";
 import { a11yStateAttrsSource } from "./a11y-state-attrs-source.ts";
 
-const CORPUS = "(forge-ui-a11y-state-attrs-source — src/ui/design/reference/10-accessibility.md)";
+const PREFIX = "[forge-ui-a11y-state-attrs-source] ";
 
 const detail = (token: string, state: string): string =>
-  `\`${token}\` styles from \`aria-${state}\` — read the state from \`data-${state}\`, which \`STATE_ATTRS\` registers ${CORPUS}`;
+  `${PREFIX}\`${token}\` styles from \`aria-${state}\` — read the state from \`data-${state}\`, which \`STATE_ATTRS\` registers`;
 
 describe("a11y-state-attrs-source", () => {
   for (const [text, state] of [

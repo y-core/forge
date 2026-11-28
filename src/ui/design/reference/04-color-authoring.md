@@ -86,24 +86,17 @@ The scale runs in namespaces, and each is declared in full:
   `--emerald-contrast` and `--yellow-contrast`, Radix's name for the foreground that sits on step 9. Only the greys moved: these are still Tailwind
   stops, because a status colour is not a thing an application re-themes.
 
-Step 9 is the fill and is **held** across modes — a status hue's is one palette stop with no `light-dark()`, and `--accent-9` changes between modes
-only by a contrast nudge, never an inversion — so the foreground on it has to be near-white in both, which is what
-`light-dark(var(--gray-1), var(--gray-12))` spells: step 1 in light and step 12 in dark are the same near-white seen from either mode. That is
-`--accent-contrast`'s shape, and the reason step 11 exists to carry the hue as text where the fill cannot ([`THEME_GENERATION.md`][tg-4] §4).
-`--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes: `--gray-12` in
-light, `--gray-1` in dark.
+Step 9 is the fill and is **held** across modes, so its foreground has to be near-white in both — `light-dark(var(--gray-1), var(--gray-12))`,
+`--accent-contrast`'s shape — and step 11 carries the hue as text where the fill cannot ([`THEME_GENERATION.md`][tg-4] §4). `--yellow-contrast`
+inverts instead: near-white does not clear `--yellow-9`, so its foreground stays near-black in both modes.
 
 The text weights forge's light mode distinguishes sit on steps that carry a Radix role: `--primary-foreground` is `--gray-1`, and
 `--secondary-foreground` and `--accent-foreground` are `--gray-12`. No step is parked.
 
 ### 1d. Overriding a per-mode value on the step
 
-Default: a per-mode value is overridden on the **step**, never on the semantic token — an app that wants a different muted foreground in dark mode
-re-declares `--gray-11` with a `light-dark()` rather than `--muted-foreground` — unless the value is meant to be the same in both modes, which is
-the semantic token's own job. <!-- rule:forge-ui-color-scale-override-step -->
-
-Overriding the token instead sets it in _both_ modes, because the token is declared once and the mode difference is entirely below it. That failure
-is silent: the light mode keeps working, and only the dark half is wrong.
+<!-- rule:forge-ui-color-scale-override-step --> Overriding the token instead sets it in _both_ modes, because the token is declared once and the
+mode difference is entirely below it. That failure is silent: the light mode keeps working, and only the dark half is wrong.
 
 ## 2. Authoring a scale for a brand hue
 
@@ -117,27 +110,19 @@ mapping. Only the hue was chosen. The example of a scale with _authored_ values 
 
 ### 2a. Author in a space that carries lightness
 
-Default: a scale is authored in a colour space that carries lightness as its own coordinate — `oklch()`, the form `src/ui/README.md` writes it in —
-so that a step can be moved lighter or darker without dragging its hue and its chroma along, unless the scale inherits its lightness from an
-existing ramp that already holds balanced steps, which is what every shipped scheme does. <!-- rule:forge-ui-color-ramp-author-lightness -->
-
-The reason to reach for that space is not fashion. Every repair in this section is "move one step's lightness and leave everything else alone", and
-in a notation where lightness is entangled with the other two coordinates that edit cannot be expressed — so it is made by eye, and the scale drifts
-in hue as it descends.
+<!-- rule:forge-ui-color-ramp-author-lightness --> The reason to reach for that space is not fashion. Every repair in this section is "move one
+step's lightness and leave everything else alone", and in a notation where lightness is entangled with the other two coordinates that edit cannot be
+expressed — so it is made by eye, and the scale drifts in hue as it descends.
 
 ### 2b. Keeping the tint at the ends and through the middle
 
-Default: steps 1, 2, 11 and 12 keep a visible amount of the brand hue rather than resolving to white and black, because those four are exactly where
-`theme-base.css` puts the page ground, the raised surface and the default text in the two modes, unless a brief pins a neutral page and confines the
-brand hue to `--primary` — the per-token override `src/ui/README.md` documents. <!-- rule:forge-ui-color-ramp-author-endpoint-tint -->
+<!-- rule:forge-ui-color-ramp-author-endpoint-tint --> A scale that bleaches its ends spends its brand on the steps nobody looks at and publishes a
+grey page.
 
-A scale that bleaches its ends spends its brand on the steps nobody looks at and publishes a grey page.
-
-Default: the tint runs through the whole scale, not only its ends — the middle steps carry the same hue at a chroma low enough to read as neutral —
-which is the _only_ thing separating the shipped schemes from one another: `theme-stone.css` is warm, `theme-gray.css` cool and
-`theme-slate.css` strongly cool, `theme-neutral.css` sits at no tint at all, and their lightnesses are otherwise the same decision. Unless a
-brief fixes untinted greys, usually because a second brand colour has to sit beside them without either one bending.
-<!-- rule:forge-ui-color-ramp-author-tinted-neutrals -->
+<!-- rule:forge-ui-color-ramp-author-tinted-neutrals --> The tint is the _only_ thing separating the shipped schemes from one another:
+`theme-stone.css` is warm, `theme-gray.css` cool and `theme-slate.css` strongly cool, `theme-neutral.css` sits at no tint at all, and their
+lightnesses are otherwise the same decision. A brief fixes untinted greys usually because a second brand colour has to sit beside them without
+either one bending.
 
 ### 2c. How far a scheme leans
 
@@ -156,14 +141,10 @@ every shipped scheme file from it.
 
 ### 2d. Measuring the authored scale
 
-Default: a newly authored scale is measured on the pairs `theme-base.css` actually consumes — `--foreground` on `--background`, `--muted-foreground`
-on `--muted`, `--card` against the page, `--input` and `--ring` against the surface behind them — in both `:root` and `.dark`, unless the new scale
-only rotates the tint of an already-audited one at identical lightness, which is the carve-out `forge-ui-color-theme-per-theme-audit` already
-states. <!-- rule:forge-ui-color-ramp-author-audit-pairs -->
-
-Where a pair misses, the repair is to move that one _step's_ lightness. It is **not** to lower the chroma of the scale until the numbers pass:
-draining chroma raises contrast for the pair you were looking at and turns the brand scale back into grey everywhere else, which converts a local
-failure into a global one. `--muted-foreground` on `--muted` is where this bites first, for the reason `forge-ui-color-theme-muted-pair` gives.
+<!-- rule:forge-ui-color-ramp-author-audit-pairs --> Where a pair misses, the repair is to move that one _step's_ lightness. It is **not** to lower
+the chroma of the scale until the numbers pass: draining chroma raises contrast for the pair you were looking at and turns the brand scale back into
+grey everywhere else, which converts a local failure into a global one. `--muted-foreground` on `--muted` is where this bites first, for the reason
+`forge-ui-color-theme-muted-pair` gives.
 
 ## 3. Sources
 
@@ -178,7 +159,7 @@ describes; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` keep those 
 spaced for twelve roles. The fixed status hues are Tailwind's too, but by reference rather than by value: `--red-9` and its siblings resolve through
 the Tailwind colour variables the consuming app's own build declares, so no number for them is copied here at all.
 
-Forge takes numbers and not packages in both directions: neither library is a dependency, the values never change without a release, and a
+<!-- rule:forge-ui-no-colour-package --> Forge takes numbers and not packages in both directions: the values never change without a release, and a
 dependency would have to resolve through `node_modules`, which is the fragility `forge.css`'s `@source` comment already documents. The step _values_
 come from those two sources; **which role reaches for which step is forge's own decision**, and the border tokens are where forge and Radix
 deliberately disagree.

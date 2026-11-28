@@ -32,6 +32,7 @@ export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
 
 /** Modules exempt from needing a co-located test, each mapped to why. */
 export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
+  ["src/ui/design/rules.ts", "declared register entries — `validate-rules` holds each one to its marker, and sweeps its rg examples"],
   ["src/ui/contracts/alert-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/announcer-contract.ts", "declared contract constants — the markup and the controller that use them are tested"],
   ["src/ui/contracts/composite-contract.ts", "declared contract constants — the markup that uses them is tested"],
@@ -58,6 +59,31 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/render/markdown/trusted-types.ts", "a declared policy name — the viewport's writes through it are tested in `html.browser.ts`"],
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
+  ["warden/src/rules/canon/shared/CODE_RULES.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/libs/TESTING.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/APP_ARCHITECTURE.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/CODE_REVIEW.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/BOUNDARIES.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/CONFIG_BASELINE.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/ERROR_HANDLING.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/FORGE_CONSUMPTION.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/TESTING.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/apps/WORKERS_PLATFORM.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/libs/BOUNDARIES.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/libs/ERROR_HANDLING.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/libs/LIBRARY_ARCHITECTURE.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/libs/NAMESPACE_DESIGN.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/shared/AGENT_GUIDE.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/rules/canon/shared/AGENT_WORKFLOW.ts", "declared register entries — `validate-rules` holds each to its marker and detectors"],
+  ["warden/src/sdk/query-runner.ts", "the child-process entry `runQuery` spawns — every query test in `query.test.ts` runs through it"],
+  [
+    "warden/claude/skills/shared/handoff/scripts/handoff.ts",
+    "a two-line entry point — `handoffScript` is tested in `warden/src/workflow/script.test.ts`",
+  ],
+  [
+    "warden/claude/skills/shared/merge/scripts/merge.ts",
+    "a two-line entry point — `mergeScript` is tested in `warden/src/workflow/script.test.ts`",
+  ],
   [
     "src/render/markdown/editor/client/theme.ts",
     "a declared CodeMirror theme — the classes it styles are drawn and asserted by `decorations.test.ts` and `mount.browser.ts`",

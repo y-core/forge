@@ -65,8 +65,8 @@ else.**
 **When a component needs both SSR markup and client behaviour, render the markup with the SSR components and wire the behaviour from the browser
 entry.** The two halves agree through a declared DOM contract — attribute names, scope names, selectors — rather than hand-matched strings.
 
-**Never inline a browser-only import in a view or a controller.** That is precisely the mistake the path convention exists to make visible: it
-typechecks, it passes a test that never renders in a Worker, and it fails on the first real request.
+**Never inline a browser-only import in a view or a controller**: it typechecks, passes a test that never renders in a Worker, and fails on the
+first real request, which is the mistake the path convention makes visible.
 
 ### 1c. Why It Is a Path Convention and Not a Guard
 
@@ -107,7 +107,7 @@ each holds what it can check:
 
 An origin check or an address-keyed limit placed in the route's middleware list runs after the chain's CSRF verification, out of §2c's order; it
 belongs in a covering group. An inline guard is invisible to anyone auditing the chain declaration and the route map, which are the artifacts a
-reviewer reads to answer "which routes are protected". A guard in neither does not exist for review purposes, however correct its code is.
+reviewer reads to answer "which routes are protected".
 
 The corollary: **a state-changing route that neither a covering guard group nor its own middleware list guards is a finding on its face**, without
 reading the handler at all. The chain declaration and the route's binding are read together; an empty middleware list under a covering group is
@@ -151,8 +151,8 @@ rewritten before routing.
 
 ### 3a. The Boundary Rule
 
-**All untrusted input is validated at the boundary — the handler — before it reaches services, domain logic, or storage.** Raw form data, query
-strings, headers, and unvalidated strings are never passed into a service function. **Services receive typed domain objects.**
+**All untrusted input is validated at the boundary — the handler — before it reaches services, domain logic, or storage**, so a service receives
+typed domain objects and never raw form data, query strings or headers.
 
 The corollary is what makes the rule enforceable: **a service signature that accepts raw form data is a defect on its face**, because it makes the
 boundary unlocatable. Type the parameter to the domain shape and validation has nowhere to hide.
@@ -186,8 +186,7 @@ spoofing surface in every deployment that has not thought about it, which is mos
 
 ### 4a. The Prohibited Field Classes
 
-**A log record must never contain user-identifiable or credential data**, on any channel — console output is retained and searchable exactly as
-persisted storage is.
+<!-- rule:apps-boundaries-log-pii --> Console output is retained and searchable exactly as persisted storage is, so no channel is exempt.
 
 Never present in a log record:
 
@@ -201,36 +200,32 @@ Where a handler must reference a user for debugging, use an **opaque internal id
 **Stack traces stay out of persisted logs.** A stack embeds argument values and file paths, and a persisted record is a far longer-lived artifact
 than a console line.
 
-**Do not relax the platform's default redaction without a reviewed exception.** Where the platform redacts every record by default, the relaxation
-is the thing that has to be visible: an allowed-back field class, or the opt-out that disables the pass. Each one is a reviewed decision recorded
-where the configuration lives, and a hand-rolled deny list reimplementing the default beside it is a second copy free to disagree with it. A
-per-channel wrapper is for holding one sink to a **stricter** standard than the default, never a looser one.
+**Do not relax the platform's default redaction without a reviewed exception** — an allowed-back field class or the opt-out that disables the
+pass, recorded where the configuration lives; a hand-rolled deny list reimplementing the default beside it is a second copy free to disagree with
+it. A per-channel wrapper holds one sink to a **stricter** standard than the default, never a looser one.
 
 **A default set is not §4a compliance, and the application owns the gap.** A platform carries only the field names it can name for every consumer,
 so one that collides with a general-purpose key is left to the application that knows its own fields are spelled that way. Extending the default is
-the sanctioned mechanism and not the second copy above — it adds rather than restates, so the two cannot disagree.
+the sanctioned mechanism: it adds rather than restates, so the two cannot disagree.
 
 ### 4b. Structured Fields Over String Interpolation
 
-Pass data as discrete key-value fields on the record, never interpolated into the message string.
+<!-- rule:apps-boundaries-log-fields --> The message is a static, grep-friendly label; variable data belongs in the fields object where it can be
+filtered independently. This is also a PII control: interpolation is how a sensitive value ends up inside a single opaque string that no redaction
+pass can reach into.
 
     // BAD: interpolating values into a message string
     logger.error(`Failed to process request for ${userId}: ${error.message}`)
 
     // GOOD: structured key-value fields on the record
     logger.error("contact: process failed", { requestId, error: error.message })
-
-The message is a static, grep-friendly label; variable data belongs in the fields object where it can be filtered independently. This is also a PII
-control: interpolation is how a sensitive value ends up inside a single opaque string that no redaction pass can reach into.
-
 ---
 
 ## 5. Fail Closed
 
 ### 5a. Fail Closed on Missing Critical Context
 
-**When a security-critical dependency is absent, return an error response immediately.** Silent continuation with degraded behaviour is never
-acceptable.
+**When a security-critical dependency is absent, return an error response immediately**, never continue with degraded behaviour.
 
 ```ts
 // BAD — silently skips CSRF when the key is absent
@@ -242,8 +237,7 @@ if (!csrfKey) return new Response("Service Unavailable", { status: 503 });
 await verifyCsrf(c, csrfKey);
 ```
 
-**Every guard rejects on any check it cannot confirm.** There is no fallback, no retry, and no skip path: partial guard execution that continues is
-a security regression whatever the intention.
+**Every guard rejects on any check it cannot confirm** — no fallback, no retry, no skip path.
 
 The same posture governs startup — a missing or malformed binding is a **deployment defect**, so config access and binding resolution throw rather
 than defaulting ([`ERROR_HANDLING.md`][eh-5d] §5d).
@@ -253,14 +247,13 @@ than defaulting ([`ERROR_HANDLING.md`][eh-5d] §5d).
 A storage resolver accepts a `required: false` option for graceful degradation. **It is scoped to non-security features only** — a log store, say,
 whose absence drops one log channel rather than any check.
 
-**Never acceptable with `required: false`:** CSRF verification, authentication middleware, origin and Referer checks, signature validation.
-
-The asymmetry is deliberate: a dropped log channel is an observability gap, bypassed CSRF is an integrity breach. A single option name spanning
-both would make the difference invisible at the call site, which is exactly where it needs to be visible.
+<!-- rule:apps-boundaries-required-false --> The asymmetry is deliberate: a dropped log channel is an observability gap, bypassed CSRF is an
+integrity breach. A single option name spanning both would make the difference invisible at the call site, which is exactly where it needs to be
+visible.
 
 ### 5c. No Silent Error Swallowing
 
-**Never catch an exception from a verification step and continue.**
+**Never catch an exception from a verification step and continue**; the permitted shape is to catch, **log**, and **return a refusal**.
 
 ```ts
 // WRONG — swallows the error and silently succeeds
@@ -273,8 +266,6 @@ try {
 
 If verification throws unexpectedly, let it reach the error boundary and become a `500`. **A failed challenge surfaced as a 500 is strictly better
 than one silently bypassed**: the first is an outage that gets fixed, the second is a control that quietly stopped existing.
-
-The permitted shape is to catch, **log**, and **return a refusal** — never to catch and proceed.
 
 ### 5d. Recording a Fail-Open Exception
 
@@ -290,9 +281,9 @@ and listed in [`CODE_REVIEW.md`][cr-6] §6, so a reviewer meets it as a known pa
 
 ### 6a. A Per-Visitor Response Is Never `public`
 
-**A response whose body depends on who asked is `private` or `no-store`, never `public`.** That covers a response that reads the session, names the
-signed-in visitor, or sets a cookie. A shared cache keys on the URL rather than on the visitor, so a `public` per-visitor response is served to the
-next visitor who asks for the same URL — one visitor's page, token or cookie handed to another.
+<!-- rule:apps-boundaries-private-cache --> That covers a response that reads the session, names the signed-in visitor, or sets a cookie. A shared
+cache keys on the URL rather than on the visitor, so a `public` per-visitor response is served to the next visitor who asks for the same URL — one
+visitor's page, token or cookie handed to another.
 
 **`public` is a claim that the response is identical for every reader**, and is written only where that holds. The library may enforce part of it —
 demoting `public` on a response that sets a cookie — but a response that reads the session and sets nothing is invisible to that check, so the

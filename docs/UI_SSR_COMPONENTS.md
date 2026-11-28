@@ -58,18 +58,13 @@ audience: consumer
 
 ## 1. ui/core Component Contract
 
-**Put every English name forge emits in `src/ui/contracts/labels.ts`, and give it a prop that overrides it.** Forge ships no
-i18n surface, so a name a consumer cannot reach cannot be translated, and a default spelled at its call site is a second home for the string the
-table exists to hold. `LABEL_DEFAULTS` is `@public` because a translating consumer's only other option is re-typing each string in a repository
-forge's gate cannot see, where it silently stops matching. A conformance scan enforces this with no exemption row: no literal label default, no
-literal text in an `sr-only` span, no literal `aria-label` or `aria-roledescription`, written as an attribute or as an object-spread key, and no
-template-literal one carrying a word outside its interpolations.
+<!-- rule:forge-labels-from-contracts --> Forge ships no i18n surface, so a name a consumer cannot reach cannot be translated, and a default spelled
+at its call site is a second home for the string the table exists to hold. `LABEL_DEFAULTS` is `@public` because a translating consumer's only other
+option is re-typing each string in a repository forge's gate cannot see, where it silently stops matching.
 
-**Key a catalogue on the key, never on the English value.** Every `LABEL_DEFAULTS` value is a string, so its key set types one directly as
-`Record<keyof typeof LABEL_DEFAULTS, string>` and yields a compile error when forge adds a site. `STEP_STATE_LABELS` stays a second table because it
-is indexed by a _runtime value_; nesting it would force every consumer of the flat one to handle a non-string member. Annotate neither
-`Record<StepState, …>` — `ui/contracts` is a declared leaf and may not import `StepState`, and re-declaring the union would be two spellings of one
-concept. `as const` needs no import and loses nothing: a new `StepState` member fails to compile at both read sites.
+**Key a catalogue on the key, never on the English value** — type it `Record<keyof typeof LABEL_DEFAULTS, string>`, so a site forge adds is a
+compile error rather than a silent miss. `STEP_STATE_LABELS` stays a separate `as const` table because it is indexed by a runtime value, and
+`ui/contracts` is a declared leaf that may not import `StepState`.
 
 **The `Navbar` landmark is carved out and holds no key.** An unnamed `<nav>` already announces as "navigation", so a constant default replaces a
 correct platform default with a guess — and gives two Navbars on one page the same name, which the demonstrator's catalog spec (forge-starter
@@ -82,11 +77,8 @@ correctly named by its role alone, so requiring a name would make every single-n
 moved from forge to the consumer. The obligation is therefore a documented one, owed wherever a page renders more than one `<nav>` — a `Dock`,
 `Breadcrumbs` or `Pagination` with `landmark` is one too — and forge's own pages are held to it by that test rather than by the compiler.
 
-**Import `../contracts/labels` at each call site, never `../contracts/mod`** — that is what keeps the barrel from pulling every contract table into
-the Worker graph. Reference the table as `LABEL_DEFAULTS.x` rather than re-spelling the literal. `state-attrs.ts` and `vocabulary.ts` spell
-attribute names literally because `client/*.ts` imports them and a runtime reference would drag the table into a browser bundle, but `labels.ts` is
-Worker-side only: no `core/*.tsx` or `chrome/*.tsx` module reaches a browser entry. The idiom could not apply here anyway — a label's value _is_ the
-payload, so a call-site literal would be a second home for the very string being centralised.
+**Import `../contracts/labels` at each call site, never `../contracts/mod`, and reference `LABEL_DEFAULTS.x` rather than re-spelling the literal** —
+the narrow import keeps the barrel from pulling every contract table into the Worker graph.
 
 ### 1a. Dropped and Unsanitized Pass-Through Attributes
 
@@ -107,85 +99,74 @@ a fragment carries no attributes, so cloning onto one merges the class, the `dat
 The failure is silent and total, and every `asChild` compound can reach it, so the guard belongs in the one place they all pass through. `Button`
 would reach it by wrapping its children to make room for a loading spinner; the spinner is injected into the cloned child instead.
 
-**Merge into `data-slot`; never replace it.** It is a token list, under `asChild` and on plain render alike, so composing compounds yields one
-element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button carrying
+<!-- rule:forge-data-slot-merged --> It is a token list, under `asChild` and on plain render alike, so composing compounds yields one element that
+genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button carrying
 `data-slot="menu-trigger tooltip-trigger"`. Overwriting silently unmakes the inner compound, and every rule and query keyed on its slot stops
 matching.
 
-**Merge into `aria-describedby` and `aria-labelledby`; never replace them.** Each is an IDREF list, so a caller's ids come first and forge's
-derived ids follow, each id once, through `mergeIdRefs` in `src/ui/core/field.tsx`. Destructure the caller's value out of props and rewrite the
-attribute in place, as with `data-slot`. Under `asChild`, the compound merges the child's value itself before calling `cloneAsChild`, which still
-overwrites: no other `asChild` compound derives a description to lose.
+<!-- rule:forge-idref-merged --> Each is an IDREF list, so a caller's ids come first and forge's derived ids follow, each id once, through
+`mergeIdRefs` in `src/ui/core/field.tsx`. Destructure the caller's value out of props and rewrite the attribute in place, as with `data-slot`. Under
+`asChild`, the compound merges the child's value itself before calling `cloneAsChild`, which still overwrites: no other `asChild` compound derives a
+description to lose.
 
-**Select `data-slot` with `~=`, never `=`.** The two have identical specificity (0,1,0), so nothing about the cascade shifts; `=` is simply wrong on
-a composed element. A consumer keying on `[data-slot="…"]` exactly must make the same change to keep matching one.
+<!-- rule:forge-data-slot-token-select --> The two have identical specificity (0,1,0), so nothing about the cascade shifts; `=` is simply wrong on a
+composed element. A consumer keying on `[data-slot="…"]` exactly must make the same change to keep matching one.
 
 **Declare `anchor-name` on one slot only.** It does not union across rules, so a composed element named by two leaves the cascade to pick one.
 `forge-ui.css` declares forge's one named anchor on the tooltip trigger slot alone, and the set is closed: `Tooltip.Trigger` is the only trigger
 compound offering `asChild`, which makes it always the outer wrapper.
 
-**Apply the intrinsic-element rules to an intrinsic child, and the anchor rules to anything carrying an `href`.** `cloneAsChild` normalises
-`disabled` and `type` for a `<button>`, defaulting `type` to `"button"`, and turns `disabled` into `aria-disabled` on any other tag. It cannot see
-what a component renders, so an `href` is the one sign it reads. A component carrying one is an anchor: it gets no `type`, `disabled` is
-translated, and while disabled or busy the `href` is withdrawn exactly as on an `<a>`. Any other component receives the compound's `disabled` as a
-prop only where the compound set it, and `type` only from the caller or itself. It gets no default, because a component that renders an `<input>`
-would come out `type="button"` and stop being a form control. Erasing or translating `disabled` beforehand would strip it from a `Toolbar.Button`
-before it could resolve it into its own `aria-disabled`.
+**Apply the intrinsic-element rules to an intrinsic child, and the anchor rules to anything carrying an `href`** — `cloneAsChild`
+(`src/ui/core/utils/as-child.ts`) owns the normalisation. A non-intrinsic component gets no default `type`, because one rendering an `<input>` would
+come out `type="button"` and stop being a form control.
 
 **Destructure the inherited `"data-slot"` out of props and rewrite the literal in place** as `data-slot={slotToken("own-token", inherited)}`, own
 token first (`slotToken` is owned by `src/ui/core/utils/as-child.ts`). A bare literal loses the compound's own token to any caller that passes
 `data-slot`, because the rest-props spread that follows it wins. Rewrite in place rather than merging through a spread-last helper, which would move
 the attribute's serialized position.
 
-**The order is lint-enforced, not conventional.** `forge/data-slot-before-spread` fails any JSX element carrying a literal `data-slot` before a
-spread of a **bare identifier** (`{...rest}`, `{...props}`, `{...attrs}`). A computed spread such as `{...stateAttrs({ selected })}` is outside the
-rule: it is built at the call site out of values the component controls, so no caller token can hide inside it. It is off for `*.test.tsx` alone,
-where a probe overrides its own caller token on purpose.
+<!-- rule:forge-data-slot-before-spread --> The order is lint-enforced, not conventional: `forge/data-slot-before-spread` fails any JSX
+element carrying a literal `data-slot` before a spread of a **bare identifier** (`{...rest}`, `{...props}`, `{...attrs}`). A computed spread such as
+`{...stateAttrs({ selected })}` is outside the rule: it is built at the call site out of values the component controls, so no caller token can hide
+inside it. It is off for `*.test.tsx` alone, where a probe overrides its own caller token on purpose.
 
 ### 1e. Switch and Slider — Painted Native Inputs
 
-**Never reach for `peer-*` from an element nested inside another — the failure is silent.** `peer-*` compiles to a general-sibling combinator, so it
-reaches only siblings of the input. The track is one and uses `peer-checked:` directly; the **thumb is a child of the track**, so a `peer-` utility
-on it matches nothing — no build error, no visual hint beyond a state that never moves. The thumb keys off a `data-slot`-anchored descendant
-selector instead.
+**Never reach for `peer-*` from an element nested inside another**: it compiles to a general-sibling combinator, so on the thumb, a child of the
+track, it silently matches nothing — the thumb keys off a `data-slot`-anchored descendant selector instead.
 
-**`Slider`'s `output` prop carries the _sanitized_ value, never the raw `value` prop** — the string HTML's value-sanitization algorithm for
-`input[type=range]` settles on, which is what positions the thumb. A readout taken from the prop would disagree with the thumb from the first paint,
-before any script runs. The algorithm is module-local to `slider.tsx` and takes the serialized attribute string rather than the prop, so it parses
-byte-for-byte what the browser parses. This is §1h's "stamp only what the server can keep true" resolving _toward_ stamping.
+**`Slider`'s `output` prop carries the _sanitized_ value, never the raw `value` prop**, because the sanitized string is what positions the thumb, so
+a readout from the prop would disagree with it from first paint (the algorithm is module-local to `slider.tsx`).
 
 **After the first paint, the client keeps the readout true.** An unbound readout `Slider` stamps the lazy `slider` scope and a `data-on-input`
 action, so `ui/core/client` mirrors the thumb's value into the `<output>` on every `input`. A bound `Slider` stamps neither: its `<output>` carries
 the `data-field`, and `bindControls` paints it from the signal on every input and every signal write (§2c).
 
-**`output` stays a boolean, and the unformatted readout is a decision rather than a gap** — no formatting hook, no locale, no unit. A consumer
-wanting `"50%"` composes their own `<output>`, as `Meter.Value`'s caller-supplied children already make presenting a number composition rather
-than configuration. That `<output>` takes `aria-live="off"`, as `Slider`'s readout does: a bare `<output>` is an implicit `status` region, and
-`forge-ui-a11y-one-live-region` reports it. **Hand any future formatter seam the _sanitized_ string, never the raw prop.**
+**`output` stays a boolean, and the unformatted readout is a decision rather than a gap.** A consumer wanting `"50%"` composes their own `<output
+aria-live="off">` — a bare `<output>` is an implicit `status` region that `forge-ui-a11y-one-live-region` reports — and any future formatter seam
+takes the _sanitized_ string.
 
 ### 1f. Turnstile — Server-Rendered Mount Point
 
 **`Turnstile` omits Cloudflare's `cf-turnstile` auto-render class deliberately** — the client controller owns rendering, so the widget lifecycle is
-deterministic rather than implicit. **Inject `siteKey` server-side from the Worker env; never hardcode it.** The markup is inert without the
-controller, whose options arrive as `data-` attributes ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c).
+deterministic rather than implicit. The markup is inert without the controller, whose options arrive as `data-` attributes
+([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c).
 
-**Stamp an option only where it differs from its default.** A page that opts into none renders the markup it always did, which is what makes a new
-option additive rather than a change to every widget.
+<!-- rule:forge-turnstile-sitekey-from-env --> The key is the deployment's, so the Worker injects it server-side.
+
+**Stamp an option only where it differs from its default**, so a new option is additive rather than a change to every widget's markup.
 
 ### 1g. Composite Widgets
 
 A **composite** is a widget made of many focusable items that behaves as **one tab stop**, and every composite shares one roving-focus controller
-([`src/ui/README.md`][ui-readme]). **Declare which elements are items in the markup; the controller never guesses.** How each widget declares them
-differs, deliberately.
+([`src/ui/README.md`][ui-readme]). **Declare which elements are items in the markup; the controller never guesses.**
 
 **`Toolbar` marks its items with an explicit `data-toolbar-item`, not a `data-slot` prefix**, because `Toolbar.Group` and `Toolbar.Separator` are
 slots that must _not_ be focus stops and a prefix selector cannot express the exception. The marker is public: any foreign element inside a toolbar
 opts in by carrying it.
 
-**`Menu` identifies items by ARIA role, never by a forge-specific attribute.** That is load-bearing for a menu whose rows are built in the browser —
-a runtime-constructed row is navigable the moment it is a correctly-roled menu item, with nothing forge-specific to remember to stamp. Every row
-that must participate carries the role, including a navigating `<a>` and a nested popup's trigger, which a bare `Menu.Trigger` would leave unroled
-for the parent's arrow navigation to skip.
+**`Menu` identifies items by ARIA role, never by a forge-specific attribute**, so a row built in the browser is navigable the moment it is correctly
+roled — a navigating `<a>` and a nested popup's trigger included.
 
 **`ToggleGroup` emits no `role` at all**, because `<fieldset>` already has an implicit `group`; a hardcoded `role="toolbar"` would announce a
 segmented control as a toolbar and offer the wrong interaction model. Its `type` prop publishes as `data-multiple`, present exactly when several
@@ -212,11 +193,10 @@ orientation: orientation is the widget's own axis, a switch is always horizontal
 both required: with no floor, every consumer that passes `rows` gets a collapsed one-line box, and with no cap the control grows without bound.
 `src/ui/core/textarea.tsx` is authoritative over which utilities express them.
 
-**Clip `OtpInput`'s frame with `overflow-x: clip`, never `hidden`.** The editor deliberately overhangs the frame's interior to leave the caret
-room after the last glyph (`forge-ui.css`, `otp-editor`). Under `overflow: hidden` that frame is also a scroll container, so revealing the caret at
-the clipped edge scrolls the whole grid a pad's width off its cells — permanently, on the first full code typed. `clip` forbids scrolling and clips
-the same overhang. The y axis stays visible because the editor also reaches over the frame's top and bottom border, so the whole frame is its hit
-target.
+<!-- rule:forge-otp-frame-clip --> The editor deliberately overhangs the frame's interior to leave the caret room after the last glyph
+(`forge-ui.css`, `otp-editor`). Under `overflow: hidden` that frame is also a scroll container, so revealing the caret at the clipped edge scrolls
+the whole grid a pad's width off its cells — permanently, on the first full code typed. `clip` forbids scrolling and clips the same overhang. The y
+axis stays visible because the editor also reaches over the frame's top and bottom border, so the whole frame is its hit target.
 
 ### 1j. Derived Ids Must Be Id Tokens
 
@@ -226,9 +206,8 @@ _named_: the browser tokenizes the reference into fragments matching nothing, an
 it. The field still renders and its `name` is still passed through; only the wiring is withheld. `src/ui/core/field.tsx` owns the predicates and the
 character set, and is authoritative over any prose restating it.
 
-**Test for HTML's ASCII whitespace, never JS `\s`.** `\s` also matches U+00A0 and the Unicode spaces, which are legal id characters no parser treats
-as a separator — so splitting an IDREF on one breaks a _resolvable_ id into pieces, manufacturing the dangling reference this rule exists to
-prevent.
+<!-- rule:forge-idref-ascii-whitespace --> `\s` also matches U+00A0 and the Unicode spaces, which are legal id characters no parser treats as a
+separator — so splitting an IDREF on one breaks a _resolvable_ id into pieces, manufacturing the dangling reference this rule exists to prevent.
 
 **Suppress rather than sanitize**: collapsing whitespace would have forge rewrite caller input, which it does not do (§1e emits the caller's `value`
 verbatim), and any collapse maps distinct names onto one id, so two distinguishable fields silently share wiring. **Suppress rather than throw**:
@@ -262,33 +241,25 @@ bundler that compiles the JSX. **Form-associated elements for the form controls 
 
 ### 1l. Chrome Navigation Announces Only What It Implements
 
-**`Navbar` is not a `role="menubar"`, and that is a decision rather than an omission.** A menubar owes its triggers a roving tab stop of their own,
+<!-- rule:forge-navbar-no-menubar --> **It is a decision rather than an omission.** A menubar owes its triggers a roving tab stop of their own,
 forge ships no menubar controller, and claiming the role without the behaviour announces a keyboard interface that is not there. A bar-level link
 stays a plain link for the same reason. **A flyout's title action is likewise not a rail stop**: roving focus queries the whole rail subtree, so
 marking that button would splice flyout content into the rail's arrow-key ring (§1g).
 
-**`Navbar` keeps `<details>` for its collapsed nav; never rewire it onto `Drawer`.** The two are different overlay kinds: a `Drawer` is a `<dialog>`
-— top layer, backdrop, inertness, a focus trap — and the collapsed nav is a disclosure with none of those, whose open state the platform owns with
-no script. Rewiring one onto the other would turn a no-JS disclosure into a modal that needs `showModal()`, which is a behaviour change rather than
-an extraction.
+<!-- rule:forge-navbar-group-label-p --> A group heading is the same announcement: `Navbar` cannot know which heading level it is nested under, and
+picking one for its type size is what `forge-ui-heading-order` forbids, so the `role="group"` pairing names the group without asserting a level.
+
+<!-- rule:forge-navbar-details-not-drawer --> The two are different overlay kinds: a `Drawer` is a `<dialog>` — top layer, backdrop, inertness, a
+focus trap — and the collapsed nav is a disclosure with none of those, whose open state the platform owns with no script. Rewiring one onto the
+other would turn a no-JS disclosure into a modal that needs `showModal()`, which is a behaviour change rather than an extraction.
 
 ### 1m. The Prop Vocabulary
 
 **Draw every presentational prop from one vocabulary**, declared in `src/ui/contracts/vocabulary.ts` and `state-attrs.ts` — authoritative over the
 values; `src/ui/README.md` maps prop to component.
 
-| Prop | What it decides | Declared as |
-| --- | --- | --- |
-| `tone` | the colour intent a surface carries | `Tone`, `TONES` |
-| `appearance` | how that tone is painted — the emphasis level | `Appearance`, `APPEARANCES` |
-| `size` | the control height, read from `--control-h-*` | `Size` |
-| `shape` | a button's footprint beyond its size | `Shape` |
-| `orientation` | the widget's own layout axis | `Orientation` |
-| `invalid` | the control holds a validation error | `StateAttrsProps` |
-| `busy` | the component is waiting on work | `StateAttrsProps` |
-
-**Never declare a prop named `variant`.** One name answering two questions — which colour, and how much emphasis — is what would let `secondary`
-mean an outlined button and a filled chip at once. Asked separately the pair reads identically everywhere, and `toneVariants`
+<!-- rule:forge-no-variant-prop --> One name answering two questions — which colour, and how much emphasis — is what would let `secondary` mean an
+outlined button and a filled chip at once. Asked separately the pair reads identically everywhere, and `toneVariants`
 ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e) paints both.
 
 **`orientation` carries the two layout axes and nothing else**, because a stylesheet matches `data-orientation` on exactly that: `Switch`'s label
@@ -364,15 +335,14 @@ it reports and the rest of the widget keeps working.
 internal, unexported factory, so their shape is uniform. **`ToggleGroup` comes from the compound factory with its own `.Item`**, because its
 binding lives on `.Item` and stamps an extra `data-value`.
 
-**No bound control stamps a `data-on-*` action** — `bindControls` listens once on the scope root instead, so a bound-control scope must be
-`eager: true`, which [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c already requires of any markup carrying no `data-on-*` action of its own.
+<!-- rule:forge-bound-control-no-data-on --> `bindControls` listens once on the scope root instead, so a bound-control scope must be `eager: true`,
+which [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c already requires of any markup carrying no `data-on-*` action of its own.
 
 **`Toggle` has no resumable scope of its own, and deliberately so.** It is a native checkbox whose `:checked` the CSS keys on, so there is no state
 for a controller to maintain and no bespoke runtime to keep in step with `ToggleGroup`'s — which does have one, for the roving focus a checkbox
 group lacks.
 
-**Never rename the collision with `ui/core`; it is intentional.** [`NAMESPACES.md`][namespaces-5b] §5b owns the resulting rule: a module imports a
-given control name from exactly one barrel, never both.
+The name collision with `ui/core` is intentional; [`NAMESPACES.md`][namespaces-5b] §5b owns the one-barrel import rule it implies.
 
 ### 2d. Scoped Components Require the Client Scope Import
 
@@ -388,48 +358,41 @@ warning as a missing client-entry import or a scope-name typo — never as an ex
 
 ### 3a. Platform Overlays, Never Re-Created in JavaScript
 
-**Never re-create a platform overlay in JavaScript.** The overlays build on the native Popover API, `<dialog>` and `<details>`, so the top layer,
-light-dismiss, Escape, exclusive-open and the disclosure toggle are all the platform's and cost nothing. **`<details>` owns open and closed; mirror
-neither** — style the native `[open]`. `Menu` opens, closes and dismisses with **no JavaScript at all**, through invoker commands against a
-`popover="auto"` popup; the client adds only what ARIA's menu pattern asks for and the platform does not supply (§1g). **`Tooltip` is
-`popover="hint"` deliberately**: `auto` would put it in the platform's exclusive-open stack, so opening a tooltip would close an open menu beneath
-it. `hint` has a light-dismiss stack of its own, which is the behaviour a tooltip wants and the reason it is not `manual`. `Accordion` is not a
-composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
+<!-- rule:forge-overlay-native --> The top layer, light-dismiss, Escape, exclusive-open and the disclosure toggle are then all the platform's and
+cost nothing. **`<details>` owns open and closed; mirror neither** — style the native `[open]`. `Menu` opens, closes and dismisses with **no
+JavaScript at all**, through invoker commands against a `popover="auto"` popup; the client adds only what ARIA's menu pattern asks for and the
+platform does not supply (§1g). **`Tooltip` is `popover="hint"` deliberately**: `auto` would put it in the platform's exclusive-open stack, so
+opening a tooltip would close an open menu beneath it. `hint` has a light-dismiss stack of its own, which is the behaviour a tooltip wants and the
+reason it is not `manual`. `Accordion` is not a composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
 
 ### 3b. An `Accordion` Header Is Not a Heading
 
-**Accept that an `Accordion` header is not a heading, and do not simulate one.** APG's Accordion wraps each header button in an element with role
-`heading` and an `aria-level`, so a reader walking headings with `H` reaches every section. A native `<summary>` cannot be given that wrapper: a
-heading around the `<details>` encloses the panel as well, making the whole section's prose part of the heading, and a heading nested _inside_ the
-`<summary>` is flattened, because the summary's role takes presentational children. The cost is real and is the one being accepted — `H` navigation
-skips the accordion, and a reader finds its sections by Tab instead, where each `<summary>` is a stop that announces its own expanded state. What
-buys it is everything §3a sets out: exclusive-open, the toggle, and correct first paint with no script. **A caller who needs `H` navigation
-renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
-did would be asserting a structure the platform contradicts.
+**Accept that an `Accordion` header is not a heading, and do not simulate one.** A native `<summary>` cannot take APG's heading wrapper — a heading
+around the `<details>` encloses the panel, and one inside the `<summary>` is flattened — so `H` navigation skips the accordion, and the cost buys
+everything §3a sets out. **A caller who needs `H` navigation renders their own heading before each `Accordion.Item`**, never inside its trigger.
 
 ### 3c. Trigger and Close Primitives Carry the `sm` Button Box
 
 **A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`, `Popover.Trigger`,
 `Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a transparent border and
 none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height holds the 28px Floor
-(`src/ui/design/floor.md` §1f). **An icon-only one takes `shape="icon"`**, forwarded to the box, and never a `size-*` or padding override: `size-*`
-replaces the box's width and height but not its `px-3`, which squeezes the icon. The prop is `InvokerShape`, which has no `square`: that shape's
-`h-auto` would trade the height for the parent's width. An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
-caller has to remember. `asChild` is not offered on any of them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller
-needs one, and a child would hand the Floor back to the caller's choice of element.
+(`src/ui/design/floor.md` §1f).
+
+<!-- rule:forge-icon-shape-no-size --> `shape` is forwarded to the box; `size-*` replaces the box's width and height but not its `px-3`, which
+squeezes the icon. The prop is `InvokerShape`, which has no `square`: that shape's `h-auto` would trade the height for the parent's width. An
+unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each caller has to remember. `asChild` is not offered on any of
+them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller needs one, and a child would hand the Floor back to the
+caller's choice of element.
 
 ### 3d. Tooltip Triggers — Naming and the Inert State
 
-**Name an icon-only trigger with `kind="label"`, never with a description.** `Tooltip.Trigger` points `aria-describedby` at its content by
-default, which is right when the trigger already has a name. An icon-only button has none but the tooltip's text, and repeating that text as an
-`aria-label` beside a description announces it twice. `kind="label"` points `aria-labelledby` at the content instead and emits no description, so
-the tooltip is the name and is read once. A label-mode trigger carrying `aria-label` or `aria-labelledby` throws, because whichever name wins, the
-other is silently dead ([`ERROR_HANDLING.md`][eh-5a] §5a).
+**Name an icon-only trigger with `kind="label"`, never with a description**: it points `aria-labelledby` at the content and emits no description, so
+the tooltip is the name and is read once rather than twice. A label-mode trigger carrying `aria-label` or `aria-labelledby` throws, because
+whichever name wins, the other is silently dead ([`ERROR_HANDLING.md`][eh-5a] §5a).
 
-**Render an inert tooltip trigger `aria-disabled`, never `disabled`.** A natively disabled button receives no pointer events and no focus, so the
-tooltip explaining why it is unavailable could never be shown. `Tooltip.Trigger` converts `disabled`, its own or an `asChild` child's, into
-`aria-disabled="true"` with the disabled state hook; the paint stays, the stylesheet leaves the trigger slot hoverable, and the click the platform
-would still act on is cancelled by the runtime ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
+**Render an inert tooltip trigger `aria-disabled`, never `disabled`**, because a natively disabled button takes no pointer events or focus, so the
+tooltip explaining why could never show. `Tooltip.Trigger` converts `disabled` itself, and the runtime cancels the click
+([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
 
 ### 3e. Stamp Only What the Server Can Keep True
 
@@ -440,25 +403,19 @@ alone stamps the dialog scope and an eager controller. It also suppresses `open`
 ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). `Popover` stamps an eager scope on `Popover.Content` for one job: its trigger's `aria-expanded`, which the
 platform does not keep in step.
 
-**Stamp only what the server can keep true.** Placement is decided at render and fixed for the element's life, so stamp it. **Never stamp open
-state** — that asserts a fact the platform owns and the component cannot follow. The one exception is a `Popover` or `Menu` trigger's
-`aria-expanded`, which ARIA asks of the trigger. It renders `"false"`, which is true at first paint because no popover is ever server-open, and the
-eager scope moves it on every `beforetoggle` and `toggle`. Without `ui/core/client` it stays `"false"` while the popup is open. Read open state from
-the element itself: `:popover-open`, or `[open]` on a `<dialog>` or `<details>`, the one source that cannot drift. Forward an initial `open`, which
-the server genuinely sets and the platform maintains from there.
+**Stamp only what the server can keep true**: placement, fixed at render, yes; **open state, which the platform owns, never** — read it from
+`:popover-open` or `[open]`. The one exception is a `Popover` or `Menu` trigger's `aria-expanded`, which ARIA asks of the trigger: it renders
+`"false"`, true at first paint because no popover is server-open, and the eager scope keeps it in step, so without `ui/core/client` it stays
+`"false"`. Forward an initial `open`, which the server genuinely sets.
 
 ### 3f. A Popup's Side and the Reader's Direction
 
-**Keep physical and logical spellings in one value space.** A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side`
-carries both (`src/ui/contracts/state-attrs.ts`). Keep the physical members — a popup that must _not_ mirror needs them — and add no separate
-logical type: splitting it would let a caller hold a value the attribute cannot express.
+**Keep physical and logical spellings in one value space**: `Side` (`src/ui/contracts/state-attrs.ts`) carries both, because the Worker stamping it
+cannot know the reader's direction, and a separate logical type would let a caller hold a value the attribute cannot express.
 
-**Resolve direction with physical declarations selected by `:dir()`, never with logical CSS** (`src/ui/assets/css/forge-ui.css`). Both shorter
-spellings are wrong and both are tempting. `anchor(inline-end)` is outright invalid — `<anchor-side>` has no logical keywords. And
-`inset-inline-start: anchor(start)` parses but resolves against the **containing block's** writing mode; a top-layer popup's containing block is the
-viewport, whose direction is the root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer. `:dir()` asks the
-_tree_, which is the only thing that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms _used_ declarations after the
-cascade settles, so `:dir()` selection happens first. Only the inline axis mirrors, so only the rows resolving on it are `:dir()`-keyed.
+**Resolve direction with physical declarations selected by `:dir()`, never with logical CSS** (`src/ui/assets/css/forge-ui.css`):
+`anchor(inline-end)` is invalid, and `inset-inline-start: anchor(start)` resolves against a top-layer popup's containing block, the viewport, so an
+RTL subtree in an LTR document gets the LTR answer. `flip-inline` applies after the cascade, so `position-try-fallbacks` needs nothing added.
 
 **Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
 and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
@@ -466,24 +423,23 @@ space it is cut from.
 
 ### 3g. `Popover.Content` Is Always Named
 
-**Name every `Popover.Content`, and never forward a `role` to it.** `role="dialog"` is `nameFrom: author`, so the type requires `label` or
-`labelledby` — one of them, not neither — and a nameless panel is a compile error rather than an `aria-dialog-name` failure in a consumer's axe run.
-`role` is not forwardable for the matching reason: `Popover.Trigger` emits a fixed `aria-haspopup="dialog"` and has no way to say otherwise, so a
-re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. An
-optional name would leave every consumer's panel nameless by default, which is the defect rather than a lesser form of it.
+<!-- rule:forge-popover-content-named --> `role="dialog"` is `nameFrom: author`, so the type requires `label` or `labelledby` — one of them, not
+neither — and a nameless panel is a compile error rather than an `aria-dialog-name` failure in a consumer's axe run. `role` is not forwardable for
+the matching reason: `Popover.Trigger` emits a fixed `aria-haspopup="dialog"` and has no way to say otherwise, so a re-roled panel would leave the
+pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. An optional name would leave every
+consumer's panel nameless by default, which is the defect rather than a lesser form of it.
 
 ### 3h. A Derived Reference Needs the Caller's Assertion
 
-**Never emit a derived reference a rendered page might not resolve — make the caller assert the element it points at.** `Dialog` and `Drawer` take
-`titled`, and `Menu.Popup` takes `triggered`; each is the caller saying the `.Title` or the forge trigger exists, and each is the only route to the
-`${id}-title` or `${id}-trigger` reference. Every one of these roots is `nameFrom: author`, so a name has to come from somewhere, and the type makes
-that a choice rather than a default: naming nothing does not compile. **The assertion is needed because single-pass SSR cannot check it** — a
-caller's own component may render the `.Title`, and forge's invoker contract invites any `commandfor` element to open a `Menu.Popup`, so neither a
-children walk nor a document query can tell a missing element from one forge cannot see. An unconditional reference was the alternative in both
-places, and it leaves an IDREF resolving to nothing: inert under AccName, an `aria-valid-attr-value` violation in a consumer's axe run, and a panel
-with no name for a reader who enters it. **The assertion also has to be what the emission reads** — a prop the root destructures and never passes on
-leaves the derived reference unconditional, so the rule holds only on the type and evaporates under a spread of a wider object, an `as` cast or a
-`.js` consumer.
+<!-- rule:forge-derived-reference-asserted --> `Dialog` and `Drawer` take `titled`, and `Menu.Popup` takes `triggered`; each is the caller saying
+the `.Title` or the forge trigger exists, and each is the only route to the `${id}-title` or `${id}-trigger` reference. Every one of these roots is
+`nameFrom: author`, so a name has to come from somewhere, and the type makes that a choice rather than a default: naming nothing does not compile.
+**The assertion is needed because single-pass SSR cannot check it** — a caller's own component may render the `.Title`, and forge's invoker contract
+invites any `commandfor` element to open a `Menu.Popup`, so neither a children walk nor a document query can tell a missing element from one forge
+cannot see. An unconditional reference was the alternative in both places, and it leaves an IDREF resolving to nothing: inert under AccName, an
+`aria-valid-attr-value` violation in a consumer's axe run, and a panel with no name for a reader who enters it. **The assertion also has to be what
+the emission reads** — a prop the root destructures and never passes on leaves the derived reference unconditional, so the rule holds only on the
+type and evaporates under a spread of a wider object, an `as` cast or a `.js` consumer.
 
 **`Tabs.Content` is the one derived reference emitted unconditionally, because its target is not optional.** A tabpanel names itself from its tab
 and from nothing else, and a panel no `Tab` controls is not a panel missing a name — it is one no reader can reach at all, since a tab is the only
@@ -493,22 +449,16 @@ IDREF.
 
 ### 3i. Dialog Names, Descriptions and `closedby`
 
-**Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`).
-`Dialog` and `Drawer` take `label`, `labelledby` or `titled`, and `label` and `labelledby` suppress the `${id}-title` reference: a derived reference
-emitted beside a caller's own would name a heading they never wrote. **Point a deliberately titleless drawer's `labelledby` at its own trigger's
-id**: that is React Aria's fallback, and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert.
-**Emit `aria-describedby` only on the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past,
-so a dangling one suppresses `aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it
-points at, derived `${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and
-Message Dialog: a message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel"
-hears the consequence and not the button alone.
+**Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`):
+`label` or `labelledby` suppresses the `${id}-title` reference, which would otherwise name a heading they never wrote. **Point a deliberately
+titleless drawer's `labelledby` at its own trigger's id**, React Aria's fallback. **Emit `aria-describedby` only on the same assertion** —
+`Dialog`'s `described` — because a dangling one suppresses `aria-description` and `title`. `alert` renders `role="alertdialog"`, APG's Alert and
+Message Dialog, so a reader whose focus lands on "Cancel" hears the consequence.
 
-**Emit `closedby` only on a surface that can open modal.** A non-modal `open` `Dialog` or `Drawer` renders none, because `closedby="any"` on an
-open non-modal `<dialog>` closes it on any click elsewhere on the page and on Escape pressed anywhere — the reader could never type into the input
-beside it. Every other root renders `closedby="any"`, so a modal open light-dismisses on Escape or a backdrop click. **An `alert` `Dialog` renders
-`closedby="closerequest"` instead**: APG's alert dialog is dismissed from the keyboard, and a stray click on the backdrop must not discard a message
-that interrupted the reader to be read. **A dialog rendered `open` and later reopened modal by its trigger closes on Escape and not on a backdrop
-click**, because it carries no `closedby` and the platform's modal default is `closerequest`.
+**Emit `closedby` only on a surface that can open modal**: on an open non-modal `<dialog>`, `closedby="any"` closes it on any click or Escape
+anywhere, so the reader could never type beside it. Every other root renders `closedby="any"`, except **an `alert` `Dialog`, which renders
+`closedby="closerequest"`** so a stray backdrop click cannot discard the message. A dialog rendered `open` and reopened modal carries no `closedby`,
+so it takes the platform's `closerequest` default.
 
 ### 3j. `Table` Rows and Wide Tables
 

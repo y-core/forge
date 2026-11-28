@@ -1,0 +1,18 @@
+diff --git a/src/controllers/contact.ts b/src/controllers/contact.ts
+index 7d21d975..9ee78d5c 100644
+--- a/src/controllers/contact.ts
++++ b/src/controllers/contact.ts
+@@ -1,5 +1,6 @@
+ import { fragmentResponse } from "@y-core/forge/http";
+ import { renderPage, renderToString } from "@y-core/forge/render/jsx";
++import { renderValidationErrors } from "@y-core/forge/render/htmx";
+ 
+ import { defineAction, definePage } from "../app/handlers";
+ import { ContactSchema } from "../model/contact";
+@@ -13,5 +14,6 @@ export const contactPage = definePage(routes.contact, {
+ 
+ export const contactSubmit = defineAction(routes.contactSubmit, {
+   schema: ContactSchema,
++  onValidationError: (issues) => fragmentResponse(renderValidationErrors(issues.map((issue) => issue.message)), 422),
+   handle: async (data, _c, config) => fragmentResponse(await renderToString(ContactThanks({ name: data.name, siteName: config.siteName }))),
+ });

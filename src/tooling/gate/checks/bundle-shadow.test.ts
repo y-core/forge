@@ -1,9 +1,11 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { checkBundleShadows, shadowCandidates, validateBundleShadows } from "./bundle-shadow";
+import { packedConsumer } from "./packed-consumer.fixture";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 
@@ -213,4 +215,31 @@ describe("validateBundleShadows() — the import shapes it reads", () => {
       expect(lines(source)).toEqual([]);
     });
   }
+});
+
+const CONFIG_SPEC = `
+import { createConfig, env } from "@y-core/forge/config";
+import { BaseUrlConfigSchema } from "@y-core/forge/security";
+import { v } from "@y-core/forge/validation";
+
+const config = createConfig({ site: { url: env("SITE_ORIGIN") } }, v.object({ site: v.object({ url: BaseUrlConfigSchema }) }));
+try {
+  config.get({ SITE_ORIGIN: "http://example.com" });
+} catch (error) {
+  console.log(JSON.stringify((error as Error).message));
+}
+`;
+
+describe("forge packed as `dev:forge` installs it, under bun", () => {
+  it("keeps safeCheck's message through createConfig, so no internal import loads a bundle in place of its source", () => {
+    const root = packedConsumer();
+    roots.push(root);
+    writeFileSync(join(root, "spec.ts"), CONFIG_SPEC);
+    const run = spawnSync("bun", ["spec.ts"], { cwd: root, encoding: "utf8", env: { ...process.env, FORCE_COLOR: "0" } });
+
+    expect({ status: run.status, stderr: run.status === 0 ? "" : run.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(JSON.parse(run.stdout.trim())).toBe(
+      "Invalid environment: site.url: must use https: (http://localhost and http://127.0.0.1 are allowed for local development)",
+    );
+  });
 });

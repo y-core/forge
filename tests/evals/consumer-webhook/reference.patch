@@ -1,0 +1,290 @@
+diff --git a/src/app/config.ts b/src/app/config.ts
+index 3efdbe00..c9b2240f 100644
+--- a/src/app/config.ts
++++ b/src/app/config.ts
+@@ -2,6 +2,13 @@ import { createConfig, env } from "@y-core/forge/config";
+ import { v } from "@y-core/forge/validation";
+ 
+ /** The app's own settings, read from the validated bindings once per request. */
+-export const appConfig = createConfig({ siteName: env("SITE_NAME") }, v.object({ siteName: v.pipe(v.string(), v.nonEmpty()) }));
++export const appConfig = createConfig(
++  { siteName: env("SITE_NAME"), fulfilmentUrl: env("FULFILMENT_URL"), webhookSecrets: env("WEBHOOK_SECRETS") },
++  v.object({
++    siteName: v.pipe(v.string(), v.nonEmpty()),
++    fulfilmentUrl: v.pipe(v.string(), v.url()),
++    webhookSecrets: v.pipe(v.string(), v.nonEmpty()),
++  }),
++);
+ 
+ export type AppConfig = ReturnType<typeof appConfig.get>;
+diff --git a/src/app/env.schema.ts b/src/app/env.schema.ts
+index cd22a0bb..5bedc7cc 100644
+--- a/src/app/env.schema.ts
++++ b/src/app/env.schema.ts
+@@ -9,6 +9,8 @@ export type Env = v.InferOutput<typeof EnvSchema>;
+ export const EnvSchema = v.object({
+   DB: v.custom<D1Database>((x) => typeof x === "object" && x !== null, "DB must be a D1 database binding"),
+   SITE_NAME: v.string(),
++  FULFILMENT_URL: v.string(),
++  WEBHOOK_SECRETS: v.string(),
+ });
+ 
+ declare module "@y-core/forge/config" {
+diff --git a/src/controllers/status.ts b/src/controllers/status.ts
+new file mode 100644
+index 00000000..e41bc6af
+--- /dev/null
++++ b/src/controllers/status.ts
+@@ -0,0 +1,6 @@
++import { jsonResponse } from "@y-core/forge/http";
++import { createAction } from "@y-core/forge/router";
++
++import { routes } from "../routes";
++
++export const apiStatus = createAction(routes.apiStatus, () => jsonResponse({ status: "ok" }));
+diff --git a/src/controllers/webhooks.ts b/src/controllers/webhooks.ts
+new file mode 100644
+index 00000000..4c4eaa31
+--- /dev/null
++++ b/src/controllers/webhooks.ts
+@@ -0,0 +1,29 @@
++import { getAppContext } from "@y-core/forge/context";
++import { createAction } from "@y-core/forge/router";
++import { v } from "@y-core/forge/validation";
++
++import { appConfig } from "../app/config";
++import type { Bindings } from "../app/types";
++import { OrderEventSchema } from "../model/order";
++import { routes } from "../routes";
++import { forwardOrder } from "../services/fulfilment";
++import { resolveOrderWebhooks } from "../services/webhooks";
++
++function parseJson(bytes: Uint8Array): unknown {
++  try {
++    return JSON.parse(new TextDecoder().decode(bytes));
++  } catch {
++    return undefined;
++  }
++}
++
++export const orderWebhook = createAction(routes.orderWebhook, async (context) => {
++  const c = getAppContext<Bindings>(context);
++  const config = appConfig.get(c.env);
++  const verified = await (await resolveOrderWebhooks(c)).verify(c.request);
++  if (!verified.ok) return new Response("Unauthorized", { status: 401 });
++  const order = v.safeParse(OrderEventSchema, parseJson(verified.data.body));
++  if (!order.success) return new Response("Unprocessable order", { status: 422 });
++  if (!(await forwardOrder(order.output, config.fulfilmentUrl))) return new Response("Fulfilment unavailable", { status: 502 });
++  return new Response(null, { status: 204 });
++});
+diff --git a/src/model/order.ts b/src/model/order.ts
+new file mode 100644
+index 00000000..5575c819
+--- /dev/null
++++ b/src/model/order.ts
+@@ -0,0 +1,8 @@
++import { v } from "@y-core/forge/validation";
++
++export const OrderEventSchema = v.strictObject({
++  orderId: v.pipe(v.string(), v.nonEmpty(), v.maxLength(64)),
++  totalCents: v.pipe(v.number(), v.integer(), v.minValue(0)),
++});
++
++export type OrderEvent = v.InferOutput<typeof OrderEventSchema>;
+diff --git a/src/router.ts b/src/router.ts
+index dcb03340..248f576b 100644
+--- a/src/router.ts
++++ b/src/router.ts
+@@ -1,10 +1,16 @@
+ import type { Forge } from "@y-core/forge/app";
+ import { createController } from "@y-core/forge/router";
++import { cors } from "@y-core/forge/security";
+ 
+ import type { Bindings } from "./app/types";
+ import { homePage } from "./controllers/home";
++import { apiStatus } from "./controllers/status";
++import { orderWebhook } from "./controllers/webhooks";
+ import { routes } from "./routes";
+ 
++const PARTNER_ORIGINS = ["https://partner.example"];
++
+ export function registerRoutes(app: Forge<Bindings>): void {
+-  app.map(routes, createController(routes, { actions: { home: homePage } }));
++  app.use("/api/status", cors({ origins: PARTNER_ORIGINS, methods: ["GET"] }));
++  app.map(routes, createController(routes, { actions: { home: homePage, apiStatus, orderWebhook } }));
+ }
+diff --git a/src/routes.ts b/src/routes.ts
+index dbe528b1..cb0cb513 100644
+--- a/src/routes.ts
++++ b/src/routes.ts
+@@ -1,3 +1,3 @@
+-import { get, route } from "@y-core/forge/router";
++import { get, post, route } from "@y-core/forge/router";
+ 
+-export const routes = route({ home: get("/") });
++export const routes = route({ home: get("/"), apiStatus: get("/api/status"), orderWebhook: post("/webhooks/orders") });
+diff --git a/src/services/fulfilment.ts b/src/services/fulfilment.ts
+new file mode 100644
+index 00000000..8dde0693
+--- /dev/null
++++ b/src/services/fulfilment.ts
+@@ -0,0 +1,11 @@
++import type { OrderEvent } from "../model/order";
++
++/** Hands a verified order to the fulfilment API, answering whether it accepted it. */
++export async function forwardOrder(order: OrderEvent, fulfilmentUrl: string): Promise<boolean> {
++  const res = await fetch(fulfilmentUrl, {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ orderId: order.orderId, totalCents: order.totalCents }),
++  });
++  return res.ok;
++}
+diff --git a/src/services/webhooks.ts b/src/services/webhooks.ts
+new file mode 100644
+index 00000000..7832e95c
+--- /dev/null
++++ b/src/services/webhooks.ts
+@@ -0,0 +1,9 @@
++import { createWebhookSigningResolver, parseWebhookSecrets } from "@y-core/forge/security";
++
++import { appConfig } from "../app/config";
++import type { Bindings } from "../app/types";
++
++/** The signer for this deployment's order webhooks, built once per `env` from the configured secrets. */
++export const resolveOrderWebhooks = createWebhookSigningResolver<Bindings>((env) => ({
++  secrets: parseWebhookSecrets(appConfig.get(env).webhookSecrets),
++}));
+diff --git a/tests/env.ts b/tests/env.ts
+index bb167770..ddc7b146 100644
+--- a/tests/env.ts
++++ b/tests/env.ts
+@@ -2,7 +2,15 @@ import type { TestD1 } from "@y-core/forge/testing/d1/bun";
+ 
+ import type { Bindings } from "../src/app/types";
+ 
++/** A test-only webhook secret, shared by the tests that sign a delivery and the env that verifies it. */
++export const TEST_WEBHOOK_SECRET = "whsec_rFjh21qHhEA/BZihe0taYGjqDSlQfr7fqZIjAn3Qptw=";
++
+ /** The bindings a test drives the app with: a private in-memory database and the vars `wrangler.jsonc` sets. */
+ export function testEnv(d1: TestD1): Bindings {
+-  return { DB: d1.binding as unknown as D1Database, SITE_NAME: "Forge Eval" };
++  return {
++    DB: d1.binding as unknown as D1Database,
++    SITE_NAME: "Forge Eval",
++    FULFILMENT_URL: "https://fulfil.example/orders",
++    WEBHOOK_SECRETS: TEST_WEBHOOK_SECRET,
++  };
+ }
+diff --git a/tests/webhooks.test.ts b/tests/webhooks.test.ts
+new file mode 100644
+index 00000000..5687cdf9
+--- /dev/null
++++ b/tests/webhooks.test.ts
+@@ -0,0 +1,92 @@
++import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
++
++import { createWebhookSigning } from "@y-core/forge/security";
++import { openBunD1 } from "@y-core/forge/testing/d1/bun";
++import type { TestD1 } from "@y-core/forge/testing/d1/bun";
++
++import { createWorker } from "../src/worker";
++import { TEST_WEBHOOK_SECRET, testEnv } from "./env";
++
++let d1: TestD1;
++let forwarded: { url: string; body: string }[];
++let fulfilmentStatus: number;
++
++beforeEach(async () => {
++  d1 = await openBunD1();
++  forwarded = [];
++  fulfilmentStatus = 202;
++  spyOn(globalThis, "fetch").mockImplementation((async (input: string | URL | Request, init?: RequestInit) => {
++    forwarded.push({ url: String(input), body: String(init?.body) });
++    return new Response(null, { status: fulfilmentStatus });
++  }) as typeof fetch);
++});
++
++afterEach(async () => {
++  mock.restore();
++  await d1.dispose();
++});
++
++const sender = createWebhookSigning({ secrets: [TEST_WEBHOOK_SECRET] });
++
++async function deliver(payload: unknown, headers?: Record<string, string>): Promise<Response> {
++  const body = JSON.stringify(payload);
++  const signed = headers ?? (await sender.sign({ id: "msg_1", body }));
++  return createWorker({ scriptSrc: ["'self'"] }).request(
++    "/webhooks/orders",
++    { method: "POST", body, headers: { ...signed, "content-type": "application/json" } },
++    testEnv(d1),
++  );
++}
++
++describe("the order webhook", () => {
++  it("forwards a signed order to fulfilment and answers 204", async () => {
++    const res = await deliver({ orderId: "o-1", totalCents: 1250 });
++
++    expect(res.status).toBe(204);
++    expect(forwarded).toEqual([{ url: "https://fulfil.example/orders", body: '{"orderId":"o-1","totalCents":1250}' }]);
++  });
++
++  it("refuses a delivery whose signature does not verify, forwarding nothing", async () => {
++    const forged = { "webhook-id": "msg_1", "webhook-timestamp": String(Math.floor(Date.now() / 1000)), "webhook-signature": "v1,AAAA" };
++
++    expect((await deliver({ orderId: "o-1", totalCents: 1250 }, forged)).status).toBe(401);
++    expect(forwarded).toEqual([]);
++  });
++
++  it("refuses a signed body that is not an order, forwarding nothing", async () => {
++    expect((await deliver({ orderId: "o-1", totalCents: -5 })).status).toBe(422);
++    expect(forwarded).toEqual([]);
++  });
++
++  it("answers 502 when fulfilment refuses the order", async () => {
++    fulfilmentStatus = 503;
++
++    expect((await deliver({ orderId: "o-1", totalCents: 1250 })).status).toBe(502);
++  });
++});
++
++describe("the status API", () => {
++  const status = (path: string, init: RequestInit) => createWorker({ scriptSrc: ["'self'"] }).request(path, init, testEnv(d1));
++
++  it("lets the partner origin read it cross-origin", async () => {
++    const res = await status("/api/status", { headers: { Origin: "https://partner.example" } });
++
++    expect([res.status, res.headers.get("access-control-allow-origin"), await res.json()]).toEqual([
++      200,
++      "https://partner.example",
++      { status: "ok" },
++    ]);
++  });
++
++  it("names no other origin", async () => {
++    const res = await status("/api/status", { headers: { Origin: "https://elsewhere.example" } });
++
++    expect(res.headers.get("access-control-allow-origin")).toBeNull();
++  });
++
++  it("opens no other route to the partner", async () => {
++    const res = await status("/", { headers: { Origin: "https://partner.example" } });
++
++    expect(res.headers.get("access-control-allow-origin")).toBeNull();
++  });
++});
+diff --git a/wrangler.jsonc b/wrangler.jsonc
+index 1dc00783..e5edc20f 100644
+--- a/wrangler.jsonc
++++ b/wrangler.jsonc
+@@ -7,7 +7,7 @@
+   "workers_dev": false,
+   "preview_urls": false,
+   "routes": [],
+-  "vars": { "SITE_NAME": "Forge Eval" },
+-  "secrets": { "required": [] },
++  "vars": { "SITE_NAME": "Forge Eval", "FULFILMENT_URL": "https://fulfil.example/orders" },
++  "secrets": { "required": ["WEBHOOK_SECRETS"] },
+   "d1_databases": [{ "binding": "DB", "database_name": "forge-eval-consumer", "database_id": "local", "migrations_dir": "config/db/migrations" }],
+ }

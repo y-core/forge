@@ -56,6 +56,9 @@ you ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 The emitted policy carries no `'unsafe-inline'`, so a `<script>` runs only if it carries this request's nonce. `getNonce(c)` is how markup gets it.
 
 ```tsx
+import type { AppContext } from "@y-core/forge/context";
+import { getNonce } from "@y-core/forge/security";
+
 export function Page(c: AppContext) {
   const nonce = getNonce(c);
   return <script nonce={nonce} src='/assets/js/main.js' />;
@@ -241,8 +244,8 @@ the route once in development after you add it.
 
 ## Keeping dev-only sources out of the production policy
 
-Compute dev-only CSP sources — a live-reload hash, a local tooling origin — as one more export on your app's `#app/relax` pair, never in the shared
-base ([`src/relax/README.md`][relax-readme]). The strict file answers `{}`:
+Compute dev-only CSP sources — a live-reload hash, a local tooling origin — as one more export on your app's `#app/relax` pair
+([`SECURITY_HARDENING.md`][sh-2c] §2c, [`src/relax/README.md`][relax-readme]). The strict file answers `{}`:
 
 ```ts
 // src/app/relax.strict.ts
@@ -359,8 +362,7 @@ app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins, onR
 
 **An endpoint called by a server or a tool, not a browser, is admitted by name: `missing: "allow"`.** An MCP endpoint or a CSP report
 receiver sends no `Origin`, `Referer` or `Sec-Fetch-Site`, and the default refuses that request `403` with reason `missing`. Under
-`missing: "allow"` it passes, while a disallowed `Origin` or `Referer` and a `cross-site` or `same-site` `Sec-Fetch-Site` are still refused,
-and so is a WebSocket upgrade with no `Origin`. Use it only on a path that never authenticates by cookie:
+`missing: "allow"` it passes, and every signal that is present still refuses as before. Use it only on a path that never authenticates by cookie:
 
 ```ts
 import { applyMiddlewareChain } from "@y-core/forge/app";
@@ -412,8 +414,7 @@ createController(routes, {
 The handshake is judged on `Origin` alone: a browser always sends one there, so an upgrade without it is refused even beside a matching `Referer`
 or a `Sec-Fetch-Site: same-origin`. A plain `GET` on the same route stays exempt.
 
-An HTML form endpoint wants one guard more. `requireFormContentType()` answers `415` to any request whose `Content-Type` is not
-`application/x-www-form-urlencoded` or `multipart/form-data`, comparing case-insensitively (RFC 9110 §8.3.1) and ignoring any `; charset=…`. Apply
+An HTML form endpoint wants one guard more. `requireFormContentType()` answers `415` to a body that is not a form's. Apply
 it on form routes only — never on a JSON API.
 
 ```ts
@@ -466,12 +467,7 @@ its first resolution, which answers that request with a `500`. The CORS spec mak
 mutually exclusive, and a credentialed response reads the second `*` as a header literally named `*`. An `allowedHeaders` or `exposedHeaders`
 entry that is not a header-name token throws too.
 
-**Apply `cors` on the routes actually consumed cross-origin, never globally.** `Vary: Origin` is marked on every origin-dependent response,
-refusals included, except under a static `origins: ["*"]` without credentials — a resolver's list can change per env, so it always varies; both
-rulings are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
-
-**Private Network Access is not offered.** Chrome 142 replaced the PNA preflight with the Local Network Access permission, and a Worker is
-never the private-network target the header is for.
+**Mount `cors` per route.** How it marks `Vary: Origin`, and why it offers no Private Network Access, are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
 
 ---
 
@@ -532,9 +528,7 @@ const perRoute = rateLimit<AppEnv>({
 });
 ```
 
-An absent IP still answers `503`. `rateLimit` takes no trust option: the client-IP key, by default or with `keySuffix`, is read only where
-`applyMiddlewareChain` declared `trustCfHeaders: true`, and answers `503` with reason `key-failed` elsewhere. `rateLimit` throws at construction
-when `keySuffix` comes with a `key`.
+`rateLimit` throws at construction when `keySuffix` comes with a `key`.
 
 `routeKeySuffix` keys on the matched route's pattern instead — `/admin/users/:id`, never `/admin/users/1` — so a client cannot mint a fresh budget
 by varying an id, and every request no route matches shares the one suffix `"<unmatched>"`. Forge resolves the pattern before the first `app.use`
@@ -612,8 +606,8 @@ reaches the guards, are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
 ## Signing and verifying webhooks
 
 Both sides follow [Standard Webhooks](https://www.standardwebhooks.com): three headers, an HMAC-SHA256 over `id.timestamp.body`, and
-`whsec_`-prefixed secrets held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule — `whsec_$(openssl rand -base64 32)` gives one. Store each
-secret in a Worker secret, never in source.
+`whsec_`-prefixed secrets held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule — `whsec_$(openssl rand -base64 32)` gives one, stored in a
+Worker secret.
 
 Both sides start from one signer per `env`. Build a resolver at module scope with `createWebhookSigningResolver`, and call it inside the handler:
 
@@ -626,8 +620,8 @@ const resolveWebhooks = createWebhookSigningResolver<Env>((env) => ({ secrets: p
 const webhooks = await resolveWebhooks(c);
 ```
 
-**Never call `createWebhookSigning` inside a handler.** A signer imports each secret's key on first use and keeps it, so building one per request
-imports every key again on every request. The resolver keeps one signer for each `env` object, which every request a Worker isolate serves shares.
+**Never call `createWebhookSigning` inside a handler** ([`NAMESPACES.md`][namespaces-5l] §5l). The resolver keeps one signer for each `env`
+object, which every request a Worker isolate serves shares.
 Calls racing on a cold `env` share one build, and a build that throws is retried by the next request rather than cached.
 
 **A configuration mistake rejects the resolver's call, before any request body is read** — a malformed secret, an empty `secrets` list, or a
@@ -757,6 +751,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [html-readme]: ../html/README.md
 [htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [http-readme]: ../http/README.md
+[namespaces-5l]: ../../docs/NAMESPACES.md#5l-security--webhook-message-authentication-by-local-ruling
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [relax-readme]: ../relax/README.md

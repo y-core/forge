@@ -234,8 +234,7 @@ Consequences to plan around:
 
 - **A build always wins.** `gen types` keeps an existing build artifact that still fits the config, and rewrites only when the shape stops
   matching — a bundle or a glyph added, a sprite target or prefix renamed. The command prints which it did.
-- **Never assert an asset digest or a rendered `viewBox` in a test.** Those assertions pass under a full build and fail under `gen types`, which
-  ties the test to whichever command happened to run last. Assert the logical name instead.
+- **Never assert an asset digest or a rendered `viewBox` in a test** — assert the logical name ([`ASSET_PIPELINE.md`][ap-4b] §4b).
 
 ---
 
@@ -520,14 +519,11 @@ response, so such a worker can fetch nothing; serve it from outside the prefix, 
 
 ## Gotchas
 
-**Generated directories are cleaned on every run.** `buildJS` removes every non-hidden file plus `chunks/` in each `outdir`; `buildCSS` and
-`buildSprites` remove the non-hidden files matching their own output stem. Never keep a hand-authored file alongside generated output — it will be
-deleted.
+**Generated directories are cleaned on every run**, so never keep a hand-authored file beside generated output: `buildJS` empties each `outdir` but
+its hidden files, and `buildCSS` and `buildSprites` remove the files matching their own output stem.
 
-**`_headers` is written wholesale.** It is emitted as a sibling of `publicDir` with one rule for `paths.publicPrefix` and one per icon output, each
-carrying the security headers above, and the file is truncated on every build. A second writer cannot add a rule to it, including for the generated
-`robots.txt` and `sitemap.xml`. Icons are revalidated rather than pinned, because their filenames are not content-hashed; the web-app manifest is
-`must-revalidate`, because it is how an installed app learns its name, colours or icon set changed.
+**`_headers` is written wholesale**, beside `publicDir` and truncated on every build, so a second writer cannot add a rule to it — the generated
+`robots.txt` and `sitemap.xml` included. Icons are revalidated rather than pinned, because their filenames are not content-hashed.
 
 **A missing optional peer fails with a sentence, not a resolution stack trace.** `sharp` and `esbuild` are imported only when the config asks for
 what they do, and the error names the config key that demanded the package, the package, and the command that installs it:
@@ -536,10 +532,9 @@ what they do, and the error names the config key that demanded the package, the 
 [forge-assets] icons.outputs asks for a rasterized PNG, which needs the optional peer "sharp". Install it: bun add -d sharp
 ```
 
-**Output paths are contained; local source paths are not.** `safeJoin` throws if a config-supplied output path — a copy or raster `to`, a sprite
-`target`, a font `to`, a JS `outdir` — resolves outside the asset root. A local read is deliberately unrestricted: `from`, or a sprite source on
-disk. **A remote read is not**: a font `url` and a remote sprite source must be `https://`, must pin a full SHA-256, and are re-verified on every
-build rather than trusted because a file of that name is already cached.
+**Output paths are contained; local source paths are not.** `safeJoin` throws when a config-supplied output path resolves outside the asset root,
+while a local read is deliberately unrestricted. **A remote read is not**: a font `url` or a remote sprite source must be `https://`, pin a full
+SHA-256, and is re-verified on every build.
 
 ---
 

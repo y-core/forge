@@ -1,0 +1,12 @@
+diff --git a/src/model/contact.ts b/src/model/contact.ts
+index aa658b4b..d01edcfc 100644
+--- a/src/model/contact.ts
++++ b/src/model/contact.ts
+@@ -1,6 +1,6 @@
+ import { formMultilineText, formText, v } from "@y-core/forge/validation";
+ 
+-export const ContactSchema = v.strictObject({
++export const ContactSchema = v.object({
+   name: v.pipe(formText(), v.minLength(1), v.maxLength(100)),
+   email: v.pipe(formText(), v.email(), v.maxLength(254)),
+   message: v.pipe(formMultilineText(), v.minLength(10), v.maxLength(2000)),

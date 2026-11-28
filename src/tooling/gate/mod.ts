@@ -2,7 +2,7 @@ export type { ChangelogDocument, ChangelogParse, PromoteOptions, UnreleasedSecti
 export { changelogSectionDigest, formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
 export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
 export type { BumpKind, SemVer } from "./types";
-export type { SourceStepOptions, StepOptions } from "./types";
+export type { PlaywrightStepOptions, SourceStepOptions, StepOptions } from "./types";
 export {
   assetManifestStep,
   assetRootStep,
@@ -39,6 +39,7 @@ export {
   markdownStep,
   modernCssStep,
   namespaceGraphStep,
+  noBuildStep,
   packagingStep,
   serviceWorkerStep,
   ssrBoundaryStep,
@@ -85,6 +86,7 @@ export type { CoLocationCheckConfig } from "./checks/types";
 export { checkCommentBudget } from "./checks/comment-budget";
 export { isToolingDirective, validateCommentBudget } from "./checks/comment-budget-parse";
 export type { CommentBudgetCheckConfig, CommentSpan } from "./checks/types";
+export { checkNoBuild } from "./checks/no-build";
 export { checkPackaging, fixtureName, moduleImports } from "./checks/packaging";
 export type { PackagingCheckConfig } from "./checks/types";
 export { compositeOver, contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
@@ -254,10 +256,10 @@ export type { AppContrastOptions, CloudflareWorkerDesignOptions, CloudflareWorke
 export { appContrast, cloudflareWorkerSteps, forgeChecks } from "./presets";
 export { workerMainClosure } from "./closure";
 export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepReach, StepRequirement, StepResults } from "./types";
-export type { GateRunReport, StepReport, StepStatus, TestFailure } from "./types";
+export type { GateFailure, GateRunReport, StepReport, StepStatus, TestFailure } from "./types";
 export { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
 export { declaredSteps, defineSteps, isStepsConfig, mergeTiers, resolveTiers, tier } from "./tiers";
 export type { ResolvedTier, ResolvedTiers, StepsConfig, StepTiers, TierEntry, TierRef } from "./types";
 export type { ConfigFileCheckConfig } from "./checks/types";
-export { checkConfigBaseline, checkConfigFiles, OXLINT_BASE, TSCONFIG_BASE } from "./checks/config-files";
+export { CONFIG_STATE_DIRS, CONFIG_STATE_FILES, checkConfigBaseline, checkConfigFiles, OXLINT_BASE, TSCONFIG_BASE } from "./checks/config-files";
 export { GATE_TIERS } from "./types";

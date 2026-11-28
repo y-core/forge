@@ -91,13 +91,13 @@ describe("warden sync", () => {
     expect(out.at(-1)).toBe("✓ warden synced — libs");
   });
 
-  it("renders the repository's slug into the Codex example's ledger URL and leaves the session names as shipped", async () => {
+  it("renders the repository's slug into the Codex example's ledger URL and leaves the reviewer name as shipped", async () => {
     const root = emptyRepo();
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@y-core/starter" }));
 
     await warden("sync", "--root", root, "--kind", "apps");
 
-    expect(readFileSync(join(root, ".claude/skills/handoff/SKILL.md"), "utf-8")).toContain("`forge-review`");
+    expect(readFileSync(join(root, ".claude/skills/handoff/SKILL.md"), "utf-8")).toContain("`cc-reviewer`");
     expect(readFileSync(join(root, ".codex/config.toml.example"), "utf-8")).toContain('/mcp/starter"');
   });
 

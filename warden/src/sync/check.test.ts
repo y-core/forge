@@ -201,7 +201,8 @@ describe("checkAgents()", () => {
   it("accepts the roster as one line of the pointer block, with no section of its own", () => {
     const repo = tree(
       {
-        "CLAUDE.md": "# CLAUDE.md\n\nAgents are `cc-plan` → `cc-dev`, with `cc-doc`; sessions are `forge-dev` and `forge-review`.\n\n## Checks\n",
+        "CLAUDE.md":
+          "# CLAUDE.md\n\nAgents are `cc-plan` → `cc-dev`, with `cc-doc`; a task moved to review ends with the `handoff` skill.\n\n## Checks\n",
         ".claude/agents/cc-plan.md": "p",
         ".claude/agents/cc-dev.md": "d",
         ".claude/agents/cc-doc.md": "d",

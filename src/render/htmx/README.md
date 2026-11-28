@@ -115,6 +115,8 @@ The directives fall into these decisions:
 becomes `hx-post`, `selectOob` becomes `hx-select-oob`.
 
 ```tsx
+import { hxAttrs } from "@y-core/forge/render/htmx";
+
 <form {...hxAttrs({ post: "/api/contact", target: "#result", swap: "outerHTML" })} />
 // → hx-post="/api/contact" hx-target="#result" hx-swap="outerHTML"
 ```
@@ -154,8 +156,12 @@ passing the matching prop:
   or of a typeless button inside a form, so the dialog never opens.
 
 ```tsx
-<form {...formSubmit({ post: "/api/contact", target: "#contact-result" })} />
-<a {...paginatedTableLink({ get: "/items", target: "#table", page: 3 })} />
+import { formSubmit, paginatedTableLink } from "@y-core/forge/render/htmx";
+
+<>
+  <form {...formSubmit({ post: "/api/contact", target: "#contact-result" })} />
+  <a {...paginatedTableLink({ get: "/items", target: "#table", page: 3 })} />
+</>
 ```
 
 `inlineValidation` aborts only the field's own request by default, not the form's. Passing `sync: "closest form:abort"` is the right call inside a
@@ -169,8 +175,12 @@ An out-of-band swap lets one response update somewhere else in the document as w
 produces the attribute for the fragment doing the updating, and `oobAppend(selector)` is the shorthand for appending rather than replacing:
 
 ```tsx
-<span id='cart-count' {...oobSwap({ selector: "#cart-count" })}>{count}</span>
-<li {...oobAppend("#notifications")}>New message</li>
+import { oobAppend, oobSwap } from "@y-core/forge/render/htmx";
+
+<>
+  <span id='cart-count' {...oobSwap({ selector: "#cart-count" })}>{count}</span>
+  <li {...oobAppend("#notifications")}>New message</li>
+</>
 ```
 
 Given a `selector`, the default strategy becomes `outerHTML` — replacing the matched element. Pass `strategy` for any other htmx swap value.

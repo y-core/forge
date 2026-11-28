@@ -1,14 +1,13 @@
 import { attributeNamed, openingTag, statedString } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 const RAW_CONTROLS = new Set(["select", "input", "textarea", "button"]);
 
 /** A raw form control in composed markup, where the `ui/core` component wrapping it belongs. */
-export const catalogWrongRawInput: LintRule = {
+export const catalogWrongRawInput = defineLintRule("forge-ui-catalog-wrong-raw-input", {
   meta: { type: "problem", docs: { description: "Composed markup renders the component the corpus points at, never the raw control it wraps." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-catalog-wrong-raw-input");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         const tag = openingTag(node);
@@ -18,4 +17,4 @@ export const catalogWrongRawInput: LintRule = {
       },
     };
   },
-};
+});

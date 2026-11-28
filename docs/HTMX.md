@@ -31,10 +31,9 @@ audience: consumer
 
 ## 7. Trust Posture — Selectors and JSON Values Must Be Developer-Supplied
 
-The **selector- and JSON-valued** htmx attributes are **client-side behavioral directives**, not display text. The renderer does not (and cannot)
-neutralize them by escaping — a CSS selector or a JSON blob is meaningful to the htmx client exactly as written, and an escaped one is merely a
-broken one. Every selector- and JSON-valued attribute produced by `hxAttrs` and the pattern helpers must therefore be **trusted,
-developer-supplied** — never interpolated from raw user input:
+The **selector- and JSON-valued** htmx attributes are client-side behavioural directives that escaping cannot neutralise — an escaped selector is
+merely a broken one — so every one `hxAttrs` and the pattern helpers produce must be **trusted, developer-supplied**, never interpolated from raw
+user input:
 
 - `hx-target`, `hx-select`, `hx-select-oob`, `hx-include` — CSS selectors. A user-controlled value can retarget a swap to overwrite arbitrary DOM,
   or exfiltrate other form fields via `hx-include`.
@@ -49,9 +48,9 @@ route definitions and static configuration, not from request data.
 The URL-valued props those same helpers forward — `get`, `post` and the rest — are a **disjoint set** governed by §7a, which reaches the same
 obligation for a different reason.
 
-**`isHxRequest` carries the complementary ruling, and this section owns it: `HX-Request` is a client-supplied header any caller can set, so the
-predicate is a UX routing hint and never a security boundary.** It decides _how to render_, never _whether the caller is allowed_. Neither the
-attribute values nor the request hint substitute for `originProtection`/`crossOriginProtection` and the app's CSRF policy on mutation routes.
+**`isHxRequest` is a UX routing hint and never a security boundary**, because `HX-Request` is a header any caller can set: it decides _how to
+render_, never _whether the caller is allowed_. Neither it nor the attribute values substitute for `originProtection`/`crossOriginProtection` and
+the app's CSRF policy on mutation routes.
 
 ### 7a. URL-Valued hx Attributes Are Deliberately Unsanitized
 
@@ -60,18 +59,12 @@ argument does not reach them: escaping a URL does not break it, and a sanitizer 
 verbatim. The attribute names the JSX renderer routes through `safeUrl` are owned by `src/render/jsx/render-to-string.ts`, and no `hx-*` name is
 among them. **That is a decision, not an oversight, and the reason is what `safeUrl` does on rejection.**
 
-**`safeUrl` maps a rejected URL to `"#"`, and `"#"` is not inert on an `hx-*` attribute.** On an `href` it is a visibly dead link — the refusal is
-loud, and the user sees nothing happen. On an `hx-get` it is a valid same-origin URL naming the **current page**: htmx would issue a real request
-for it and swap the response into the target. Sanitizing here converts a loud refusal into a _successful wrong request_ — a fetch-and-swap
-indistinguishable at the point of failure from the behaviour the author intended. A guard whose failure mode is silent success is worse than no
-guard, because it also removes the pressure to supply a trustworthy value in the first place.
+**`safeUrl` maps a rejected URL to `"#"`, and `"#"` is not inert on an `hx-*` attribute**: on an `hx-get` it names the current page, so htmx would
+issue a real request and swap the response, turning a loud refusal into a silent wrong success.
 
-**A request attribute driven by a signal is removed while its value is a script URL, and never collapsed to `"#"`.** A signal is seeded from
-`data-island-state`, so a bound value is as reachable as a request parameter and is not author-written. While the value `bindAttr` writes to
-`hx-action` or a request verb (`hx-get`, `hx-post`, `hx-put`, `hx-patch`, `hx-delete`, `hx-query`) begins `js:` or `javascript:`, `bindAttr`
-removes the attribute and warns once for that binding, so htmx sends nothing; the next safe value writes it back. The rule holds in either prefix,
-with any `:inherited` or `:append` suffix, in any case, and after control characters and whitespace are stripped from the value. Removal fails
-closed where `"#"` would fail open. Any other URL binds as written, and a value the renderer emits stays verbatim.
+**A request attribute driven by a signal is removed while its value is a script URL, and never collapsed to `"#"`**, because a signal seeded from
+`data-island-state` is as reachable as a request parameter. `bindAttr` owns which attributes and spellings it tests; removal fails closed where
+`"#"` would fail open, and the next safe value writes the attribute back.
 
 Further runtime layers sit **underneath** that reason. Neither is the control, and neither would justify the attributes being unsanitized on its
 own:
@@ -110,57 +103,40 @@ string: it is script, and the only thing that decides whether it is safe is who 
 control, and it is the same for each. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the most
 weight, because here a broken obligation is direct evaluation rather than a misrouted swap.
 
-**`hxAttrs` cannot emit a `js:` value**, so the exposure is a hand-written attribute: its `values` and `headers` are `Record<string, string>` and
-are JSON-encoded (`src/render/htmx/htmx-attrs.ts`). Forge's own code already treats the prefix as the evaluated form — `<Form>` refuses to merge a
-CSRF token into an `hx-headers` value it cannot parse as a JSON object, rather than shipping a form whose token silently went missing
-(`src/ui/core/form.tsx`).
+**`hxAttrs` cannot emit a `js:` value** — its `values` and `headers` are JSON-encoded (`src/render/htmx/htmx-attrs.ts`) — so the exposure is a
+hand-written attribute. `<Form>` likewise refuses to merge a CSRF token into an `hx-headers` value it cannot parse as JSON (`src/ui/core/form.tsx`).
 
-**The renderer emits `hx-on:*` verbatim, and its type surface does not stop it either.** There _is_ an `on*` filter in the JSX renderer — it drops
-any attribute whose lowercased name begins `on`, so an untrusted spread key cannot inject `onclick` — and `hx-on:click` lowercases to a name
-beginning `hx-`, which places it deliberately outside that filter. Past the filter the only name-based gate is the attribute-name validity regex
-owned by `src/render/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is escaped and written like any other attribute. Escaping
-does not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities, so an escaped payload is decoded again before
-evaluation. The exemption is listed as a known pattern in [`FORGE_REVIEW.md`][fr-6] §6, which is the other half [`BOUNDARIES.md`][boundaries-5c] §5c
-requires.
+**The renderer emits `hx-on:*` verbatim.** The JSX renderer's `on*` filter drops attributes whose lowercased name begins `on`, which `hx-on:click`
+deliberately falls outside, and escaping does not help, because htmx reads the attribute after the parser decodes entities. The exemption is listed
+in [`FORGE_REVIEW.md`][fr-6] §6, the other half [`BOUNDARIES.md`][boundaries-5c] §5c requires.
 
 A CSP without `'unsafe-eval'` is the **second** layer — a backstop, not a permission model. htmx compiles an `hx-on:*` body with `new Function`,
 which only `'unsafe-eval'` would permit, and forge's emitted policy carries that source in no directive by default. The **string** `'unsafe-eval'`
 is refused in every directive ([`SECURITY_HARDENING.md`][sh-2e] §2e), so no directive list assembled from config, an env var or a pasted snippet can
 widen the policy into permitting it.
 
-**A consumer that imports `UNSAFE_EVAL` removes this layer, deliberately, and that is by design.** The override is a `unique symbol` from
-`@y-core/forge/security`; naming it in `scriptSrc` is an import a reviewer reads in the diff, and an `hx-on:*` attribute in that app executes. Forge
-does not own the trade — it owns that the trade be visible. So the layer is bounded twice over: by whether the app opted out, and by the policy
-being emitted at all, since a route that never reaches `createSecurityHeaders` or `applySecurityHeaders` has no CSP from forge. The control above
-both — who wrote the attribute value — is the one that depends on neither.
+**A consumer that imports `UNSAFE_EVAL` removes this layer, by design**: naming that `@y-core/forge/security` symbol in `scriptSrc` is an import a
+reviewer reads in the diff, and forge owns only that the trade be visible. The layer also exists only on a route that reaches
+`createSecurityHeaders` or `applySecurityHeaders`; the construction rule above depends on neither.
 
-**htmx 4 has no switch of its own for either path, so the CSP and Trusted Types are the only layers beneath the construction rule.** Every
-evaluated form above compiles through the native `Function` constructor, which a policy without
-`'unsafe-eval'` refuses. Under enforced Trusted Types it is refused even when `UNSAFE_EVAL` admits eval, because `forge-htmx` gives htmx no policy
-for it ([`SECURITY_HARDENING.md`][sh-2g] §2g). A `<script>` inside swapped content is always rebuilt and run, with its text passed through the
-policy's `createScript`. The default CSP still refuses an injected one, because it permits only nonced inline script.
+**htmx 4 has no switch of its own for either path, so the CSP and Trusted Types are the only layers beneath the construction rule.** Every evaluated
+form compiles through the native `Function` constructor, refused without `'unsafe-eval'` and, under enforced Trusted Types, even with `UNSAFE_EVAL`,
+because `forge-htmx` gives htmx no policy for it ([`SECURITY_HARDENING.md`][sh-2g] §2g). A `<script>` in swapped content passes through the policy's
+`createScript`, and the default CSP refuses it unless nonced.
 
-**`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it means a template-pattern index signature — the suffix
-is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/render/jsx/types.ts`. That interface
-is mixed into both the HTML and SVG attribute bases, which every per-tag element type extends and every `ui/core` prop type reaches through
-`JSX.IntrinsicElements`. A template index signature admits every key matching its pattern without further checking, so a misspelled event name stops
-being an error on every element in the library at once. That is a repo-wide weakening of excess-property checking, bought for autocomplete on a
-capability no CSP option can enable. Declined.
+**`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it needs a template-pattern index signature on the htmx
+attribute interface in `src/render/jsx/types.ts`, which every element type reaches, so a misspelled event name would stop being an error on every
+element in the library — a repo-wide loss of excess-property checking for autocomplete on a capability no CSP option can enable.
 
-**The absence is therefore not a guard, and must not be read as one.** A case in `src/render/jsx/render-to-string.test.ts` asserts that
-`hx-on:click` renders verbatim, so the rule above never comes to rest on a type error that only exists at a JSX call site.
+**The absence is therefore not a guard**; `src/render/jsx/render-to-string.test.ts` asserts that `hx-on:click` renders verbatim.
 
 ---
 
 ## 8. The Form-Independent sync Default
 
-**A pattern helper's default may not name a selector whose absence is a silent failure.** The concrete case is `inlineValidation`, whose `sync`
-default is `this:abort` rather than the form-scoped `closest form:abort` a field-validation helper would otherwise want.
-
-htmx resolves a `hx-sync` selector at request time and does not null-check the result, so a `closest form` default throws inside htmx's own trigger
-handler for any field with no enclosing `<form>` — no request, no `htmx:*` error event, nothing in the console tied to the attribute. The failure is
-invisible at exactly the call site that got it wrong. A caller that _is_ inside a form and wants cross-field aborting passes
-`sync: "closest form:abort"` explicitly, which is the position in which the selector is known to resolve.
+**A pattern helper's default may not name a selector whose absence is a silent failure.** `inlineValidation`'s `sync` defaults to `this:abort`,
+because htmx resolves `closest form` at request time without a null check and throws silently for a field with no enclosing `<form>`; a caller
+inside a form passes `sync: "closest form:abort"` explicitly.
 
 ---
 
@@ -170,11 +146,9 @@ invisible at exactly the call site that got it wrong. A caller that _is_ inside 
 to off, and forge leaves it off. So an `hx-boost="true"` on `<body>` or `<nav>` boosts that element alone, and no link inside it — a silent loss
 of boosted navigation rather than an error.
 
-**`hxAttrs({ boost })` therefore emits `hx-boost:inherited`, and it is the only attribute forge marks this way.** Boost is the one htmx attribute
-whose ordinary home is a container reaching its descendants. On a link or a form the suffix costs nothing, because htmx reads the `:inherited`
-spelling on the element itself as well. Every other `hx-*` attribute forge renders sits on the element that issues the request — `<Form>` puts the
-verb and its `hx-headers` on the `<form>` — so none of them needs the suffix, and `hxAttrs` never adds it. An app that wants another attribute to
-reach descendants writes the suffix by hand.
+**`hxAttrs({ boost })` therefore emits `hx-boost:inherited`**, because boost is the one htmx attribute whose ordinary home is a container reaching
+its descendants; which attributes take the suffix is `hxAttrs`' TSDoc. An app that wants another attribute to reach descendants writes the suffix by
+hand.
 
 **`src/render/jsx/types.ts` types `hx-boost:inherited` and not a bare `hx-boost`**, so the container spelling htmx 4 does not honour is a type error
 at the JSX call site. `src/render/htmx/htmx-attrs.test.ts` pins the emitted name.
@@ -183,23 +157,14 @@ at the JSX call site. `src/render/htmx/htmx-attrs.test.ts` pins the emitted name
 
 ## 10. A Page or a Fragment — isPartial Reads HX-Request-Type
 
-**A handler that answers a page or a fragment from one route decides by `isPartial`, and `isPartial` is true only when `HX-Request-Type` is exactly
-`partial`.** htmx 4 sends `HX-Request: true` on every request it issues, including the two that must get a whole page:
-
-- **A boosted navigation**, which carries `HX-Boosted: true` and swaps the response into `<body>`.
-- **A history restore.** When the reader goes back or forward, htmx 4 fetches the page with an htmx GET carrying `HX-History-Restore-Request: true`
-  and no `HX-Boosted`, then replaces the whole body with the response.
-
-Testing for `HX-Request` without `HX-Boosted` answers a history restore with a fragment, and htmx then puts that fragment where the body
-was. `HX-Request-Type` is htmx's own statement of what it will do with the response: `full` when the target is `<body>` or an `hx-select` will pick
-from the response, and `partial` otherwise. An `hx-select` request is therefore answered with a page, which is what it selects from.
-
-**An absent or unrecognised `HX-Request-Type` reads as a page.** A request that did not say it wants a fragment — a hand-built `fetch` that sets
-`HX-Request`, a proxy that strips the header — gets the full document, which is the answer every client can use. `readHxRequest` exposes the value
-as `requestType`, which is `""` in that case.
+**A handler that answers a page or a fragment from one route decides by `isPartial`, which reads `HX-Request-Type` rather than `HX-Request`.** htmx
+4 sends `HX-Request: true` on every request it issues, a boosted navigation and a history restore included, and both must get a whole page: a
+history restore answered with a fragment puts that fragment where the body was. `HX-Request-Type` is htmx's own statement of what it will do with
+the response, so only `partial` reads as a fragment, and an absent or unrecognised value reads as the page every client can use.
+`src/render/htmx/htmx-headers.test.ts` pins each case.
 
 **`isPartial` is a rendering hint on the same terms as `isHxRequest`** (§7). `HX-Request-Type` is a header the client sets, so it decides how to
-render and never whether the caller is allowed. `src/render/htmx/htmx-headers.test.ts` pins each case above.
+render and never whether the caller is allowed.
 
 ---
 

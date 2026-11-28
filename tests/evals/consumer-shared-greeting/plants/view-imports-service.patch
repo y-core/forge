@@ -1,0 +1,44 @@
+diff --git a/src/controllers/hello.ts b/src/controllers/hello.ts
+index 166ceed9..76ae948b 100644
+--- a/src/controllers/hello.ts
++++ b/src/controllers/hello.ts
+@@ -6,6 +6,6 @@ import { routes } from "../routes";
+ import { HelloView } from "../views/hello";
+ 
+ export const helloPage = definePage(routes.hello, {
+-  loader: (c, config) => ({ siteName: config.siteName, greeting: greetingFor(config.siteName, c.params.name) }),
++  loader: (c, config) => ({ siteName: config.siteName, name: c.params.name }),
+   view: (_c, _config, state) => renderPage(HelloView(state.data)),
+ });
+diff --git a/src/services/greeting.ts b/src/services/greeting.ts
+new file mode 100644
+index 00000000..6c2e44cb
+--- /dev/null
++++ b/src/services/greeting.ts
+@@ -0,0 +1,5 @@
++/** How the site greets a visitor: by name, or as a friend when it has none. */
++export function greetingFor(siteName: string, visitor: string): string {
++  const name = visitor.trim();
++  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
++}
+diff --git a/src/views/hello.tsx b/src/views/hello.tsx
+index a1d938b2..deb6ab9b 100644
+--- a/src/views/hello.tsx
++++ b/src/views/hello.tsx
+@@ -1,4 +1,6 @@
+-export function HelloView({ siteName, greeting }: { siteName: string; greeting: string }) {
++import { greetingFor } from "../services/greeting";
++
++export function HelloView({ siteName, name }: { siteName: string; name: string }) {
+   return (
+     <html lang='en'>
+       <head>
+@@ -7,7 +9,7 @@ export function HelloView({ siteName, greeting }: { siteName: string; greeting:
+       </head>
+       <body>
+         <main>
+-          <h1>{greeting}</h1>
++          <h1>{greetingFor(siteName, name)}</h1>
+         </main>
+       </body>
+     </html>

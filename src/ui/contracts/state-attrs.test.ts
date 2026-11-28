@@ -206,6 +206,28 @@ describe("state-attribute conformance", () => {
 
 // `tooling/lint` hand-lists these because it is a leaf that may not import `ui` (NAMESPACES.md §4a),
 // so this is where its lists are held against `STATE_ATTRS`.
+describe("every name STATE_ATTRS declares", () => {
+  const sources = collectSourceFiles(UI_DIR)
+    .filter((file) => !file.endsWith("state-attrs.ts"))
+    .map((file) => readFileSync(file, "utf-8"));
+  const produced = (key: string, attr: string): boolean => {
+    const call = new RegExp(`(?:applyStateAttrs|stateAttrs)\\([^)]*\\b${key}\\b|setAttribute\\(STATE_ATTRS\\.${key}\\b`);
+    return sources.some((source) => call.test(source) || source.includes(`"${attr}"`));
+  };
+
+  it("has a producer in ui, so no stylesheet keys on a hook nothing emits", () => {
+    expect(
+      Object.entries(STATE_ATTRS)
+        .filter(([key, attr]) => !produced(key, attr))
+        .map(([key]) => key),
+    ).toEqual([]);
+  });
+
+  it("would report a name nothing emits", () => {
+    expect(produced("unproduced", "data-unproduced")).toBe(false);
+  });
+});
+
 describe("the state names the lint rules hand-list", () => {
   const EVERY_STATE: Required<StateAttrsProps> = {
     pressed: true,

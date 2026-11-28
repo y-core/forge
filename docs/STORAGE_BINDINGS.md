@@ -34,7 +34,7 @@ audience: consumer
 - §3 storage/r2 — Object Store: object storage and HTTP serving
 - §3a createObjectStore Factory: backend in, typed store out
 - §3b serveObject — Direct Response from a Backend: statuses and Content-Disposition
-- §3c Signed URLs for Secure Object Access: the key ring, length-prefixed HMAC, verification order and retention
+- §3c Signed URLs for Secure Object Access: the key ring, length-prefixed HMAC, the verdict and retention
 - §3d r2Backend — Storage Backend Adapter: the testable seam
 - §3e Binding Validation for R2: the R2 form of the pattern
 - §4 Binding Resolve/Validate Pattern: the shared lifecycle contract
@@ -56,27 +56,27 @@ rather than keeping its own.
 
 ### 1a. createD1Client Factory
 
-`createD1Client` wraps a raw `D1Database` with a typed client, taking the binding directly from `c.env`. Given no `logger`, it writes `warn` and
-above to a console logger. Each call writes one `d1.query` record: the operation, the SQL text, the attempts, a failure's kind, and the cost and
-placement D1 reported. It is at `debug`, or at `warn` once D1's duration passes `slowQueryMs`.
+`createD1Client` wraps a raw `D1Database`, and each call writes one `d1.query` record, at `warn` once D1's duration passes `slowQueryMs`; its
+TSDoc holds the record's fields and the default logger.
 
 **A bound value never reaches the record, and that is the PII rule for SQL text.** The `sql` tag keeps every value a parameter, so the text holds
 only `?`. D1's own query insights keep that text as well — a value spliced into it would sit in Cloudflare's dashboard — so a value belongs in a
 binding, never in the SQL. `wrangler d1 insights` lists the top queries by time, reads or writes; forge does not wrap it, since the command is
 experimental and would only pass through.
 
-**Every outcome's `meta` carries the call's attempts, and, where D1 reported them, `cost` and `servedBy`.** `cost` is what D1 bills on, summed over
-a batch: `rowsRead`, `rowsWritten` and `durationMs`. Its `rowsWritten` counts index rows too, so it is not the change count; `execute` returns that
-as `rowsWritten` on the data, from `meta.changes`. `servedBy` names the region and whether the primary or a read replica answered.
+**`meta.cost.rowsWritten` is what D1 bills, index rows included, so it is not the change count**; `execute` returns that as `rowsWritten` on the
+data.
 
 ### 1b. `sql` Tagged Template for Queries
 
 The `sql` tag produces a `SqlFragment` — the parameterized query string plus its bound values.
 
-**This is the only safe way to build a D1 query. Never use string concatenation.** `D1Client.query` / `queryOne` / `execute` / `batch` accept a
+<!-- rule:forge-sql-fragment-only --> `D1Client.query` / `queryOne` / `execute` / `batch` accept a
 `SqlFragment` only.
 
 ```ts
+import { sql } from "@y-core/forge/storage/db";
+
 const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`);
 ```
 
@@ -84,13 +84,15 @@ const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`);
 `SqlFragment` carries a `unique symbol` brand that only `sql` sets and that `mod.ts` does not re-export, so a hand-built `{text, params}` literal —
 notably anything `JSON.parse` returns — is rejected and gets bound as a parameter rather than spliced into the statement text.
 
-**The brand cannot see the one shape that still needs judgement: an identifier carried as text.** A bind parameter is a _value_ position, so
-interpolating a column into `ORDER BY ${column}` yields `ORDER BY ?`, which does not name a column at all — and calling the tag directly
-(`sql(["ORDER BY " + column] as unknown as TemplateStringsArray)`) types as a `SqlFragment` at every call site downstream. Where a caller chooses a
-column, a sort direction or a table, map their input onto one of a fixed set of literal fragments and fail closed on anything else; never assemble a
-fragment around the name they sent.
+<!-- rule:forge-sql-tag-called-directly --> **The brand cannot see the one shape that still needs judgement: an identifier carried as text.** A bind
+parameter is a _value_ position, so interpolating a column into `ORDER BY ${column}` yields `ORDER BY ?`, which does not name a column at all — and
+calling the tag directly (`sql(["ORDER BY " + column] as unknown as TemplateStringsArray)`) types as a `SqlFragment` at every call site downstream.
+
+Where a caller chooses a column, a sort direction or a table, an input matching none of the fixed fragments fails closed:
 
 ```ts
+import { sql } from "@y-core/forge/storage/db";
+
 const ORDER = { name: sql`ORDER BY name`, created: sql`ORDER BY created_at DESC` } as const;
 const order = ORDER[input] ?? ORDER.name;
 ```
@@ -108,24 +110,16 @@ console, at the same floor.
 
 ### 1d. validateD1Binding — Binding Validation Middleware
 
-`validateD1Binding(name)` returns a `Middleware` that shape-checks the named binding on the first request. **Register it with `app.use("*", …)`** so
-the check runs before any handler.
-
-The check is functional, not merely presence-based — §4a owns the rule.
+`validateD1Binding` is D1's binding check; §4 owns the rule and the registration every storage namespace shares.
 
 ### 1e. uuidv7 — Time-Ordered Primary Keys
 
-`uuidv7()` returns a canonical UUIDv7 string for use as a row identifier: unique and non-guessable-as-a-sequence, yet lexicographically sortable by
-creation time. Sequential keys append to the right edge of the primary-key B-tree instead of scattering inserts across it, and `ORDER BY id` becomes
-a free cursor. `createUuidv7(options?)` is the factory form, taking an injected clock.
+`uuidv7()` mints a row id sortable by creation time, so inserts append to the primary-key B-tree's right edge and `ORDER BY id` is a free cursor.
 
 **The 12-bit `rand_a` field carries a monotonic counter, not randomness** (RFC 9562 Method 1, Section 6.2), and on Workers that is load-bearing
 rather than an optimisation. `Date.now()` does not advance during synchronous execution — it is frozen at the time of the last I/O as a
 timing-attack mitigation — so _every_ ID minted between two awaits reads the same millisecond. A textbook UUIDv7 with a random `rand_a` therefore
-emits a batch in random order, losing the single property it was chosen for. The counter reseeds to a random 10-bit value on each clock advance,
-leaving ≥3072 increments of headroom; on overflow the generator borrows the next millisecond and repays it when the wall clock catches up. A
-backwards clock step is absorbed the same way.
-
+emits a batch in random order, losing the single property it was chosen for.
 **The module-level default generator is a deliberate exception to [`CODE_RULES.md`][cr-1a] §1a.** That rule prohibits _request-scoped_ data in
 module scope, and its rationale is bleed between recycled isolates. The retained state is a timestamp and a counter — nothing request-derived — and
 the cross-request bleed is exactly what stops two requests sharing an isolate from colliding inside one frozen millisecond. Code needing isolated or
@@ -137,11 +131,10 @@ unguessable URL component.
 **`TEXT` is the default; `BLOB` is a per-table density trade.** `uuidv7Bytes()` mints the same value as its raw 16 octets, most-significant first,
 which is the order SQLite's `memcmp` sorts a `BLOB` by — so ordering is identical either way. Storing bytes costs roughly a quarter of the combined
 table-and-index footprint, and costs readable output in every console query, log line, `wrangler d1 execute` result and `json_object()` projection.
-Take it on tables you do not hand-query, not as a schema-wide default. `uuidFromBytes` renders a value read back — including the `number[]` D1
-returns for a `BLOB` column, since its JSON transport has no binary type — and `uuidToBytes` parses a string ID for binding against one. Both forms
-come from **one shared generator**, so an application mixing them still gets a single global ordering.
+Take it on tables you do not hand-query, not as a schema-wide default. Both forms come from **one shared generator**, so an application mixing them
+still gets a single global ordering.
 
-**Do not reach for `WITHOUT ROWID` to shrink a UUID key.** In an ordinary rowid table every secondary index entry carries the implicit integer
+<!-- rule:forge-no-without-rowid --> In an ordinary rowid table every secondary index entry carries the implicit integer
 rowid, not the primary key, so a 36-character id costs two fixed copies per row regardless of how many indexes the table has. `WITHOUT ROWID` makes
 the id the table key, which appends it to _every_ secondary index entry — past one index it is a net loss.
 
@@ -202,7 +195,7 @@ earlier write is undone and the call rejects — proved on workerd by `tests/wor
 `D1BatchResult[]` carries its statement's rows and the same `rowsWritten` that `execute` reports. There is no second verb: a `transaction()` wrapper
 would name the same thing twice.
 
-**Never `sql\`BEGIN\``, `COMMIT` or `ROLLBACK` at runtime.** D1 already holds the transaction, so a nested one fails — the rule the migrate lint's
+<!-- rule:forge-sql-explicit-transaction --> D1 already holds the transaction, so a nested one fails — the rule the migrate lint's
 `explicit-transaction` states for migration files, and `forge/sql-explicit-transaction` enforces on runtime source
 ([`src/tooling/lint/README.md`][lint-readme]).
 
@@ -222,14 +215,19 @@ removes every cascading child in the same statement — proved on workerd by the
 that references the parent without a cascade refuses that delete, and the batch rolls back; for an app's key to an `auth_` table, the migration
 lint's `auth-key-blocks-delete` refuses such a key before it is applied ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
 
+<!-- rule:forge-sql-delete-authorised --> A removed row is gone for good, so the authority is written where the statement is.
+`forge/sql-delete-authorised` is opt-in, and forge's consumer baseline turns it on over runtime source
+([`src/tooling/lint/README.md`][lint-readme]).
+
 **The zero-rows trap.** An `UPDATE … WHERE id = ? AND balance >= ?` that matches no row is a success, and the batch commits around it. The answers,
 in order of preference: a `CHECK` such as `quantity >= 0`, so the write itself fails; and `requireRowsWritten()` appended directly after the write
 it protects, for an invariant the schema cannot express or a consumer cannot change. The guard reads `changes()`, which reports the statement
 immediately before it, so it is one guard per protected write and a guard after a non-write is a bug. When a guard fires the batch rolls back and
 the call fails with a `D1Failure` of kind `guard`, the D1 error as its `cause`; D1 does not say which statement failed, so neither does forge.
 
-**Every failure carries a kind, and only a `transient` one is retried.** D1 errors carry message text and no code, so `classifyD1Error` is the one
-place forge reads that text, and every `D1Client` call fails with a `D1Failure` whose `kind` a caller branches on:
+<!-- rule:forge-d1-branch-on-kind --> **Every failure carries a kind, and only a `transient` one is retried.** D1 errors carry message text and no
+code, so `classifyD1Error` is the one place forge reads that text, and every `D1Client` call fails with a `D1Failure` whose `kind` a caller branches
+on:
 
 | Kind | What D1 said | Retried |
 | --- | --- | --- |
@@ -242,10 +240,9 @@ place forge reads that text, and every `D1Client` call fails with a `D1Failure` 
 | `unavailable` | Anything else, an unknown message included | Never |
 
 **`{ idempotent: true }` is the caller's promise that running the call twice does no harm** — an upsert, or an update to a fixed value. Only
-`execute` and `batch` take it; a read is retried by D1 itself, up to twice. A marked call that fails `transient` is tried again up to five times,
-each wait a random share of a ceiling that starts at 100 ms and doubles to a 2 s cap (`D1ClientOptions.retry` changes the policy). An
-`INSERT` of a fresh row is not idempotent: a retry after a commit whose answer was lost writes it twice, or fails `constraint`. Every outcome's
-`meta.attempts` counts the dispatches, D1's own read retries included.
+`execute` and `batch` take it; a read is retried by D1 itself, up to twice. A marked call that fails `transient` is retried under
+`D1ClientOptions.retry`'s policy. An `INSERT` of a fresh row is not idempotent: a retry after a commit whose answer was lost writes it twice, or
+fails `constraint`. Every outcome's `meta.attempts` counts the dispatches, D1's own read retries included.
 
 **Crossing D1 is never atomic.** A Queue send, an R2 put or an email after the batch can succeed while the batch rolled back, or the reverse. Write
 an outbox row in the same batch and let a scheduled handler drain it; a few lines a consumer owns, not a forge helper.
@@ -278,10 +275,15 @@ statement, and 100 columns per table. The client refuses a statement over either
 `meta.attempts` of 0 — nothing is sent. `forge db lint` refuses a `CREATE TABLE` of more than 100 columns (`table-too-wide`,
 [`DATABASE_MANAGEMENT.md`][dm-5] §5), and `forge db migrate compose` refuses a declared table that wide, which is what catches an `ADD COLUMN`.
 
-**A list binds as one JSON parameter, whatever its length.** `json_each` reads it inside the statement, so the statement stays one statement,
-atomic, with its `ORDER BY` and `LIMIT` over the whole list:
+<!-- rule:forge-sql-in-loop --> `json_each` reads the list inside the statement, whatever its length, so the statement stays one statement, atomic,
+with its `ORDER BY` and `LIMIT` over the whole list:
 
 ```ts
+import { sql } from "@y-core/forge/storage/db";
+import type { D1Client } from "@y-core/forge/storage/db";
+
+declare const db: D1Client;
+
 const read = await db.query<User>(
   sql`SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each(${JSON.stringify(emails)}))`,
 );
@@ -311,18 +313,15 @@ table are capped so the whole run stays under the free plan's 50 queries.
 
 ### 2a. createKVStore Factory
 
-`createKVStore` wraps a raw `KVNamespace` with a typed, codec-aware store, and its generic flows through every read and write.
+`createKVStore` wraps a raw `KVNamespace`; `KVStoreOptions` holds its options.
 
-**Always pass `codec` explicitly** — select the one matching the format already stored in the namespace, or the format you intend to write. It
-falls back to `jsonCodec()` when omitted, which is a default for the common case and never a reading of what the namespace already holds.
+<!-- rule:forge-kv-codec-explicit --> Select the one matching the format already stored in the namespace, or the format you intend to write: the
+`jsonCodec()` fallback is a default for the common case and never a reading of what the namespace already holds.
 
 ### 2b. Codecs — jsonCodec, textCodec, bytesCodec
 
-A codec is an `{ encode, decode }` pair mapping between KV's wire format and the application type.
-
-- **`jsonCodec<T>()`** — structured records, arrays, any typed data. The common case.
-- **`textCodec()`** — plain strings: tokens, slugs, flags.
-- **`bytesCodec()`** — binary blobs that must remain unmodified.
+A codec maps between KV's wire format and the application type: `jsonCodec` for typed data, `textCodec` for plain strings, `bytesCodec` for
+binary that must stay unmodified.
 
 ### 2c. KVStore Operations
 
@@ -332,8 +331,7 @@ Every operation is async, and a missing key reads as `null` rather than throwing
 
 ### 2d. resolveKVStore and validateKVBinding
 
-These mirror the D1 pair (§1c, §1d). `resolveKVStore(c, opts)` takes both a `binding` selector and `store` codec options so the returned store is
-immediately typed.
+These mirror the D1 pair (§1c, §1d); `resolveKVStore` also takes the store's codec options, so the returned store is typed at once.
 
 ---
 
@@ -343,15 +341,12 @@ immediately typed.
 
 `createObjectStore` wraps an `ObjectStorageBackend` — **not a raw `R2Bucket`**. Adapt a bucket with `r2Backend` first (§3d).
 
-**There is no `logger` option.** The R2 store performs no per-operation logging; to observe object access, log at the call site or through a logging
-channel.
+**The R2 store logs nothing per operation**: log object access at the call site or through a logging channel.
 
 ### 3b. serveObject — Direct Response from a Backend
 
-`serveObject` retrieves an object and returns a fully-formed `Response` ready to return from a handler: `200` with the body, `206` for a satisfied
-`Range`, `304` or `412` from a precondition, `404` when absent, `416` for an unsatisfiable range. A served object carries `ETag`, and
-`Last-Modified` taken from the object's `uploaded` time, so a client can revalidate by either. `X-Content-Type-Options: nosniff` is set
-unconditionally, because it is what stops an object being sniffed _into_ a type its bytes merely resemble.
+`serveObject` returns a fully-formed `Response` for the handler to return. `X-Content-Type-Options: nosniff` is set unconditionally, because it is
+what stops an object being sniffed _into_ a type its bytes merely resemble.
 
 **No `null` check is needed** — a missing object yields a `404` `Response`, never an unhandled rejection.
 
@@ -424,9 +419,8 @@ requires of every operation: resolving a binding throws, operating on a resolved
 
 ### 3c. Signed URLs for Secure Object Access
 
-`createSignedObjectUrl(ring, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default `3600`),
-appending `?key=`, `?exp=`, `?kid=` and `?sig=`. The ring is a `KeyRing` from `importKeyRing(secrets)` in `@y-core/forge/crypto/keyring`, which
-takes hex secrets newest first: the first one signs, and every one verifies, and `kid` is the signing key's id. **The ring is the kind CSRF uses**
+`createSignedObjectUrl` signs under a `KeyRing` from `@y-core/forge/crypto/keyring`: the first secret signs, every one verifies, and the URL's `kid`
+names the signer. **The ring is the kind CSRF uses**
 ([`INPUT_VALIDATION.md`][iv-3b] §3b), but signed URLs take a secret of their own.
 
 **Every URL is signed under the ring's `signed-url` subkey, never a root secret,** so a CSRF signature made under the same ring does not verify as
@@ -435,17 +429,9 @@ a signed URL. Both functions throw on the auth key ring, which `importKeyRing` d
 **A lifetime is a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, seven days.** Signing throws on anything else — a fraction
 included, since it would mint an `exp` that verification refuses (`src/storage/r2/signing.ts`).
 
-**The HMAC covers the key id as well as the object key and expiry, each length-prefixed — `${kid.length}:${kid}|${key.length}:${key}|${exp}`.**
-The prefixes keep every field boundary unambiguous even when an object key contains the `|` delimiter. A URL whose `kid` is moved onto another
-member of the ring fails the signature because the MAC covers the `kid`, so it fails even where both kids name the same key.
-
-`verifySignedObjectUrl(ring, url)` returns forge's one `Result` primitive — `SignedUrlVerdict`, i.e. `Result<string, SignedUrlFailure>`, whose
-`data` is the object key. **The checks run in this order, and the first to fail names the `error`:**
-
-1. A URL that does not parse, lacks `key`, `exp`, `kid` or `sig`, or carries an `exp` that is not all digits answers `"invalid-format"`.
-2. An `exp` in the past answers `"expired"`.
-3. A `kid` the ring does not hold answers `"unknown-key"`.
-4. A signature that does not match, compared in constant time, answers `"invalid-signature"`.
+**The HMAC covers the key id as well as the object key and expiry, each length-prefixed**, so a `|` in an object key cannot shift a field boundary
+and a `kid` moved onto another ring member fails the signature. `verifySignedObjectUrl` returns a `SignedUrlVerdict` whose `data` is the object
+key and whose `error` names the first check that failed.
 
 **The reason is for the operator, not the client** ([`FORGE_ERRORS.md`][eh-1c] §1c): echoing which check failed tells a caller what to change
 next.
@@ -454,17 +440,16 @@ next.
 the secret any earlier turns every unexpired link it signed into `"unknown-key"`. A leaked secret is the exception: remove it at once and accept
 that its links die.
 
-**Every secret must come from a secret binding, never from source code. Never serve an object from a signed-URL path without verifying the
-signature first.**
+**Never serve an object from a signed-URL path without verifying the signature first.**
 
 ### 3d. r2Backend — Storage Backend Adapter
 
-`r2Backend(bucket)` adapts a Cloudflare `R2Bucket` into the `ObjectStorageBackend` every R2 helper consumes. **Both `createObjectStore` and
-`serveObject` take a backend rather than a raw bucket, which is what keeps the storage layer testable against an in-memory backend.**
+**`createObjectStore` and `serveObject` take a backend, never a raw bucket, so `r2Backend` adapts one** — which is what keeps the storage layer
+testable against an in-memory backend.
 
 ### 3e. Binding Validation for R2
 
-`validateR2Binding(name)` and `resolveObjectStore(c, opts)` follow the same pattern as D1 (§1c, §1d) and KV (§2d). The resolver wraps the bucket
+`validateR2Binding` and `resolveObjectStore` follow §4's pattern. The resolver wraps the bucket
 with `r2Backend` for you.
 
 ---
@@ -503,14 +488,12 @@ wrappers over it. Its canonical home is `@y-core/forge/context`.
 **`bindingSchema(name, methods, label, { optional })` declares one binding; `bindingSetSchema(specs)` declares several in one pass.** Both build
 from the same entry, so the two forms cannot diverge, and an app validates its whole env with one middleware rather than one per binding.
 
-**`optional: true` means an absent binding passes and a present one of the wrong shape still fails.** It relaxes presence, never shape — consistent
-with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit` under `forge cf dev` and the optional resolvers
+**`optional: true` means an absent binding passes and a present one of the wrong shape still fails.** It relaxes presence, never shape (§4a) — the
+schema-side statement of what `rateLimit` under `forge cf dev` and the optional resolvers
 already do at runtime (§5a). A security-critical binding is never declared optional (§5b).
 
-**A rate-limit binding is named in `bindings` like any other, and its window comes from the generated `RATELIMITS` table.** `forge cf gen env`
-emits `RATELIMITS`, `{ NAME: { limit, period } }`, from `wrangler.jsonc`'s `ratelimits` beside the env schema, and a guard group's `rateLimit`
-names a binding the chain finds both here and there. Declaring it required or optional is what decides between a deploy failure and a per-path
-`503` ([`SECURITY_HARDENING.md`][sh-4e] §4e).
+**A rate-limit binding is named in `bindings` like any other**; its window and what required or optional decides are
+[`SECURITY_HARDENING.md`][sh-4e] §4e's.
 
 ---
 
@@ -537,7 +520,7 @@ rather than mirroring the platform's.** An in-memory stub implementing only what
 `r2Backend`, `createKVStore` or `createD1Client` directly — no `@cloudflare/workers-types` value in a test, and no fake obliged to implement a whole
 platform interface to be accepted. A contract widened to mirror the platform type would silently take that away.
 
-**Where a platform brand genuinely forces a cast, localise it in one place inside the adapter — never in a resolver or a consumer.**
+<!-- rule:forge-storage-cast-in-adapter --> The adapter is the one place a platform brand that genuinely forces a cast is absorbed.
 
 ## 5. Dev Degradation
 
@@ -547,13 +530,13 @@ Running tests or `wrangler dev` without a full binding configuration leaves stor
 explicitly for non-critical features:**
 
 - **KV logging** — select channels per request and fall back to console-only ([`STRUCTURED_LOGGING.md`][sl-2d] §2d).
-- **Rate limiting** — run the app with `forge cf dev`, under which `rateLimit` logs and skips an absent binding; every other build answers `503`
-  ([`SECURITY_HARDENING.md`][sh-4b] §4b).
+- **Rate limiting** — run the app with `forge cf dev`, under which `rateLimit` skips an absent binding (§5b).
 - **D1** — provide in-memory fakes in tests rather than branching in production code paths.
+- <!-- rule:forge-session-memory-dev-only --> **Sessions** — an isolate's memory is neither shared nor kept, so a session there is lost.
 - **Optional resolvers** — pass `required: false` to receive `null` instead of a throw.
 
-**Declare such a binding `optional: true` in the schema (§4b)** so the registered check states the same thing the resolver does, rather than the
-middleware demanding a binding the code is written to survive without.
+**Declare such a binding `optional: true` in the schema (§4b)** so the registered check states the same thing the resolver does, rather than
+demanding a binding the code survives without.
 
 ### 5b. Never Degrade Security
 

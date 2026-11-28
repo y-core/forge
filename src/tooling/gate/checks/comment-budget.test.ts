@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 
 import { fail } from "../finding";
-import { checkCommentBudget } from "./comment-budget";
+import { checkCommentBudget, isBudgetedSource } from "./comment-budget";
 import { gateFixtureRoot } from "./gate.fixture";
 
 const roots: string[] = [];
@@ -22,6 +23,14 @@ const messages = (files: Record<string, string>, licences: ReadonlyMap<string, s
 
 const LICENCE = "// Adapted from upstream (MIT, Copyright (c) upstream)\n// itself after another (ISC)\n// https://example.test/upstream\n";
 
+describe("isBudgetedSource()", () => {
+  it("reads TypeScript, TSX and CSS, a root config file included, and nothing else", () => {
+    const names = ["playwright.config.ts", "src/ui/core/button.tsx", "src/ui/assets/css/forge-ui.css", "README.md", "src/x.mjs", "a.json"];
+
+    expect(names.filter(isBudgetedSource)).toEqual(["playwright.config.ts", "src/ui/core/button.tsx", "src/ui/assets/css/forge-ui.css"]);
+  });
+});
+
 describe("checkCommentBudget()", () => {
   it("passes a tree whose every comment is inside the budget", () => {
     expect(messages({ "src/a.ts": "/** Adds one. @public */\nexport const add = (n: number): number => n + 1;\n" })).toEqual([]);
@@ -35,7 +44,7 @@ describe("checkCommentBudget()", () => {
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
-      ["src/ui/a.tsx", 2, "TSDoc spans 2 lines — §5a permits one"],
+      ["src/ui/a.tsx", 2, "TSDoc spans 2 lines — the comment budget permits one"],
     ]);
   });
 
@@ -49,7 +58,7 @@ describe("checkCommentBudget()", () => {
     const root = fixtureRoot({ "src/a.ts": "export const a = 1;\n", "src/b.css": "/* one\n   two\n   three */\n.b { color: red; }\n" });
 
     expect(checkCommentBudget({ root, sources: ["src"] }).findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
-      ["src/b.css", 1, "inline why spans 3 lines — §5a form 3 caps one at two"],
+      ["src/b.css", 1, "inline why spans 3 lines — the comment budget caps one at two"],
     ]);
   });
 
@@ -66,7 +75,32 @@ describe("checkCommentBudget()", () => {
   it("fails a listing with no attribution, because the attribution is what the allowance buys", () => {
     expect(messages({ "src/a.ts": `${LICENCE}export const a = 1;\n` }, new Map([["src/a.ts", "  "]]))).toEqual([
       "`src/a.ts` is listed as carrying a licence notice with no attribution — name the upstream, or cut the header",
-      "3 consecutive `//` lines — §5a form 3 caps an inline why at two",
+      "3 consecutive `//` lines — the comment budget caps an inline why at two",
+    ]);
+  });
+});
+
+describe("checkCommentBudget() — coverTracked", () => {
+  const repo = (files: Record<string, string>): string => {
+    const root = fixtureRoot(files);
+    spawnSync("git", ["init", "-q"], { cwd: root });
+    return root;
+  };
+
+  it("fails a work-tree source outside `sources`, and passes once every one is scanned", () => {
+    const root = repo({ "src/a.ts": "export const a = 1;\n", "scripts/b.ts": "export const b = 1;\n", "README.md": "# r\n" });
+
+    expect(checkCommentBudget({ root, sources: ["src"], coverTracked: true }).findings.map((finding) => [finding.file, finding.message])).toEqual([
+      ["scripts/b.ts", "is outside the comment budget's sources, so nothing reads its comments — add its tree to `sources`"],
+    ]);
+    expect(checkCommentBudget({ root, sources: ["src", "scripts"], coverTracked: true }).findings).toEqual([]);
+  });
+
+  it("fails rather than passing when the root is no git checkout", () => {
+    const root = fixtureRoot({ "src/a.ts": "export const a = 1;\n" });
+
+    expect(checkCommentBudget({ root, sources: ["src"], coverTracked: true }).findings.map((finding) => finding.message)).toEqual([
+      "could not list the git work tree — `coverTracked` needs a checkout to hold the sources against",
     ]);
   });
 });

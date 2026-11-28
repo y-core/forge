@@ -3,10 +3,10 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, literal, other, runRule } from "../lint.fixture.ts";
 import { reducedMotion } from "./reduced-motion.ts";
 
-const CORPUS = "(forge-ui-reduced-motion — src/ui/design/floor.md)";
+const PREFIX = "[forge-ui-reduced-motion] ";
 
 const detail = (token: string): string =>
-  `\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` either the settled state or an opacity fade ${CORPUS}`;
+  `${PREFIX}\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` either the settled state or an opacity fade`;
 
 describe("reduced-motion", () => {
   for (const [text, token] of [

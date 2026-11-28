@@ -29,21 +29,17 @@ are not rebuttable.
 
 ## 1. The fragment is a surface
 
-Default: design the swap target as a standalone surface with its own boundary, heading and spacing, rather than as raw content dropped into a
-parent's layout — unless the fragment is a single inline value such as a count or a status word. <!-- rule:forge-ui-htmx-fragment-is-a-surface -->
-The handler that renders it can be hit directly — by a bookmark, by a retry, by a reload — and what comes back has to be legible on its own.
+<!-- rule:forge-ui-htmx-fragment-is-a-surface --> The handler that renders it can be hit directly — by a bookmark, by a retry, by a reload — and
+what comes back has to be legible on its own.
 
-Default: give every swappable region three states of its own — empty, in-flight, and error — before writing the success case — unless the region can
-never be in any of them. <!-- rule:forge-ui-htmx-fragment-states --> `forge-ui-empty-state` is the Floor for the empty one; this rule extends the
-obligation to the other two, because a fragment's error path is a _response body_, not an exception the page handles.
+<!-- rule:forge-ui-htmx-fragment-states --> `forge-ui-empty-state` is the Floor for the empty one; this rule extends the obligation to the other
+two, because a fragment's error path is a _response body_, not an exception the page handles.
 
-Default: return the empty state from the fragment handler itself rather than branching in the parent — unless the parent must also collapse a
-wrapper the fragment does not own. <!-- rule:forge-ui-htmx-empty-fragment --> A zero-row response that swaps in nothing leaves the reader looking at
-the previous contents, or at an empty box, with no way to tell which.
+<!-- rule:forge-ui-htmx-empty-fragment --> A zero-row response that swaps in nothing leaves the reader looking at the previous contents, or at an
+empty box, with no way to tell which.
 
-Default: swap the smallest region that actually changes — unless the change alters the region's relationship to its neighbours, in which case swap
-the container. <!-- rule:forge-ui-htmx-swap-granularity --> `SWAP` names the strategies; the design consequence of picking a coarse one is that
-everything inside the target is destroyed and rebuilt, including scroll position, selection, and focus.
+<!-- rule:forge-ui-htmx-swap-granularity --> `SWAP` names the strategies; the design consequence of picking a coarse one is that everything inside
+the target is destroyed and rebuilt, including scroll position, selection, and focus.
 
 ---
 
@@ -54,10 +50,9 @@ The swap is the second thing that happens. The first is the request, and what th
 Which placeholder a wait takes, and that it occupies the box the result will, are [`07-states.md`][states]'s — `forge-ui-state-skeleton-shape`,
 `forge-ui-state-spinner-scope` and `forge-ui-state-preserve-layout`. What is specific to a swap is _when_ the placeholder has to exist.
 
-Default: ship the swap target's placeholder in the **initial** page render, before any request goes out, rather than swapping one in — unless the
-region is not visible until the reader asks for it. <!-- rule:forge-ui-htmx-reserve-space --> An empty `<div id="results" />` is a zero-height box:
-the first response pushes everything below it down, and a reader mid-click on something below is the one who pays. The placeholder is what gives the
-region a height before the network is involved at all.
+<!-- rule:forge-ui-htmx-reserve-space --> An empty `<div id="results" />` is a zero-height box: the first response pushes everything below it down,
+and a reader mid-click on something below is the one who pays. The placeholder is what gives the region a height before the network is involved at
+all.
 
 ```tsx
 import { liveSearch } from "@y-core/forge/render/htmx";
@@ -83,14 +78,11 @@ import { Input, Skeleton } from "@y-core/forge/ui/core";
 
 ## 3. Indicators — which element is busy
 
-Default: put the busy state on the control the reader touched, via `hxAttrs`' `indicator` — unless the request was not initiated by a control, as
-with `infiniteScroll`, where the indicator belongs at the point of insertion. <!-- rule:forge-ui-htmx-indicator-on-control --> The reader's
-attention is on the thing they clicked. A spinner two hundred pixels away in a region they are not looking at answers a question nobody asked.
+<!-- rule:forge-ui-htmx-indicator-on-control --> The reader's attention is on the thing they clicked. A spinner two hundred pixels away in a region
+they are not looking at answers a question nobody asked.
 
-Default: disable the initiating control for the duration with `disable`, and prefer the pattern helper that already does it — unless the
-interaction is deliberately repeatable in flight. <!-- rule:forge-ui-htmx-disable-inflight --> `formSubmit` defaults `disable` to `"this"`, so an
-HTMX form built with it is already protected against a double submit. Building the same form by hand and forgetting it is the common route to two
-records.
+<!-- rule:forge-ui-htmx-disable-inflight --> `formSubmit` defaults `disable` to `"this"`, so an HTMX form built with it is already protected against
+a double submit. Building the same form by hand and forgetting it is the common route to two records.
 
 | The wait is for… | Indicator goes on | Placeholder |
 | --- | --- | --- |
@@ -104,23 +96,20 @@ records.
 
 ## 4. Where a result lands
 
-Default: send the outcome of a background or global action to the flash region out-of-band with `FlashOob`, rather than into the swapped surface —
-unless the message is _about_ the swapped content and belongs beside it. <!-- rule:forge-ui-htmx-oob-flash --> `FlashOob` defaults to a `beforeend`
-swap into `#flash-container`, which is the id `FlashContainer` renders — so a result reaches the notification region with no coordination between
-the two handlers. This is the no-redirect sibling of `forge-ui-state-flash-redirect` in [`07-states.md`][states]. Putting "Saved" inside the row
-that was just re-rendered means the confirmation disappears the next time that row is swapped.
+<!-- rule:forge-ui-htmx-oob-flash --> `FlashOob` defaults to a `beforeend` swap into `#flash-container`, which is the id `FlashContainer` renders —
+so a result reaches the notification region with no coordination between the two handlers. This is the no-redirect sibling of
+`forge-ui-state-flash-redirect` in [`07-states.md`][states]. Putting "Saved" inside the row that was just re-rendered means the confirmation
+disappears the next time that row is swapped.
 
 Where a failure renders is [`07-states.md`][states]'s — `forge-ui-state-error-inline` for a failure that belongs to a visible surface,
 `forge-ui-state-error-toast` for one the reader is not watching. Under a swap the two map cleanly onto the two response shapes: the in-place `Alert`
 is the fragment body, and the toast is an out-of-band swap. A 4xx fragment and a marked failure fragment land in their target, and any other 5xx
 leaves the target as it was ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a), so a refusal the reader can fix is rendered at 4xx beside what they did.
 
-Default: target out-of-band swaps at stable ids the page layout owns, and give each one exactly one writer — unless the region is a genuine append
-target such as the flash container. <!-- rule:forge-ui-htmx-oob-scoped --> An OOB selector picks its target client-side, so two handlers writing the
-same id produce an order dependency nobody declared.
+<!-- rule:forge-ui-htmx-oob-scoped --> An OOB selector picks its target client-side, so two handlers writing the same id produce an order dependency
+nobody declared.
 
-Default: append with `infiniteScroll` rather than re-rendering the whole collection — unless the sort or filter changed, in which case the whole
-list is the smallest region that changed. <!-- rule:forge-ui-htmx-append-not-replace -->
+<!-- rule:forge-ui-htmx-append-not-replace -->
 
 ---
 
@@ -131,9 +120,8 @@ loses its position entirely. This is a design defect that has to be planned for 
 
 `forge-ui-focus-ring` guarantees focus is _visible_; nothing guarantees it still exists after the DOM under it is replaced.
 
-Default: choose a swap target that does not contain the control that triggered the request — unless the control is genuinely part of the content
-being replaced. <!-- rule:forge-ui-htmx-restore-focus --> This is usually free: target the results region rather than the wrapper that also holds
-the search field, or the row's content rather than the row.
+<!-- rule:forge-ui-htmx-restore-focus --> This is usually free: target the results region rather than the wrapper that also holds the search field,
+or the row's content rather than the row.
 
 ```tsx
 import { formSubmit, SWAP } from "@y-core/forge/render/htmx";
@@ -156,8 +144,8 @@ import { Button, Form, Input } from "@y-core/forge/ui/core";
 <div id="subscribe-result" class="min-h-10" />;
 ```
 
-Where the triggering control genuinely must be inside the swap — an inline edit that becomes a display row — the replacement has to place focus
-deliberately, on the element that now represents what the reader was doing.
+Where the triggering control must be inside the swap — an inline edit that becomes a display row — the replacement places focus on the element that
+now represents what the reader was doing.
 
 [floor]: ../floor.md
 [htmx]: ../../../../docs/HTMX.md

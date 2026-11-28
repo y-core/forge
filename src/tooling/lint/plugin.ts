@@ -31,10 +31,11 @@ import { sqlTagCalledDirectly } from "./rules/sql-tag-called-directly.ts";
 import { suppressionNeedsReason } from "./rules/suppression-needs-reason.ts";
 import { typeImportExternal } from "./rules/type-import-external.ts";
 import { typeImportSeparation } from "./rules/type-import-separation.ts";
-import type { LintPlugin } from "./types.ts";
+import { vouchedMessageEnvKey } from "./rules/vouched-message-env-key.ts";
+import type { ForgeLintPlugin } from "./types.ts";
 
 /** forge's rules, loaded by naming `@y-core/forge/tooling/lint` in `jsPlugins`. @public */
-export const lintPlugin: LintPlugin = {
+export const lintPlugin: ForgeLintPlugin = {
   meta: { name: "forge" },
   rules: {
     "a11y-aria-beside-data": a11yAriaBesideData,
@@ -68,6 +69,7 @@ export const lintPlugin: LintPlugin = {
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,
     "type-import-separation": typeImportSeparation,
+    "vouched-message-env-key": vouchedMessageEnvKey,
   },
 };
 

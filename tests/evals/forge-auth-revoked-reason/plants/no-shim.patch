@@ -1,0 +1,50 @@
+diff --git a/src/auth/stores/access-tokens.ts b/src/auth/stores/access-tokens.ts
+index 8705721d..3a57ba6f 100644
+--- a/src/auth/stores/access-tokens.ts
++++ b/src/auth/stores/access-tokens.ts
+@@ -63,7 +63,7 @@ export function createAccessTokenStore(db: D1Client): AccessTokenStore {
+       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("accessTokens.recordUse", outcome.error));
+     },
+ 
+-    async revoke(id, userId, at, reason) {
++    async revoke(id, userId, at, reason = null) {
+       const key = uuidKey(id);
+       const owner = uuidKey(userId);
+       if (!key || !owner) return ok(false);
+diff --git a/src/auth/tokens/service.ts b/src/auth/tokens/service.ts
+index 2a9a274d..db380419 100644
+--- a/src/auth/tokens/service.ts
++++ b/src/auth/tokens/service.ts
+@@ -92,7 +92,7 @@ export function createAccessTokenService<const Scope extends string>(options: Ac
+       return listed.ok ? ok(listed.data.map((token) => narrowAccessToken<Scope>(token, configured))) : listed;
+     },
+ 
+-    revoke(id, userId, at, reason) {
++    revoke(id, userId, at, reason = null) {
+       return store.revoke(id, userId, at, reason);
+     },
+   };
+diff --git a/src/auth/tokens/types.ts b/src/auth/tokens/types.ts
+index f3f13823..2fdf65a4 100644
+--- a/src/auth/tokens/types.ts
++++ b/src/auth/tokens/types.ts
+@@ -39,5 +39,5 @@ export interface AccessTokenService<Scope extends string> {
+   issue(input: AccessTokenIssueInput<Scope>, at: number): Promise<Result<AccessTokenIssued<Scope>, AccessTokenIssueReason | AuthStoreError>>;
+   verify(presented: string, at: number, required?: readonly Scope[]): Promise<Result<AuthAccessToken<Scope>, AccessTokenReason | AuthStoreError>>;
+   list(userId: string): Promise<AuthStoreResult<readonly AuthAccessToken<Scope>[]>>;
+-  revoke(id: string, userId: string, at: number, reason: string | null): Promise<AuthStoreResult<boolean>>;
++  revoke(id: string, userId: string, at: number, reason?: string | null): Promise<AuthStoreResult<boolean>>;
+ }
+diff --git a/src/auth/types.ts b/src/auth/types.ts
+index ba89f2ad..accb64b3 100644
+--- a/src/auth/types.ts
++++ b/src/auth/types.ts
+@@ -330,7 +330,7 @@ export interface AccessTokenStore {
+   /** Stamps `last_used_at` unless one landed within `intervalMs`, deciding in the one statement. */
+   recordUse(id: string, at: number, intervalMs: number): Promise<AuthStoreResult<boolean>>;
+   /** Records `reason`, at most 200 characters, beside `revoked_at`; `null` records none. */
+-  revoke(id: string, userId: string, at: number, reason: string | null): Promise<AuthStoreResult<boolean>>;
++  revoke(id: string, userId: string, at: number, reason?: string | null): Promise<AuthStoreResult<boolean>>;
+ }
+ 
+ /** The fields a sign-in supplies when it creates a session row; `tokenHash` is the SHA-256 of the cookie's token. @public */

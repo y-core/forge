@@ -68,9 +68,9 @@ and **no imperative `app.get(...)` / `app.post(...)`**.
 
 ### 1b. Controller — Mapping Route Names to Actions
 
-`createController(routes, { actions })` binds each route name to an action: a bare `RequestHandler`, or `{ middleware, handler }` whose middleware
-runs only for that route. **A route's own guards — the checks that need the route matched — live in the action object**; checks needing only the
-request sit on a chain guard group covering the route, split per §3f. A controller-level `middleware` array applies to all its actions.
+<!-- rule:forge-controller-actions-match-routes --> `createController(routes, { actions })` binds each route name to an action; an action's own
+middleware runs only for that route. **A route's own guards — the checks that need the route matched — live in the action object**; checks needing
+only the request sit on a chain guard group covering the route, split per §3f. A controller-level `middleware` array applies to all its actions.
 
 ### 1c. Registering Routes with `app.map`
 
@@ -116,8 +116,7 @@ whether its path has no route, serves only `GET`, or is mounted only in developm
 paths exist. **`methodMismatch` decides only a safe-method mismatch and a mutation carrying a valid token**; a path outside the policy's `paths`, or
 inside its `exclude`, reaches the answers above unverified (§3e).
 
-Because `defaultHandler` runs inside `dispatchMatches`, a no-match flows back out through the pending-header flush and both error-boundary depths
-exactly as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
+A no-match flows through the pending-header flush and both error-boundary depths as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
 
 ### 1f. Matcher Resource Budgets
 
@@ -126,9 +125,12 @@ ceiling, a whole-matcher ceiling and a per-match work budget — whose values `s
 defaults, because a consumer cannot reach the matcher to set them and an unbounded default is a budget nobody chose.
 
 **The two failures land in different places.** A pattern over the per-pattern ceiling throws `MatcherResourceError` at registration; a URL that
-exhausts the work budget throws during matching, and the error boundary answers `500` ([`FORGE_ERRORS.md`][eh-5b] §5b). Import the class and its
-`MatcherResourceErrorDetails` from `@y-core/forge/router`, never from route-pattern. **The work budget is calibrated against measurement** — 500
-routes matched against a 32 KB URL, twice what Cloudflare delivers, cost roughly half of it — so raise it for a measured match, never a suspicion.
+exhausts the work budget throws during matching, and the error boundary answers `500` ([`FORGE_ERRORS.md`][eh-5b] §5b).
+
+<!-- rule:forge-router-matcher-error-import --> `router` re-exports `MatcherResourceError` and `MatcherResourceErrorDetails`, so an import survives
+a route-pattern upgrade.
+
+**Raise the work budget only for a measured match**: 500 routes against a 32 KB URL, twice what Cloudflare delivers, cost about half of it.
 
 ---
 
@@ -139,14 +141,13 @@ or is any plain `(c: AppContext<Bindings>) => Response`.
 
 ### 2a. Full-Page Routes with `definePage`
 
-`definePage(route, { loader, view, action?, schema?, query?, headers?, cache?, onError? })` runs the optional `action` on an unsafe request, then
-the optional `loader`, then renders `view`. Both return values reach the view through render state, and either may instead return a `Response` to
+`definePage` runs the optional `action` on an unsafe request, then the optional `loader`, then renders `view`; `PageDefinition`
+(`src/app/types.ts`) holds the options. Both return values reach the view through render state, and either may instead return a `Response` to
 short-circuit. **The view returns a `Response`, not a bare JSX element**, and **`definePage` accepts no `middleware` field** (§1b).
 
 **`action` is skipped on a `GET`**, leaving `state.actionData` undefined and `state.method` `"GET"`; a `HEAD` arrives as that `GET`. **Any other
 safe method — `OPTIONS`, `TRACE` — answers `405` and runs neither `action` nor `loader`**: the app's method-mismatch answer, given before the page
-runs, so plain text with the baseline hardening headers and none of the page's `cache` or `headers`. `Allow` names
-`GET, HEAD, POST, PUT, PATCH, DELETE` on an `ANY` route, `GET, HEAD` on a safe-method route, and the route's own method otherwise. The guards in
+runs, so plain text with the baseline hardening headers and none of the page's `cache` or `headers`. The guards in
 front of a page admit every safe method unchecked — `originProtection` and `requireFreshStepUp` read the shared set in `http/method`, and the CSRF
 policy, deliberately stricter, exempts only `GET` and `HEAD` — so a page treating `OPTIONS` as a mutation would run its action past the origin and
 step-up checks.
@@ -164,9 +165,9 @@ wins, the escape hatch for a route that does want to overwrite.
 ### 2b. Action-Only Routes with `defineAction`
 
 `defineAction(route, def)` is the shared pipeline (§2d) ending in `handle`, so **`handle` is unreachable except through a passing `v.safeParse`**.
-`ActionDefinition` (`src/app/types.ts`) owns the options, and [`INPUT_VALIDATION.md`][iv-1d] §1d the schema contract and failure
-statuses. **`handle` returns a `Response`, never delegating to a view**; a plain `(c) => Response` serves where no pipeline is needed. **There is no
-`middleware` field**: a route's guards go in a covering guard group or the controller action (§1b), and the pipeline's body-content guards on `def`.
+`ActionDefinition` (`src/app/types.ts`) owns the options, and [`INPUT_VALIDATION.md`][iv-1d] §1d the schema contract and failure statuses. **There
+is no `middleware` field**: a route's guards go in a covering guard group or the controller action (§1b), and the pipeline's body-content guards on
+`def`.
 
 **The dropped-field set is derived, never declared.** The pipeline drops a body field only because something on that request consumed it: the
 route's guards supply the names they were given, and the CSRF policy publishes its token field on `csrfFieldCtx` (§4a). No option names a field to
@@ -182,8 +183,8 @@ the variable's absence refuses routes that legitimately run no CSRF guard, and c
 
 ### 2c. Health Check Route with `healthCheck`
 
-`healthCheck<Bindings>(checks)` runs each named check concurrently and responds with JSON `{ ok, checks }` — `200` when all pass, `503` otherwise,
-`cache-control: no-store`. It is already a `RequestHandler`, so **register it as a bare handler** with no surrounding route middleware.
+**`healthCheck` is already a `RequestHandler`, so register it as a bare handler** with no surrounding route middleware; its TSDoc holds the
+response it answers.
 
 ### 2d. The Shared Submission Pipeline
 
@@ -195,10 +196,8 @@ validate-before-side-effect structural (§5b). **The sequence is internal to `ap
 projection of `ActionDefinition` the pipeline consumes, so the builders cannot drift, and a route picks its builder by what it answers with — a
 fragment or a page — never by the guards it needs. **`schema` is the one member a page states for itself**, being optional there.
 
-**A pipeline option without a `schema` is refused, at the type level and at registration**, because it would configure nothing — a bot guard that
-never ran. `PageDefinition` is a union of a `{ schema: S }` arm carrying the options and a `{ schema?: never }` arm forbidding each, a **mapped type
-over the same projection**, so a new option extends both arms. `definePage` also **throws at registration** naming the stated keys, since a union's
-own diagnostic is not actionable. Both read the one key list, `PIPELINE_ONLY_KEYS` in `pipeline.ts`.
+**A pipeline option without a `schema` is refused, by `PageDefinition`'s type and by a throw at registration**, because it would configure
+nothing — a bot guard that never ran. Both read one key list, `PIPELINE_ONLY_KEYS` in `pipeline.ts`, so a new option is refused by both.
 
 **The recovery arm is not shared: a throw from inside the sequence lands on the builder's own, deliberately.** The sequence answers what it can — a
 refused body, a tripped guard, an oversized body — and lets a throw escape to the builders' ratified recovery: a `defineAction` throw becomes a
@@ -292,18 +291,16 @@ normative statement of that order; every other page defers here**:
 - **Each rule has one owner.** The session is §3h's and CSRF §3f's. Origin is [`SECURITY_HARDENING.md`][sh-3e] §3e's, and a rate limit — by
   `binding:` name, one or an array, `methods` — is [`SECURITY_HARDENING.md`][sh-4e] §4e's. The statuses, reasons and log fields
   are [`FORGE_ERRORS.md`][eh-3e] §3e's, and a missing session is that document's error boundary ([`FORGE_ERRORS.md`][eh-5b] §5b).
-- **Every refusal but the session's goes through one hook**: the guard's own `onRefuse`, else its group's for the stages a group expands, else the
-  chain's, else forge's plain text; a hook that returns `undefined` declines to the next. A CSRF refusal at a group's verify takes the hook of the
-  last-registered matching group, outside its `exclude`, that verifies and declares one, whichever group's verify ran it; the chain's answers
-  otherwise and at the router's final stage ([`FORGE_ERRORS.md`][eh-3e] §3e).
+- **Every refusal but the session's goes through one hook**, resolved from the guard's own outward to its group's, the chain's and forge's plain
+  text ([`FORGE_ERRORS.md`][eh-3e] §3e).
 - **What throws at registration:** a contribution carrying `csrf`; a second session; `subject: "session"` with no session slot; a slot whose cookie
   `maxAge` is unset or shorter than a contribution's `sessionMaxAgeAtLeastMs`; a contribution's or guard group's `csrfCovers` path under no `csrf`
   policy, outside its `paths` or inside its `exclude`; a `maxAgeMs` that is not a whole number of at least one millisecond; a group's binding
   missing from `bindings` or `rateLimits`; and a group's limit with no `key` under a chain that does not set `trustCfHeaders`
   ([`SECURITY_HARDENING.md`][sh-4d] §4d).
 - **The guard order** is the chain's above, continued after the router's final verify by the route's `middleware`, then a submission's `rateLimit`
-  stage, Turnstile and schema. A limit therefore spends before the token is checked — a tokenless `POST` answers `403` inside the limit and `429`
-  past it, either before an auth guard's `401` and its D1 read — so a group's rate-limit `key` must not read what a guard sets. Identity for a key
+  stage, Turnstile and schema. A group's limit therefore spends before the token and every guard are checked, so its `key` must not read what a
+  guard sets. Identity for a key
   comes from `globals[]` middleware such as `resolveAuth`; a limit keyed by what a guard establishes, or by a route param, goes on the route (§3f).
 - **Where the policy arms.** Under the default `paths: ["*"]` every request but a `GET`, a `HEAD` or a CORS preflight is armed, a URL no route
   matches included (§1e), and verified as §3f gives. A group's `exclude` does not reach the router's final stage, and `unboundPaths` still demands a
@@ -312,8 +309,8 @@ normative statement of that order; every other page defers here**:
   leave uncovered, `authNav` gives a signed-in viewer a link to the sign-out confirm page in place of the form.
 - **`cors` has one placement: `app.use("/api/*", cors(...))`, after `applyMiddlewareChain`.** It answers a preflight — an `OPTIONS` carrying both
   `Origin` and `Access-Control-Request-Method` — without calling `next`. The CSRF policy never arms a preflight and a group's `origin` check passes
-  `OPTIONS` as safe, but a group's rate limit counts it and its `guards` run on it, so a guard refusing uncredentialed requests must pass one: a
-  browser sends a preflight without cookies. Every other `OPTIONS` is armed ([`SECURITY_HARDENING.md`][sh-3a] §3a).
+  it, but a group's rate limit counts it and its `guards` run on it, so a guard refusing uncredentialed requests must pass one: a browser sends a
+  preflight without cookies.
 
 **`contributions[]` fills the same slots and has no position of its own.** Each contribution's `globals` and `guards` join their slot after the
 options' own, in array order, and its `bindings` are validated right after the options' `bindings`. **`validateBindings` sits after
@@ -334,7 +331,7 @@ URL they match**, even where the `paths` beside them match. Each takes `app.use`
 
 **A group's `shape[]` holds its request-shape guards**, such as method and content-type checks, ahead of `origin`. **A group's `origin` and
 `rateLimit` are policy data, not middleware**: the chain expands each group into the order above, and spreading `group.guards` alone silently drops
-both. Hand-written `app.use` chains remain valid for layouts the builder cannot express, but **must respect §3d**.
+both. Hand-written `app.use` chains remain valid for layouts the builder cannot express (§3a).
 
 **An approval's guards are a chain contribution.** `approval.contribution` carries the prompt's origin check and rate limit as a guard group, so
 they run in the chain's first pass with the token verified after them, whichever chain group also covers the prompt's path, and its limit keys under
@@ -391,8 +388,7 @@ Rejected:
 - **A module-scope `contribute()` on a factory the app creates first.** The factory's state then depends on import order, and a health handler
   reading it per request answered differently after a late import. [`WORKERS_PLATFORM.md`][wp-1b] §1b allows a module-level constant and refuses
   module-level mutable state; [`CODE_RULES.md`][cr-1a] §1a's remedy is to inject state as a factory parameter, which is what the list is.
-- **Identity by display label.** Merging menus by their trimmed, lower-cased label made wording into identity: rewording one menu split it from the
-  menu it joined, and two unrelated menus sharing a label merged.
+- **Identity by display label.** Rewording one menu split it from the menu it joined, and two unrelated menus sharing a label merged.
 - **An umbrella `Slice` type carrying every kind of contribution.** Four lists composed at the root express every case; a bundling type would be one
   more shape to learn, tying `app` to `ui/chrome` for nothing the lists cannot do.
 
@@ -410,17 +406,14 @@ place, would otherwise surface later, far from the cause, as a CSRF `unbound-sub
 context lookup per request, and the reason `app` imports `session` at all, through an edge in `config/namespaces.ts` ([`SOURCE_OF_TRUTH.md`][sot-3b]
 §3b).
 
-**`subject: "session"` binds every token to the chain session's id, and a chain given it with no session slot throws at registration.** `app`
-resolves the literal, so `form` never imports `session`; `subject` stays required, and its other choices are [`INPUT_VALIDATION.md`][iv-3a] §3a's. A
+<!-- rule:forge-form-no-session-import --> **`subject: "session"` binds every token to the chain session's id, and a chain given it with no session
+slot throws at registration.** `subject` stays required, and its other choices are [`INPUT_VALIDATION.md`][iv-3a] §3a's. A
 path the policy leaves unbound stays path-only beside `"session"`, so one page can carry a bound sign-out token and an unbound contact token. **The
 app root owns the policy**: it is an option of `applyMiddlewareChain`, never a contribution's, so a slice independent of the auth slice never
 inherits a policy from it, and the one policy has one author.
 
-**Auth's session rules follow from the slot, and [`AUTH_MOUNTING.md`][am-1] §1 holds their detail.** Auth sessions use cookie storage,
-as [`src/session/README.md`][session-readme] rules, and auth keeps one session store per request, which the guards read rather than building their
-own. **The cookie outlives the auth session, checked at build:** the auth contribution states the absolute lifetime it needs, and the chain throws
-at registration where the slot's cookie `maxAge` is shorter or absent. **Sign-out destroys the session**, so a shared device keeps no visitor data,
-unless the app passes the named `signOut: { keepVisitorData: true }`; data a visitor must not lose to a sign-out belongs in the browser. **With the
+**Auth's session rules — cookie storage, one store per request, a cookie outliving the auth session, sign-out destroying the session — follow from
+the slot, and [`AUTH_MOUNTING.md`][am-1] §1 holds them.** **With the
 database down, a request with no sign-in token serves public pages, and one with a token answers `503`, never treated as anonymous.** The session,
 CSRF, auth and app key rings rotate independently, and the slot derives none of them from another.
 
@@ -447,12 +440,14 @@ over fetch-router's `RequestContext`. It is also the canonical home of `validate
 
 ### 4a. `contextVar` Typed Accessor
 
-`contextVar` is a factory for typed accessors over the request context's variable store. **Forge namespaces build accessors with it and export them
-under their own name** — `requestIdCtx` from `security`, `csrfMinterCtx` from `form` — **and consumer code uses those, never ad-hoc context slots.**
+**Consumer code reads a namespace's published accessor — `requestIdCtx` from `security`, `csrfMinterCtx` from `form` — never an ad-hoc context
+slot**; `contextVar` is what a namespace builds its own with.
 
 **`csrfFieldCtx` (from `form`) is a published accessor with a rule attached.** The CSRF policy's mint stage sets it to the token's field before it
-arms anything, so it is present on every request the policy covers, refused or not. **Read it with `.getOptional`, never `.get`: absence is
-meaningful, not an error** — the honest answer that no guard ran on this request, which §2b depends on.
+arms anything, so it is present on every request the policy covers, refused or not.
+
+<!-- rule:forge-csrf-context-get-optional --> **Absence is meaningful, not an error** — the honest answer that no guard ran on this request, which
+§2b depends on.
 
 ---
 
@@ -465,26 +460,23 @@ mutate an already-built response's headers**; per-page headers belong in its `he
 
 ### 5b. Action — the Mutation Terminal Step
 
-`defineAction`'s `handle` takes the validated data **first** and always returns a `Response`; `definePage`'s `action` takes it **last** (§2a), its
-return reaching the view as `state.actionData` unless a `Response` short-circuits. A plain action takes the context alone; `src/app/types.ts` owns
-each shape. **Input validation must occur before any side effect** — structural with a `schema` (§2d), the action's own duty without one (§2a).
+`src/app/types.ts` owns both terminal steps' shapes; a `definePage` `action`'s return reaches the view as `state.actionData` unless it is a
+`Response`. **Input validation must occur before any side effect** — structural with a `schema` (§2d), the action's own duty without one (§2a).
 
 ### 5c. View — `definePage` Render Function
 
-A view builds a `Response` — typically `renderToString` over a JSX tree wrapped with `htmlResponse` — and reads the nonce with
-`getNonce(c)`. **Views must not perform I/O — all data fetching belongs in the loader.**
+<!-- rule:forge-view-no-io --> A view builds a `Response` — typically `renderToString` over a JSX tree wrapped with `htmlResponse` — and reads the
+nonce with `getNonce(c)`.
 
 ### 5d. The `AppContext` Surface
 
-The context is `AppContext<Bindings, Params>` — a `RequestContext` plus `.env`, `.executionCtx` and `.config`. **Inside a `definePage` or
-`defineAction` hook, `c.params` is typed from the route the handler names (§2e)**: a captured param is a `string`, one inside an optional segment
-`string | undefined`, and a name the pattern does not capture is a compile error. **Outside a hook — middleware, a plain handler, a helper typed
-`AppContext<Bindings>` — `c.params` is `Record<string, string | undefined>`**, so any route's context reaches such code; a helper that needs a
+The context is `AppContext<Bindings, Params>`, whose type holds its members. **Inside a `definePage` or `defineAction` hook, `c.params` is typed
+from the route the handler names (§2e); outside one it is a plain record**, so any route's context reaches such code, and a helper that needs a
 `string` names its params with `RouteParams` (§2e).
 
-**Read the request through the standard Web API surface**, bindings through `c.env`, and resolved config through `c.config`. **Build responses with
-the `http` helpers** ([`FORGE_ERRORS.md`][eh-2] §2, §3), read form bodies with `parseFormData(c)` ([`INPUT_VALIDATION.md`][iv-2c] §2c), and read
-context slots through typed `contextVar` accessors (§4), never raw keys.
+<!-- rule:forge-context-typed-accessor --> **Read the request through the standard Web API surface**, bindings through `c.env`, and resolved config
+through `c.config`. **Build responses with the `http` helpers** ([`FORGE_ERRORS.md`][eh-2] §2, §3), and read form bodies with `parseFormData(c)`
+([`INPUT_VALIDATION.md`][iv-2c] §2c).
 
 ---
 
@@ -565,11 +557,9 @@ What the descriptor deliberately does not do:
 [iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-2c]: ./INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit
 [iv-3a]: ./INPUT_VALIDATION.md#3a-the-csrf-policy--guard-mutating-routes
-[session-readme]: ../src/session/README.md#choosing-a-storage-backend
 [sh]: ./SECURITY_HARDENING.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
 [sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
-[sh-3a]: ./SECURITY_HARDENING.md#3a-cors-middleware-for-api-routes
 [sh-3e]: ./SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
 [sh-4d]: ./SECURITY_HARDENING.md#4d-rate-limit-key-selection
 [sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit

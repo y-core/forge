@@ -1,0 +1,9 @@
+diff --git a/src/auth/schema.sql b/src/auth/schema.sql
+index ee5c90d8..1adffd7e 100644
+--- a/src/auth/schema.sql
++++ b/src/auth/schema.sql
+@@ -78,3 +78,3 @@ CREATE TABLE IF NOT EXISTS auth_access_tokens (
+   created_at INTEGER NOT NULL,
+-  revoked_reason TEXT CHECK (revoked_reason IS NULL OR length(revoked_reason) <= 200),
++  revoked_reason TEXT NOT NULL CHECK (length(revoked_reason) <= 200),
+   CHECK (length(token_hash) = 32 AND length(label) BETWEEN 1 AND 100)

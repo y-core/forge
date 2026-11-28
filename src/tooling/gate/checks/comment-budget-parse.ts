@@ -114,12 +114,14 @@ function judgeBlock(file: string, span: CommentSpan, stylesheet: boolean): Findi
   if (lines > (tsdoc ? 1 : 2)) {
     findings.push(
       tsdoc
-        ? fail(`TSDoc spans ${lines} lines — §5a permits one`, {
+        ? fail(`TSDoc spans ${lines} lines — the comment budget permits one`, {
+            rule: "code-rules-comment-budget",
             file,
             line: span.line,
             detail: ["cut it to one sentence on one line, or delete it — a claim about behaviour belongs in a test"],
           })
-        : fail(`inline why spans ${lines} lines — §5a form 3 caps one at two`, {
+        : fail(`inline why spans ${lines} lines — the comment budget caps one at two`, {
+            rule: "code-rules-comment-budget",
             file,
             line: span.line,
             detail: ["keep the part a reader could not derive and would get wrong, in one or two lines; delete the rest"],
@@ -128,7 +130,8 @@ function judgeBlock(file: string, span: CommentSpan, stylesheet: boolean): Findi
   }
   for (const tag of stylesheet ? [] : rejectedTags(span)) {
     findings.push(
-      fail(`\`@${tag}\` — §5a permits only ${PERMITTED_FORMS}`, {
+      fail(`\`@${tag}\` — the comment budget permits only ${PERMITTED_FORMS}`, {
+        rule: "code-rules-comment-budget",
         file,
         line: span.line,
         detail: ["delete the tag; the signature is the parameter documentation, and usage belongs in the unit's `README.md`"],
@@ -216,7 +219,8 @@ function judgeGloss(file: string, source: string, span: CommentSpan): Finding[] 
   if (!spellsTheNameBack || adds.length > 1) return [];
 
   return [
-    fail(`\`${field}\` — the gloss spells the field name back; §5f budgets nothing for that`, {
+    fail(`\`${field}\` — the gloss spells the field name back, which the comment budget has no room for`, {
+      rule: "code-rules-field-gloss",
       file,
       line: span.line,
       detail: ["delete it, or say what the name and the type do not: a default, a unit, a constraint, a caveat"],
@@ -230,9 +234,10 @@ function judgeLedgerId(file: string, span: CommentSpan): Finding[] {
   const line = span.line + (span.text.slice(0, match.index).match(/\n/g)?.length ?? 0);
   return [
     fail(ledgerIdMessage(match[0], "a comment"), {
+      rule: "code-rules-comment-forbidden",
       file,
       line,
-      detail: ["say why in the comment itself (CODE_RULES.md §5b); the row stays in the ledger"],
+      detail: ["say why in the comment itself; the row stays in the ledger"],
     }),
   ];
 }
@@ -268,7 +273,8 @@ function judgeRuns(file: string, source: string, spans: readonly CommentSpan[], 
     const head = run[0];
     if (run.length >= 3 && head !== undefined && !(licensed && head === owned[0])) {
       findings.push(
-        fail(`${run.length} consecutive \`//\` lines — §5a form 3 caps an inline why at two`, {
+        fail(`${run.length} consecutive \`//\` lines — the comment budget caps an inline why at two`, {
+          rule: "code-rules-comment-budget",
           file,
           line: head.line,
           detail: ["keep the part a reader could not derive and would get wrong, in one or two lines; delete the rest"],

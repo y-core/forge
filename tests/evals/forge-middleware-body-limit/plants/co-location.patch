@@ -1,0 +1,97 @@
+diff --git a/src/security/body-limit.test.ts b/src/security/body-limit.test.ts
+deleted file mode 100644
+index 8ef36f64..00000000
+--- a/src/security/body-limit.test.ts
++++ /dev/null
+@@ -1,91 +0,0 @@
+-import { describe, expect, it } from "bun:test";
+-
+-import type { Middleware } from "@remix-run/fetch-router";
+-
+-import { Forge } from "../app/forge-app";
+-import { refuseHookCtx } from "../context/refusal";
+-import type { Refusal } from "../context/types";
+-import { mapHandler } from "../testing/route";
+-import { bodyLimit } from "./body-limit";
+-import type { BodyLimitOptions } from "./types";
+-
+-function makeApp(options: BodyLimitOptions, before: Middleware[] = []) {
+-  const app = new Forge();
+-  app.use("*", ...before, bodyLimit(options));
+-  mapHandler(app, "POST", "/upload", async ({ request }) => new Response(`read ${(await request.arrayBuffer()).byteLength}`));
+-  return app;
+-}
+-
+-function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {
+-  const encoder = new TextEncoder();
+-  return new ReadableStream({
+-    start(controller) {
+-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+-      controller.close();
+-    },
+-  });
+-}
+-
+-function streamed(body: ReadableStream<Uint8Array>): RequestInit {
+-  return { method: "POST", body, duplex: "half" } as RequestInit;
+-}
+-
+-describe("bodyLimit", () => {
+-  it("passes a body within the cap on to the handler, which can still read it whole", async () => {
+-    const res = await makeApp({ maxBytes: 8 }).request("/upload", { method: "POST", body: "12345678" });
+-
+-    expect([res.status, await res.text()]).toEqual([200, "read 8"]);
+-  });
+-
+-  it("refuses 413 on a declared Content-Length over the cap, before the handler runs", async () => {
+-    const res = await makeApp({ maxBytes: 4 }).request("/upload", { method: "POST", body: "12345", headers: { "Content-Length": "5" } });
+-
+-    expect([res.status, await res.text()]).toEqual([413, "Payload Too Large"]);
+-  });
+-
+-  it("refuses 413 on a streamed body that runs past the cap with no Content-Length", async () => {
+-    const res = await makeApp({ maxBytes: 4 }).request("/upload", streamed(streamOf("123", "456")));
+-
+-    expect([res.status, await res.text()]).toEqual([413, "Payload Too Large"]);
+-  });
+-
+-  it("passes a streamed body that stays within the cap", async () => {
+-    const res = await makeApp({ maxBytes: 6 }).request("/upload", streamed(streamOf("123", "456")));
+-
+-    expect([res.status, await res.text()]).toEqual([200, "read 6"]);
+-  });
+-
+-  it("answers through its own hook, handing it the body-limit refusal", async () => {
+-    const seen: Refusal[] = [];
+-    const onRefuse = (_c: unknown, refusal: Refusal) => {
+-      seen.push(refusal);
+-      return new Response("too big", { status: 413 });
+-    };
+-    const res = await makeApp({ maxBytes: 1, onRefuse }).request("/upload", { method: "POST", body: "12" });
+-
+-    expect([res.status, await res.text()]).toEqual([413, "too big"]);
+-    expect(seen).toEqual([{ guard: "body-limit", status: 413, reason: "too-large" }]);
+-  });
+-
+-  it("answers through the chain's hook when it has none of its own", async () => {
+-    const publish: Middleware = (context, next) => {
+-      refuseHookCtx.set(context, () => new Response("chain says no", { status: 413 }));
+-      return next();
+-    };
+-    const res = await makeApp({ maxBytes: 1 }, [publish]).request("/upload", { method: "POST", body: "12" });
+-
+-    expect(await res.text()).toBe("chain says no");
+-  });
+-
+-  it("lets a bodyless request through untouched", async () => {
+-    const app = new Forge();
+-    app.use("*", bodyLimit({ maxBytes: 0 }));
+-    mapHandler(app, "GET", "/page", () => new Response("ok"));
+-
+-    expect((await app.request("/page")).status).toBe(200);
+-  });
+-
+-  it("refuses a cap that is not a whole number of bytes when it is built", () => {
+-    expect(() => bodyLimit({ maxBytes: 1.5 })).toThrow("bodyLimit: maxBytes must be a whole number of bytes, got 1.5");
+-  });
+-});

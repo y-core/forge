@@ -6,6 +6,7 @@ import { build } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { freshness } from "../index/freshness";
 import { packageNameOf } from "../paths";
+import { ruleStatements, statementsDigest } from "../rules/render";
 import { type AliasTable, aliasesFor } from "../search/aliases";
 import { bridgeFrequency } from "../search/coverage";
 import { FLOOR, MARGIN, search } from "../search/search";
@@ -77,7 +78,10 @@ export function checkGoldenQueries(config: GoldenCheckConfig, tier: GateTier = "
   try {
     // `warden` runs first in the same gate and builds this very database from the same sources, so
     // an unconditional second build is repeated work.
-    if (!freshness(db, sources, canonVersion()).fresh) build(db, sources, canonVersion(), packageNameOf(config.root));
+    const statements = ruleStatements({ root: config.root, kind: config.kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+    if (!freshness(db, sources, canonVersion(), statementsDigest(statements)).fresh) {
+      build(db, sources, canonVersion(), packageNameOf(config.root), statements);
+    }
     const aliases = config.aliases ?? aliasesFor(config.kind);
     const findings: Finding[] = [];
     const topOne = new Set<string>();

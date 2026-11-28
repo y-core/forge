@@ -41,6 +41,7 @@ declare const process: {
   readonly stderr: NodeStdioStream;
   kill(pid: number, signal: string | number): void;
   once(event: string, listener: () => void): void;
+  on(event: "unhandledRejection", listener: (reason: unknown) => void): void;
 };
 
 declare module "node:readline/promises" {
@@ -164,6 +165,8 @@ declare module "node:child_process" {
     encoding?: string;
     maxBuffer?: number;
     timeout?: number;
+    killSignal?: string;
+    input?: string;
   }
   interface SpawnSyncReturns {
     status: number | null;
@@ -188,13 +191,19 @@ declare module "node:child_process" {
   interface Readable {
     on(event: "data", listener: (chunk: Buffer) => void): Readable;
   }
+  interface Writable {
+    on(event: "error", listener: (error: Error) => void): Writable;
+    end(chunk?: string): Writable;
+  }
   interface ChildProcess {
     readonly pid?: number;
     readonly exitCode: number | null;
     readonly signalCode: string | null;
+    readonly stdin: Writable | null;
     readonly stdout: Readable | null;
     readonly stderr: Readable | null;
     on(event: "close", listener: (code: number | null) => void): ChildProcess;
+    on(event: "error", listener: (error: Error) => void): ChildProcess;
     kill(signal?: string): boolean;
     unref(): void;
   }
@@ -203,7 +212,7 @@ declare module "node:child_process" {
     command: string,
     args: string[],
     options: SpawnOptions & { stdio?: undefined },
-  ): ChildProcess & { readonly stdout: Readable; readonly stderr: Readable };
+  ): ChildProcess & { readonly stdin: Writable; readonly stdout: Readable; readonly stderr: Readable };
   export function spawn(command: string, args?: string[], options?: SpawnOptions): ChildProcess;
 }
 
@@ -281,4 +290,16 @@ declare module "node:crypto" {
 declare module "node:os" {
   export function tmpdir(): string;
   export function homedir(): string;
+}
+
+declare module "node:vm" {
+  export interface CreateContextOptions {
+    codeGeneration?: { strings?: boolean; wasm?: boolean };
+    microtaskMode?: "afterEvaluate";
+  }
+  export function createContext<T extends object>(sandbox: T, options?: CreateContextOptions): T;
+  export class Script {
+    constructor(code: string, options?: { filename?: string });
+    runInContext(context: object, options?: { timeout?: number }): unknown;
+  }
 }

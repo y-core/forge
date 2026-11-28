@@ -217,9 +217,9 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 
 ### 2k. Platform
 
-The rules in [`reference/16-platform.md`][platform] an agent writes from muscle memory, and that one grep answers with a number. The rest of that
-file is read when the task reaches it; these are checked on every surface. **Items 73–76 are stated flat and no brief rebuts them**; 77–79 are
-Defaults like the rest of this block.
+The platform rules an agent writes from muscle memory, and that one grep answers with a number. The rest of
+[`reference/16-platform.md`][platform] is read when the task reaches it; these are checked on every surface. **Items 73–77 are Floor, in
+`floor.md`, and no brief rebuts them**; 78 and 79 are Defaults like the rest of this block.
 
 73. **Grep** `rg -o '\b(ml|mr|pl|pr)-[0-9.]+|border-[lr]\b|rounded-[lr]\b|text-(left|right)\b'`. Expect 0 hits; the logical spelling is `ms-`/`me-`,
     `ps-`/`pe-`, `border-s`/`border-e`, `rounded-s`/`rounded-e`, `text-start`/`text-end`. `forge-ui-platform-logical-spacing`
@@ -242,10 +242,9 @@ Defaults like the rest of this block.
 **The output of this pass is the counts, not a claim of compliance.** Report the number each item produced, beside the item's rule id. A report that
 says the surface passes, without the numbers that say so, has not run the audit.
 
-**An item you cannot answer with a number is a failed item, not a passed one.** "Looks fine", "not applicable", and silence are all failures — the
-first two because they are judgements the checklist exists to replace, and the third because an unrun item and a clean one are indistinguishable in
-a report that omits both. Where an item genuinely cannot apply, say which item, and say what makes it inapplicable; that sentence is the evidence,
-and it is reviewable.
+**An item you cannot answer with a number is a failed item, not a passed one**: "looks fine", "not applicable" and silence are all failures, because
+the first two are the judgements the checklist replaces and an unrun item reads like a clean one. Where an item genuinely cannot apply, name it and
+say what makes it inapplicable.
 
 A Block 1 failure blocks the work. A Block 2 failure is either repaired or reported with the brief line that overrode it — and there is no third
 disposition, per `forge-ui-review-unattributed-finding`.

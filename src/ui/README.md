@@ -311,14 +311,11 @@ Presentational props are drawn from one vocabulary, so a value means the same th
 named `variant`** — colour is `tone` and emphasis is `appearance`, asked separately ([`UI_SSR_COMPONENTS.md`][usc-1m] §1m). The values are
 declared in [`ui/contracts`](#y-coreforgeuicontracts).
 
-| Prop | Values | Taken by |
-| --- | --- | --- |
-| `tone` | `neutral`, `primary`, `secondary`, `destructive`, `info`, `success`, `warning` | `Button`, `Link`, `Badge`, `Alert`, `Toast`, `Status`, `Steps`, `Timeline`, `Table.Row`, core `Toolbar.Button` / `Toolbar.Link` |
-| `appearance` | `solid`, `soft`, `outline`, `ghost`, `link` | `Button` and core `Toolbar.Button` / `Toolbar.Link` take the whole set; the rest are narrowed to what they can paint — `Badge` takes `solid`/`soft`/`outline`, `Alert` and `Toast` take `solid`/`soft`, `Filter.Item` takes `soft`/`ghost` |
-| `size` | `sm`, `md`, `lg` | `Button`, `Avatar`, `Spinner`, `Kbd`, `Status`, `Table`, `Toggle`, `ToggleGroup.Item`, `Carousel.Dots`, the `Pagination` and `Filter` items, core `Toolbar.Button` / `.Link` / `.Input`, chrome `Dock` / `ThemeToggle` / `ToolbarAction`, and every field control; `Badge` takes `sm`/`md` |
-| `shape` | `default`, `icon`, `square`, `circle` | `Button` and core `Toolbar.Button` / `Toolbar.Link` — an icon-only button is `shape='icon'`, never a size |
-| `orientation` | `horizontal`, `vertical` | anything with a layout axis: `Tabs`, `Toolbar`, `ToggleGroup`, `Slider`, `Progress`, `Separator`, `ScrollArea`, `FormField`, `Field`, `CheckboxGroup`, `RadioGroup`, `Join`, `Steps`, `Timeline` |
-| `invalid`, `busy` | boolean | every field control, each emitting `aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `CheckboxGroup` and `RadioGroup` take an `error` message instead of `invalid`, while their `.Item` keeps `invalid`; a `CheckboxGroup` root stamps `data-invalid` without `aria-invalid`, which ARIA 1.2 deprecates on its `group` role, so mark its `.Item`s `invalid` to announce it; `Button` writes `busy` through `loading` |
+The values are `TONES` and `APPEARANCES` in `src/ui/contracts/vocabulary.ts`, and `Size`, `Shape` and `Orientation` in `src/ui/contracts/types.ts`;
+each component's props interface says which it takes, and LSP's references on the type list the components. A component narrows a set to what it can
+paint — `Badge` takes `solid`/`soft`/`outline` — and the type is the record of it. Every field control takes `invalid` and `busy`, emitting
+`aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `CheckboxGroup` and `RadioGroup` take an `error` message instead, and since ARIA
+1.2 deprecates `aria-invalid` on a `group`, mark their `.Item`s `invalid` to announce it. `Button` writes `busy` through `loading`.
 
 Some props deliberately sit outside it: `Switch`'s label side is `labelPlacement`, and `FormField`'s width-driven collapse is `responsive` — neither
 is an axis, so neither rides `orientation`. `Turnstile`'s `size` is Cloudflare's, passed through verbatim.
@@ -353,10 +350,10 @@ yourself.
 ### Attach your own `data-*` and `aria-*` attributes
 
 Every component forwards **unrecognized props** onto its root (or designated inner) element, so a client-side binding convention attaches without
-re-wrapping anything. The renderer applies its own rules ([`src/render/jsx/render-to-string.ts`](../render/jsx/render-to-string.ts)): values are HTML-escaped and URL-bearing
-attributes additionally scheme-sanitized via `safeUrl`; `style` is **dropped**, because forge's CSP carries no `style-src 'unsafe-inline'`
-([`UI_SSR_COMPONENTS.md`][usc-1a] §1a). Anything you need to position or colour at runtime is therefore a class or a custom property written through
-CSSOM, never a generated `style` string.
+re-wrapping anything. The renderer applies its own rules ([`src/render/jsx/render-to-string.ts`](../render/jsx/render-to-string.ts)): values are
+HTML-escaped and URL-bearing attributes additionally scheme-sanitized via `safeUrl`; `style` is **dropped**, because forge's CSP carries no
+`style-src 'unsafe-inline'` ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a). Anything you need to position or colour at runtime is therefore a class or a
+custom property written through CSSOM, never a generated `style` string.
 
 ### Open a dialog, menu, popover or tab panel with no JavaScript
 
@@ -608,23 +605,17 @@ is a caret-bug generator forge does not ship — so the value is regrouped only 
 character equal to a digit literal is read as that literal. A literal typed where the template has a slot is kept as content, and a value with
 more characters than the template has slots is left as typed.
 
-**The formatted string is what the form posts.** `format` is cosmetic to the user, not to the wire: a `format=` field serialises as
-`"4111 1111 1111 1111"`, and the server schema is half of the contract. Pair it with `formDigits()` from
-[`@y-core/forge/validation`][validation-readme], which reduces the value to its digits so the field parses identically whether or not the script
-ran. With a digit literal, `formDigits()` keeps the literal's digits — `+1 (415) 555-1212` parses as `"14155551212"` — so size the schema for
-them, or reduce the value in the handler with `stripFormat(format, value)` from [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts).
-`format` is never validation — the schema is the truth.
+**The formatted string is what the form posts**, so pair `format` with `formDigits()` from [`@y-core/forge/validation`][validation-readme], which
+reduces the value to its digits whether or not the script ran. A digit literal's digits are kept — `+1 (415) 555-1212` parses as `"14155551212"` —
+so size the schema for them, or reduce the value with `stripFormat(format, value)` from [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts).
+`format` is never validation.
 
-**The server paints the formatted value itself**, running the same transform at render time, so a first paint with JS disabled already reads
-grouped, a re-render after a failed submit agrees with the post-blur value, and the controller's first write is a no-op. Nothing is required of the
-app.
+**The server paints the formatted value itself**, so a first paint without JS already reads grouped; nothing is required of the app.
 
-**`format` and `bind` do not compose.** A bound control's signal _is_ its state, and re-spacing the value would lie to every reader that parses it
-back — `Number("1,234.50")` is `NaN`. The `ui/controls` `Input` does not accept `format`, so passing both is a type error; a `ui/core` `Input`
-given `data-field` by hand and a `format` renders its value raw, and the client refuses the format with one warning and leaves it alone.
+**`format` and `bind` do not compose**, because a bound control's signal is its state and re-spacing it would break every reader that parses it back
+(`Number("1,234.50")` is `NaN`); the `ui/controls` `Input` rejects `format` at the type level.
 
-**Pair it with `tabular-nums` as a caller class** — `class='max-w-xs tabular-nums'` — so the groups do not shift width as digits change. It is
-deliberately not in the component's own classes, which every consumer wears.
+**Pair it with `tabular-nums` as a caller class** — `class='max-w-xs tabular-nums'` — so the groups do not shift width as digits change.
 
 ### Put a CAPTCHA on a form
 
@@ -683,9 +674,8 @@ import { resume } from "@y-core/forge/ui/client";
 resume();
 ```
 
-**This import is not optional if the app renders any scoped component.** Without it the components render correctly but never behave, and `resume()`
-`console.warn`s about the unregistered `data-scope` — silent in the markup, loud only in the console. The rule is
-[`UI_SSR_COMPONENTS.md`][usc-2d] §2d.
+**This import is not optional if the app renders any scoped component**: without it the components render but never behave, and `resume()` warns
+about each unregistered `data-scope` ([`UI_SSR_COMPONENTS.md`][usc-2d] §2d).
 
 One import registers every scope `ui/core` markup names; `src/ui/core/client.ts` is the list, and what each one does is
 [`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
@@ -720,9 +710,7 @@ import { Resumable } from "@y-core/forge/ui/server";
 registerScope("chrome", { eager: true, setup: ({ root, state }) => bindControls(root, state) });
 ```
 
-The required `bind` prop names the signal. **The scope must be `eager: true`**,
-because no bound control stamps a `data-on-*` action of its own — `bindControls` listens once on the scope root, so a bound control's markup names
-its field and nothing else.
+The required `bind` prop names the signal. **The scope must be `eager: true`**, because a bound control stamps no `data-on-*` action of its own.
 
 **Where `bind` lands differs for a compound**, and that is the only thing to remember about this barrel: a plain control binds on itself, while
 `CheckboxGroup`, `RadioGroup` and `ToggleGroup` pass their root through unchanged and bind on `.Item` — whose required `value` is stamped alongside,
@@ -784,8 +772,8 @@ const fr: Record<keyof typeof LABEL_DEFAULTS, string> = { alertDismiss: "Fermer"
 <Alert dismissible dismissLabel={fr.alertDismiss} />;
 ```
 
-**Key your catalogue on the key, never on the English value.** Matching `"Dismiss"` to decide what to render makes every wording fix in forge a
-silent breaking change for you, and one forge's gate cannot detect. The key is the stable name; the value is the thing you are replacing.
+**Key your catalogue on the key, never on the English value**, or every wording fix in forge becomes a silent breaking change for you that no gate
+detects.
 
 `Carousel`'s role descriptions, `carouselRoleDescription` and `carouselSlideRoleDescription`, have no prop of their own: pass the translation as
 `aria-roledescription` on `Carousel` or `Carousel.Item`, together with the `label` without which no role description reaches a reader.
@@ -914,12 +902,11 @@ const glyphs = await loadSpriteGlyphs("/assets/icons.svg"); // { [name]: { viewB
 `parseSpriteGlyphs` is the synchronous half, for sprite text you already hold. Both take an optional id prefix, defaulting to `"icon-"`, and key the
 result by the bare name.
 
-**Both degrade to `{}` and never throw** — on empty input, unparseable markup, a non-`ok` response, or a network error — because a missing glyph map
-must leave the app on its stylesheet default rather than break boot. Guard on an empty map, not on a rejection.
+**Both degrade to `{}` and never throw**, so a missing glyph map leaves the app on its stylesheet default: guard on an empty map, not on a
+rejection.
 
-**`loadSpriteGlyphs` is a boot-time read.** A successful result is memoized per URL and prefix for the life of the isolate, which a deploy resets,
-so calling it inside a handler costs a subrequest and a parse on the first request alone. A failure is never memoized: one transient error would
-otherwise blank every glyph until the isolate is replaced.
+**`loadSpriteGlyphs` is a boot-time read**: a success is memoized per URL and prefix for the isolate's life, so only the first request pays, and a
+failure is never memoized.
 
 The name tuple published here is the one to narrow or validate against when a glyph name arrives from outside your code.
 
@@ -1066,11 +1053,9 @@ though the property is present — only a real access answers, so the helper ret
 `resume()`'s teardown runs it. The runtime owns effects and computeds, not listeners, so a `setup`'s own disposer covers the controllers and
 listeners it installed and never the effects or computeds it created.
 
-**A platform constructor is read off the resolved window too.** A realm **may not have the constructor at all**, and reading it off the resolved
-window doubles as the feature check, so the controller degrades to a no-op disposer rather than throwing; and an observer, timer id or media-query
-list held past the teardown of the realm that minted it is a **cross-realm retention**.
-**Direction is resolved where it is consumed, never cached at mount**, and **an id reference is resolved in the tree that declares it**, because ids
-do not cross a shadow boundary.
+**A platform constructor is read off the resolved window too**, which doubles as the feature check, so a realm without it gets a no-op disposer; and
+nothing a realm minted is held past that realm's teardown. **Direction is resolved where it is consumed, never cached at mount**, and **an id
+reference is resolved in the tree that declares it**, because ids do not cross a shadow boundary.
 
 ### Open a menu where the pointer landed
 
@@ -1189,7 +1174,7 @@ the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An e
 
 ## `@y-core/forge/ui/server`
 
-**SSR-only.** These run in Workers/SSR contexts; never bundle them into the browser.
+**SSR-only** — never bundle these into the browser ([`UI_CLIENT_RUNTIME.md`][ucr-5] §5).
 
 ### Show a message on the page after a redirect
 
@@ -1224,8 +1209,8 @@ messages are dropped first, and a single message too large to fit on its own thr
 
 ### Mark an island the client will resume
 
-`Resumable` is the SSR half of the island pattern: its `name` must match the client-side `registerScope`, and `state` is the serializable object
-rehydrated into signals. It performs no eager hydration of its own — the client decides that.
+`Resumable` is the SSR half of the island pattern: its `name` is a scope the client registers ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c), and
+`state` is the serializable object rehydrated into signals. It performs no eager hydration of its own — the client decides that.
 
 `id` and `class` exist for composition rather than behaviour: `id` makes the scope root a `commandfor` sink, and `class` dresses it — the scope
 root is a real box in its parent's layout, so width, `shrink` and border belong there rather than on a wrapper you add around it.
@@ -1271,12 +1256,12 @@ sections spread across the bar via `justify-between`.
 
 The type does not express these rules, and both bite silently:
 
-- **`href` is a route-map key, never a URL.** It is always passed through the required `resolveHref`, so a bar cannot hardcode a path the router
-  later moves.
+- **`href` is a route-map key, never a URL**, always passed through the required `resolveHref`, so a bar cannot hardcode a path the router later
+  moves.
 - **A `slot` that is a `string` is looked up in the `slots` map**, while a `JSXNode` is rendered inline — which is how a user's name reaches a bar
   that is otherwise static data.
-- **A slot that is a function is called with `{ inMenu }`**, `true` only inside a menu popup. A control that must be a `menuitem` there must not be
-  one at bar level or in the collapsed disclosure copy, where no `role="menu"` encloses it.
+- **A slot that is a function is called with `{ inMenu }`**, `true` only inside a menu popup; return a `menuitem` there only, since no `role="menu"`
+  encloses the bar-level or collapsed copy.
 
 **A group renders a heading over destinations that stay visible** — a `role="group"` wrapper with a `<p>` heading, since `Navbar` cannot know which
 heading level it is nested under. Only a section's items and a mega menu's groups accept one, so a group nested inside a menu is a compile error
@@ -1408,11 +1393,9 @@ browser without `:has()` keeps the full column. The rulings are `forge-ui-nav-ra
 attribute you pass land on the inner `<details>`: they dress the bar, and do not change where it sticks.
 
 **A top or bottom bar sizes its row from `--forge-navbar-height`, and its height is reserved as the page's scroll padding**, so a focused control
-scrolls clear of it. On a phone a `left` bar pins to the top edge and a `right` bar to the bottom, and each is sized and reserved the same way; at
-`md` and up it is a column and reserves nothing. Resize the bar by setting the token on `html`, never with a height class, which the reserve cannot
-see. The bar's row and its reserve never go below 1.75rem, the 28px [Floor][floor] (§1f), whatever the token is set to. An inline bar opened on a
-phone is taller than its reserve while it is open. A drawer's toggle fills that row on a phone, a rail's included, and the open panel starts below
-it, or ends above it on a bottom bar, so the toggle never covers a link; a rail still reserves no scroll padding.
+scrolls clear of it; on a phone a `left` bar pins to the top and a `right` bar to the bottom and reserves the same way, and at `md` and up it is a
+column and reserves nothing. Resize the bar by setting the token on `html`, never with a height class, which the reserve cannot see; neither goes
+below the 28px [Floor][floor] (§1f). A drawer's toggle fills that row on a phone, and the open panel clears it.
 
 `Dock` is the phone-width alternative: a fixed bottom bar of three to five equal-weight destinations, hidden above a breakpoint you choose. It is
 markup only — no scope, no controller. While the bar shows, forge's stylesheet reserves its height at the foot of the page: as scroll padding, so a
@@ -1543,6 +1526,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-3c]: ../../docs/UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ucr-4]: ../../docs/UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
 [ucr-4a]: ../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-and-marked-5xx
+[ucr-5]: ../../docs/UI_CLIENT_RUNTIME.md#5-never-use-uiclient-in-an-ssr-context
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md
 [udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-rule-tiers--floor-and-defaults
 [usc]: ../../docs/UI_SSR_COMPONENTS.md

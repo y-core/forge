@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { packageNameOf } from "../paths";
+import { ruleStatements, statementsDigest } from "../rules/render";
 import { type AliasTable, aliasesFor } from "../search/aliases";
 import type { SourceDoc, Tree } from "../types";
 import { build, type BuildReport } from "./build";
@@ -14,6 +15,8 @@ export interface Knowledge {
   db: Database;
   /** The repository the index was built from — what a caller needs to reach the tree behind it. */
   root: string;
+  /** The canon tree the repository reads, which picks the rules in its scope. */
+  kind: Tree;
   sources: SourceDoc[];
   /** The bridge table this repository's tree earns, resolved once rather than per query. */
   aliases: AliasTable;
@@ -41,6 +44,11 @@ function sourcesOf(root: string, kind: Tree, options: OpenOptions): SourceDoc[] 
   });
 }
 
+function statementsOf(root: string, kind: Tree, options: OpenOptions): ReadonlyMap<string, string> {
+  const dependencyRoot = dependencyRootOf(options, root);
+  return ruleStatements({ root, kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+}
+
 /** Opens the index, building it if it is absent and refreshing it if it is behind. @public */
 export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): Knowledge {
   const canonVersion = options.canonVersion ?? "unknown";
@@ -49,6 +57,7 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
   const knowledge: Knowledge = {
     db,
     root,
+    kind,
     sources: [],
     aliases: aliasesFor(kind),
     advisory: "",
@@ -56,7 +65,15 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
       const sources = sourcesOf(root, kind, options);
       knowledge.sources = sources;
 
-      const state = freshness(db, sources, canonVersion);
+      let statements: ReadonlyMap<string, string>;
+      try {
+        statements = statementsOf(root, kind, options);
+      } catch (error) {
+        knowledge.advisory = `the rule register could not be read, so the index was not refreshed — ${error instanceof Error ? error.message : String(error)}`;
+        return;
+      }
+
+      const state = freshness(db, sources, canonVersion, statementsDigest(statements));
       if (state.fresh) {
         knowledge.advisory = "";
         return;
@@ -65,7 +82,7 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
       // A rebuild is whole rather than per-document: an external-content FTS table needs careful
       // bookkeeping to have rows deleted from it correctly.
       try {
-        build(db, sources, canonVersion, packageNameOf(root));
+        build(db, sources, canonVersion, packageNameOf(root), statements);
         knowledge.advisory = "";
       } catch (error) {
         // The index is behind and could not be brought forward; the sections it names have not
@@ -83,9 +100,10 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
 /** Rebuilds the index from disk unconditionally. @public */
 export function rebuild(root: string, kind: Tree, options: OpenOptions = {}): BuildReport {
   const sources = sourcesOf(root, kind, options);
+  const statements = statementsOf(root, kind, options);
   const db = openDatabase(options.path ?? indexPath(root));
   try {
-    const report = build(db, sources, options.canonVersion ?? "unknown", packageNameOf(root));
+    const report = build(db, sources, options.canonVersion ?? "unknown", packageNameOf(root), statements);
     // A build that empties the tables frees pages without returning them to the OS. `VACUUM` needs
     // a handle outside any transaction, which `refresh()` on the server's hot path does not have.
     db.run("VACUUM");

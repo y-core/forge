@@ -1,6 +1,5 @@
 import { classLiteralVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 // The inline axis only, and only the utilities Tailwind gives a logical spelling: a block-axis
 // rewrite changes no rendering in any writing mode forge ships, so mirroring is the whole point.
@@ -33,17 +32,16 @@ export function logicalUtility(token: string): string {
 }
 
 /** A physical Tailwind utility, which does not mirror in a right-to-left writing mode. */
-export const platformLogicalSpacing: LintRule = {
+export const platformLogicalSpacing = defineLintRule("forge-ui-platform-logical-spacing", {
   meta: {
     type: "problem",
     docs: { description: "Inline-axis spacing is written logically, so the layout mirrors with the writing mode instead of staying left-handed." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-logical-spacing");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = new Set<string>();
       for (const match of found.text.matchAll(PHYSICAL_UTILITY)) hits.add(match[0]);
       for (const hit of hits) report(`physical utility \`${hit}\` — use \`${logicalUtility(hit)}\``, found.loc);
     });
   },
-};
+});

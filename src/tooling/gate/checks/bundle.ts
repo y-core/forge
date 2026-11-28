@@ -8,6 +8,9 @@ import { moduleImports } from "./packaging";
 import { collectFiles } from "./source-scan";
 import type { BundleCheckConfig, ExportsMap, NodeBundle, NodeExportsCheckConfig, NodeManifest } from "./types";
 
+/** The verb that regenerates every bundle, named in each one's banner and in its drift finding. @internal */
+export const BUNDLE_FIXER = "bun run gen:bundles";
+
 // A specifier the compiler cannot read keeps the optional peer out of a consumer's type-check.
 const ESBUILD = "esbuild";
 const NODE_BUNDLE_CONDITION = "forge-node-bundle";
@@ -76,6 +79,18 @@ export async function checkBundle(config: BundleCheckConfig): Promise<CheckResul
 /** Writes a fresh bundle over the committed one. @public */
 export async function writeBundle(config: BundleCheckConfig): Promise<void> {
   writeFileSync(resolve(config.root, config.bundle), await bundleSource(config), "utf-8");
+}
+
+/** Regenerates each of `bundles` under `root`, through `write` so a test can record the calls. @internal */
+export async function writeBundles(
+  root: string,
+  bundles: readonly NodeBundle[],
+  write: (config: BundleCheckConfig) => Promise<void> = writeBundle,
+): Promise<void> {
+  for (const { entry, bundle } of bundles) {
+    await write({ root, entry, bundle, fixer: BUNDLE_FIXER });
+    console.log(`wrote ${bundle}`);
+  }
 }
 
 function nodeTarget(target: ExportsMap[string]): string | undefined {
@@ -191,4 +206,9 @@ export function checkNodeExports(config: NodeExportsCheckConfig): CheckResult {
       }),
     );
   return checkResult([...listed, ...unlisted], "every `forge.node` export points `import` at a generated `.mjs`");
+}
+
+if (import.meta.main) {
+  const root = resolve(import.meta.dir, "../../../..");
+  await writeBundles(root, nodeBundles(root, JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8")) as NodeManifest));
 }

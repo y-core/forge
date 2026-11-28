@@ -58,7 +58,7 @@ library's tests, and the next application will re-implement it differently.
 
 ### 1b. Capability Classes the Library Owns
 
-Where a need falls in one of these classes, the answer is almost always that the library already has it — check before writing:
+Where a need falls in one of these classes, the library almost always has it already:
 
 CSRF minting and verification · security headers and CSP nonces · HTML escaping and response builders · structured logging · input validation · rate
 limiting · origin verification · session and cookie handling · the app factory and asset serving · declarative routing · config validation and typed
@@ -107,17 +107,16 @@ governance.
 
 ### 2a. Import Through the Library Subpath, Always
 
-**Every library capability is imported from its published subpath, never from the package the library wraps.** Where the library exposes a
-validation facade, an application imports the facade — not the underlying schema library. Where it exposes an HTTP namespace, an application imports
-that — not the header or template package underneath.
+**Every library capability is imported from its published subpath, never from the package the library wraps**: the validation facade, not the
+schema library under it; the HTTP namespace, not the header or template package.
 
 **The ban reaches test files.** A test that imports the wrapped package directly bypasses the facade exactly as production code would, and will not
 follow the next version bump. There is no "it is only a test" carve-out, because the failure mode is identical.
 
 ### 2b. Never Reach Into node_modules
 
-**Never import from a library-internal path, and never import a transitive dependency of the library as though it were your own.** A transitive
-dependency is not a dependency an application declared: it can vanish in a patch release, and nothing will warn.
+<!-- rule:forge-consumption-internal-path --> Nor is a transitive dependency of the library imported as though it were your own: an application
+never declared it, so it can vanish in a patch release, and nothing will warn.
 
 Where an application genuinely needs a package the library also uses, **declare it as a direct dependency** — then it is a shared dependency by
 intent rather than by accident.
@@ -164,14 +163,14 @@ A local workaround is **one named module in the application's own layer**, not a
 An upstream request is easiest to accept when it arrives with three things: the **concrete call site** that needs it, the **signature** the
 application would use, and the **namespace** the capability belongs in by the library's own placement rules.
 
-**Do not upstream a change shaped by one application's convenience.** A parameter added to make this application's call shorter is a parameter every
-other consumer now has to understand. If the general form is not obvious, say so and let the library decide the shape.
+**Do not upstream a change shaped by one application's convenience**, since every other consumer must then understand it; if the general form is
+not obvious, say so and let the library decide the shape.
 
 ### 3d. What Is Never Worked Around Locally
 
-**A security or boundary surface is never patched locally.** CSRF verification, origin checking, header policy, session handling, input validation,
-and the fail-closed posture ([`BOUNDARIES.md`][boundaries-5] §5) are the library's to own, and a local variant of one is a security control that no
-shared review, test suite, or upgrade path covers.
+**A security or boundary surface is never patched locally**: CSRF verification, origin checking, header policy, session handling, input validation
+and the fail-closed posture ([`BOUNDARIES.md`][boundaries-5] §5) are the library's, and a local variant is a control no shared review, test suite or
+upgrade path covers.
 
 Where such a surface genuinely does not fit, that is an upstream conversation, and until it is resolved the correct application behaviour is to
 **refuse the request**, not to route around the control.
@@ -182,8 +181,8 @@ Where such a surface genuinely does not fit, that is an upstream conversation, a
 
 ### 4a. Verify Against the Library's Published Surface
 
-**Verify every symbol name, signature, and subpath against the library's actual source before writing against it** — never against memory of a
-previous version, and never against a documentation snippet in this repository.
+**Verify every symbol name, signature, and subpath against the library's actual source before writing against it**, never against memory or a
+documentation snippet in this repository.
 
 Where the two repositories are developed together, the application's type-check is the check that proves the pair agrees. **A green type-check on
 the application is the evidence a library change is consumable**, and it is worth running before the library change is released rather than after.
@@ -200,7 +199,9 @@ unspecified iteration, is a dependency on an internal by another route.
 
 **The dependency is the released tarball by URL**, `https://pkg-forge.ysite.workers.dev/v<version>/y-core-forge-<version>.tgz`. It is the GitHub
 Release asset that forge's `release` workflow packs with `bun pm pack`, relayed at the same path, so forge's `files` field decides what arrives and
-the lock carries its `sha512`. **Never pin a `codeload.github.com` URL**: it serves a git snapshot that honours no manifest.
+the lock carries its `sha512`.
+
+<!-- rule:forge-consumption-no-codeload --> Such a URL serves a git snapshot, which honours no manifest.
 
 **A library upgrade is its own change, with nothing else in it.** Bundling an upgrade with a feature makes a bisect useless: when something breaks,
 there is no commit that isolates the cause, and the reviewer is asked to judge two unrelated risks at once.
@@ -215,8 +216,7 @@ The sequence is fixed:
 **A type error surfaced by an upgrade is information, not an obstacle.** Silencing one with a cast converts a compile-time signal that the contract
 changed into a runtime failure later, and it is the single most common way an upgrade ships broken.
 
-Where an upgrade cannot be taken because it breaks something the application depends on, **say which symbol and why** — that is the input §3c needs,
-and it is far more useful than a pinned version nobody can explain.
+Where an upgrade cannot be taken, **say which symbol breaks and why**: that is the input §3c needs, unlike a pinned version nobody can explain.
 
 ---
 
@@ -231,13 +231,12 @@ The library publishes its colour in two tiers, and they are for different caller
 | Semantic tokens | A role — the surface, the text on it, the border | Library components, and app markup that must match them |
 | The numbered scale | The steps a scheme declares, one per family | App markup only |
 
-**A library component resolves only a semantic token; the library's own governance binds it, and an application never widens that.** The consequence
-for an application is the useful half: because every component asked for a role, app markup that reaches for the _same role_ is guaranteed to match
-a component beside it under any scheme, in either mode.
+**A library component resolves only a semantic token, by the library's own governance, and an application never widens that.** So app markup that
+reaches for a component's _same role_ is guaranteed to match it under any scheme, in either mode.
 
 **Where the roles run out, the scale is the sanctioned answer** — not a literal, and not a component override that fights the role it just asked
-for. A semantic layer is deliberately narrow: it names the surfaces a component set needs, which is fewer than the surfaces a page wants. Reaching a
-step for a band, a wash, or a section a component will never render is consuming the library as intended, not bypassing it.
+for. A semantic layer names only the surfaces a component set needs, so reaching a step for a band, a wash, or a section no component renders is
+consuming the library as intended.
 
 ### 5b. Register a Step, Never Inline One
 
@@ -259,12 +258,11 @@ that reads correctly in one mode and washes out in the other is that substitutio
 **A raw colour literal in markup or a component remains forbidden**, and widening the palette narrows the excuse for one: a literal is now a value
 that exists outside both tiers.
 
-**Choose a step by the role it carries in the scale, never by how it looks.** The steps are ordered and audited — a scheme documents which are
-surfaces, which are borders, which are solid fills, and which carry text. Picking the one that happens to look right rediscovers the palette-by-eye
-problem the semantic tier was built to end, one section at a time.
+**Choose a step by the role it carries in the scale, never by how it looks**: a scheme documents which steps are surfaces, borders, solid fills and
+text, and picking by eye rediscovers the problem the semantic tier was built to end.
 
 **Which steps a scheme declares, which are already spoken for by a semantic name, and how a step is registered in the local build are
-implementation** — they are named in the application's own design documentation, never here.
+implementation**, named in the application's own design documentation, never here.
 
 [aa-2]: ./APP_ARCHITECTURE.md#2-the-layer-stack
 [boundaries]: ./BOUNDARIES.md

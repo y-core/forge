@@ -108,6 +108,117 @@
   },
   "overrides": [
     {
+      // A controller never imports another controller; shared behaviour is middleware or a service (APP_ARCHITECTURE.md §2b).
+      "files": ["src/controllers/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
+              {
+                "group": ["@y-core/forge/tooling", "@y-core/forge/tooling/*", "@y-core/forge/tooling/**"],
+                "message": "A build-time subpath belongs in config/, scripts/ or playwright.config.ts — never in src/ or tests/."
+              },
+              {
+                "group": ["./*", "./**", "../controllers", "../controllers/**", "**/controllers/**"],
+                "message": "[app-architecture-controller-imports-controller] A controller never imports another controller — move the shared behaviour to middleware or a service."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // A service never imports a controller or a view (APP_ARCHITECTURE.md §2b).
+      "files": ["src/services/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
+              {
+                "group": ["@y-core/forge/tooling", "@y-core/forge/tooling/*", "@y-core/forge/tooling/**"],
+                "message": "A build-time subpath belongs in config/, scripts/ or playwright.config.ts — never in src/ or tests/."
+              },
+              {
+                "group": ["**/controllers", "**/controllers/**", "**/views", "**/views/**"],
+                "message": "[app-architecture-service-imports-ui] A service never imports a controller or a view — a service that renders is not a service."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // A view never imports a service or a controller; its props were resolved before it was called (APP_ARCHITECTURE.md §2d).
+      "files": ["src/views/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
+              {
+                "group": ["@y-core/forge/tooling", "@y-core/forge/tooling/*", "@y-core/forge/tooling/**"],
+                "message": "A build-time subpath belongs in config/, scripts/ or playwright.config.ts — never in src/ or tests/."
+              },
+              {
+                "group": ["**/services", "**/services/**", "**/controllers", "**/controllers/**"],
+                "message": "[app-architecture-view-imports-service] A view never imports a service or a controller — resolve the value in the controller and pass it in."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // A spec's job is adversarial markup, so the a11y and design rules are off in the suite —
       // forge draws the same line in its own config. `exact-markup-assertion` replaces them: it is
       // the rule that matters for a test, and the canon bans substring matching on markup anyway.

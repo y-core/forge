@@ -4,6 +4,7 @@ import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { fnv1a } from "../corpus/hash";
 import { discover } from "../corpus/source";
 import { load } from "../index/build";
+import { ruleStatements } from "../rules/render";
 import type { Tree } from "../types";
 
 /** What the duplication check needs to know about the project. @public */
@@ -65,7 +66,8 @@ export function duplicatePairs(config: DuplicateCheckConfig): DuplicatePair[] {
     ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
   });
   const docsDir = config.docsDir ?? "docs";
-  const { pairs } = score(shingle(sources), config.threshold ?? THRESHOLD);
+  const statements = ruleStatements({ root: config.root, kind: config.kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+  const { pairs } = score(shingle(sources, statements), config.threshold ?? THRESHOLD);
   return pairs
     .map((pair) => ({ a: pair.a.id, b: pair.b.id, score: pair.score, klass: klass(pair, docsDir) }))
     .sort((left, right) => left.klass - right.klass || right.score - left.score || (left.a < right.a ? -1 : 1));
@@ -85,7 +87,8 @@ export function checkDuplicates(config: DuplicateCheckConfig): CheckResult {
     return scannedNothing("discovery found no document to compare — the corpus roots are wrong", "warden:duplicates", "read");
   }
 
-  const sections = shingle(sources);
+  const statements = ruleStatements({ root: config.root, kind: config.kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+  const sections = shingle(sources, statements);
   const { pairs, highest } = score(sections, threshold);
   const docsDir = config.docsDir ?? "docs";
   pairs.sort((left, right) => klass(left, docsDir) - klass(right, docsDir) || right.score - left.score);
@@ -106,9 +109,9 @@ export function checkDuplicates(config: DuplicateCheckConfig): CheckResult {
 }
 
 /** Every chunk long enough to compare, as a set of hashed word shingles. */
-function shingle(sources: Parameters<typeof load>[0]): Section[] {
+function shingle(sources: Parameters<typeof load>[0], statements: ReadonlyMap<string, string>): Section[] {
   const sections: Section[] = [];
-  for (const entry of load(sources)) {
+  for (const entry of load(sources, undefined, statements)) {
     for (const chunk of entry.chunks) {
       if (!chunk.searchable || chunk.section.endsWith(NAVIGATIONAL)) continue;
       const words = chunk.searchBody.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];

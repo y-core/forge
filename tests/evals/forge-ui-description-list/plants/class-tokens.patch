@@ -1,0 +1,13 @@
+diff --git a/src/ui/core/description-list.tsx b/src/ui/core/description-list.tsx
+index a8dd5f36..0caac34d 100644
+--- a/src/ui/core/description-list.tsx
++++ b/src/ui/core/description-list.tsx
+@@ -22,7 +22,7 @@ const DescriptionListRoot: FC<DescriptionListProps> = ({ class: cls, children, "
+ );
+ 
+ const DescriptionListTerm: FC<DescriptionListTermProps> = ({ href, class: cls, children, "data-slot": inherited, ...rest }) => (
+-  <dt data-slot={slotToken("description-list-term", inherited)} class={cn("font-medium text-foreground", cls)} {...rest}>
++  <dt data-slot={slotToken("description-list-term", inherited)} class={cn("font-medium text-foreground-strong", cls)} {...rest}>
+     {href === undefined ? (
+       children
+     ) : (

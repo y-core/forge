@@ -1,6 +1,6 @@
 import { openingTag } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 /** The `Filter` element a chip sits in, taking the nearest of the two so a wrapped chip reports its group. */
 function enclosingFilterTag(node: AstNode): string | undefined {
@@ -13,13 +13,12 @@ function enclosingFilterTag(node: AstNode): string | undefined {
 }
 
 /** A `<Filter.Item>` reached from a `<Filter>` with no `<Filter.Group>` between them. */
-export const interactionFilterGroupRequired: LintRule = {
+export const interactionFilterGroupRequired = defineLintRule("forge-ui-interaction-filter-group-required", {
   meta: {
     type: "problem",
     docs: { description: "A filter chip sits in a `Filter.Group`, which is the element carrying the radiogroup and its name." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-interaction-filter-group-required");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         if (openingTag(node) !== "Filter.Item") return;
@@ -28,4 +27,4 @@ export const interactionFilterGroupRequired: LintRule = {
       },
     };
   },
-};
+});

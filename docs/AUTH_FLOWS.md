@@ -161,7 +161,7 @@ under `capabilities` because TypeScript narrows a union only on a direct discrim
 
 Every ceremony is two endpoints and two CSRF tokens. The server half stamps a contract onto the scope root; the browser half reads it off that
 element and runs the ceremony ([`NAMESPACES.md`][namespaces-5h] §5h). **A token each, because the app's CSRF policy binds a token to one path** — a
-ceremony spanning `begin` and `finish` cannot share one, and naming them apart is what stops either being sent to the wrong endpoint.
+ceremony spanning `begin` and `finish` cannot share one, and naming them apart stops either reaching the wrong endpoint.
 
 The controller checks WebAuthn support **at mount, not at the press**: an unsupported browser reveals the fallback line and disables the trigger,
 rather than failing after the visitor has committed.
@@ -175,7 +175,7 @@ enrolled around — and so is one who owes an enrolment while holding another se
 to the settled path.
 
 The ceremony posts to `enrol.ceremony.begin` for options and `enrol.ceremony.finish` with the credential. Registration excludes the credentials the
-user already has, so re-enrolling one authenticator is refused by the browser rather than by a database conflict later. `finish` writes no session
+user already has, so re-enrolling one authenticator is refused by the browser, not by a later database conflict. `finish` writes no session
 state: enrolment does not sign anyone in.
 
 **A settled user adds a passkey through the account, never through `enrol.passkey`.** `accountRoutes`' `passkeyEnrol` page runs the same
@@ -190,10 +190,10 @@ the `enrol` pages instead (§2c), because `require-enrolment` refuses them the w
 **A primary factor must identify the visitor, and a passkey identifies nobody — so no configuration makes one start a sign-in.**
 `AuthFactorsOptions.primary` takes only a service whose kind is drawn from `AUTH_IDENTIFYING_FACTORS`: offering the passkey as primary is a type
 error, and `createFactorRegistry` refuses it at runtime for a consumer casting past the type. The sign-in page therefore renders no passkey
-trigger in any deployment, and there are no discoverable endpoints to answer.
+trigger in any deployment, and no discoverable endpoint answers.
 
-A passkey ceremony always requires user verification: it only ever runs as a step-up or an enrolment, and a fresh human gesture is the point of one.
-The second half of a sign-in runs the same step-up pair as any other step-up — §2c describes where its resolution sends the visitor.
+<!-- rule:forge-auth-passkey-user-verification --> A passkey only ever runs as a step-up or an enrolment, and a fresh human gesture is the point of
+one. The second half of a sign-in runs the same step-up pair as any other step-up (§2c).
 
 ### 3c. Management
 
@@ -246,12 +246,12 @@ A passkey factor given `prf` salts asks the authenticator to evaluate its PRF du
 derive a key its server never holds.
 
 **The output is handed to the page and nowhere else.** The controller gives it to the handler `onPasskeyPrf` registered, after the server has
-verified the ceremony and before the page navigates. It is never posted to the server, and it never rides on `PASSKEY_OUTCOME_EVENT`, because a
-DOM event bubbles to every listener on the page. The server never learns whether a PRF result came back.
+verified the ceremony and before the page navigates. It never reaches the server, nor `PASSKEY_OUTCOME_EVENT`, whose DOM event bubbles to every
+listener on the page.
 
-**Support is judged by a real 32-byte result, never by `prf.enabled` or `getClientCapabilities()`.** Both misreport: an authenticator can claim
-PRF and return nothing. So the handler is called whenever the options asked for PRF, with `output` set to `null` when no 32-byte result arrived.
-That lets a page tell "this passkey has no PRF" from "nothing ran" before navigation tears it down.
+<!-- rule:forge-auth-prf-by-output --> `prf.enabled` and `getClientCapabilities()` both misreport: an authenticator can claim PRF and return
+nothing. So the handler is called whenever the options asked for PRF, with `output` set to `null` when no 32-byte result arrived. That lets a page
+tell "this passkey has no PRF" from "nothing ran" before navigation tears it down.
 
 **Step-up salts are keyed per credential, and none are sent when the user has no listed credential.** The browser matches each salt against
 `allowCredentials`. It throws `NotSupportedError` on `evalByCredential` with an empty `allowCredentials`, and `SyntaxError` on a key that list
@@ -283,14 +283,14 @@ attempts each spend one rather than all comparing against a count none has writt
 the first guess made more than `lockoutMs` after the one that hit the cap — the same `UPDATE` that admits it resets the count to 1. The default is
 `AUTH_TOTP_LOCKOUT_MS`, configurable on `TotpAppFactorOptions` up to a day, because a longer window is the permanent lock this exists to prevent. A
 refused guess writes nothing, so the window runs from the moment the cap was hit rather than from the last attempt, and hammering the factor cannot
-hold it shut. Without the window a user who mistypes `maxAttempts` times loses the factor for good, and where it is their only second factor, that
-is the whole account. The ceiling holds on the enrolment ceremony too, which answers the same secret.
+hold it shut. Without the window a user who mistypes `maxAttempts` times loses the factor for good — and, as their only second factor, the
+whole account. The ceiling holds on the enrolment ceremony too, which answers the same secret.
 
 The secret is stored sealed under a per-purpose subkey with the user's own identity as associated data, so a secret lifted from one row cannot be
 replanted on another.
 
 **Re-opening an unfinished enrolment shows the same secret again, not a new one.** A mistyped code re-renders the page, and a page that rotated the
-secret would hand back one the visitor's authenticator does not hold — a ceremony that could never be finished. The row is rebuilt only when the
+secret would hand back one the visitor's authenticator does not hold. The row is rebuilt only when the
 stored secret will not open, which is a rotated key rather than an abandoned attempt.
 
 **The code width and step follow the factor**, read off `codeDigits` and `codePeriodSeconds` rather than assumed, so a configured `digits` or
@@ -347,8 +347,7 @@ typed against `AuthViewName`, so there is no adapter to write.
 
 **The link only reads, because a link scanner opens it before its owner does.** Mail scanners, prefetchers and preview panes issue the `GET` a
 mailed link carries; a `GET` that burned the token let the scanner approve or complete the move and left the owner's own click answering
-`consumed`. Submitting the form is a step only a person takes. Do not act from the `GET` handler, and do not add your own idempotency around the
-`POST`: the nonce store already makes it single-use.
+`consumed`. **Act only from the `POST`**, a step only a person takes, and add no idempotency of your own: the nonce store makes it single-use.
 
 **The `POST` renders two success pages, and the failure arm needs `instanceof`.** The success value `confirm` answers is a union discriminated on
 `status`, and its error is a union of a string literal and the `AuthStoreError` class, so those two arms are told apart by type rather than by
@@ -380,7 +379,7 @@ admit it — so both controls are disabled on the page with their own reason, an
 instead of a full table scan. A substring in the middle of an address — the domain, say — matches nothing. Search by the start of the local part.
 
 **The last-admin guard lives in the statement's own `WHERE`, not in a count-then-write.** Two concurrent demotions therefore leave one admin
-standing rather than none, and the admin count the page displays is a display value only — never the thing a write is trusted against.
+standing rather than none; the count the page displays is never what a write is trusted against.
 
 Deleting a user removes its children first, in one batch that rolls back whole. A row in an app table that still references the user refuses
 the delete, and the page answers **409** with the outcome `referenced`: the app's own records go first.
@@ -493,7 +492,7 @@ primary, and a revocation holds on the next request. How the bookmark carrier ro
 ## 9. Recovery — No Lost Value Locks an Account Out or Lets It In on Less
 
 **No missing key, device or code may lock an account out, and none may let it in on less than it needed before.** Every way back below passes
-through a second factor the user still holds. The one exception is the administrator's reset (§9e), and it is deliberate.
+through a second factor the user still holds. The one exception is the administrator's reset (§9e), by design.
 
 | What was lost | What the user sees | How they get back in |
 | --- | --- | --- |
@@ -528,6 +527,9 @@ The purge runs only where `totp-app` is offered as mandatory. It drops a stale r
 factor or an unused recovery code, and keeps the row of anyone who holds neither. It answers a `TotpSecretPurgeReport` counting both. A replacement
 (§3c) seals the new secret under the active key, so a user the purge was keeping leaves its `kept` count by replacing the app.
 
+<!-- rule:forge-auth-last-verified-stamp --> The purge measures staleness by `last_verified_at`: left NULL, the first run drops every long-standing
+user's factor; stamped on a merely spent guess, it reaches no one.
+
 ### 9c. Recovery Codes
 
 **Recovery codes are required beside the second factors, and are not one of them.** `AuthSecondFactorOffering` takes them as `recovery`, apart
@@ -542,15 +544,15 @@ redirected to verify and brought back to the codes page.
 
 **The handler measures the step-up against the window the guard is configured with, never a window of its own.** A tightened
 `freshStepUpMaxAgeMs` tightens code issuance with it, and `null` still demands a step-up in this session, of any age — the guard opting out of the
-demand does not let a mailbox mint codes. Where `require-fresh-step-up` did not run on the request, no window exists and the handler sends the user
-to verify on every attempt. The window itself is set at the mount ([`AUTH_MOUNTING.md`][am-2] §2).
+demand does not let a mailbox mint codes. Where `require-fresh-step-up` did not run, no window exists and the handler sends the user
+to verify every time. The window itself is set at the mount ([`AUTH_MOUNTING.md`][am-2] §2).
 
 **A new set replaces the old one only when the user types one of the new codes back.** Generating a set stages it, and the old set keeps working
 until the confirmation, so a set the user never saved costs them nothing.
 
-**A set is shown once, laid out for copying, and is never downloadable.** The codes page presents a new set in one block the user can copy
-whole, and tells them to keep it somewhere safe now, because it will not be shown again. No route hands a set over as a file — not a file
-endpoint, not a `data:` link and not a blob the page builds. Only the SHA-256 of each code is stored, and the page is sent `no-store`.
+<!-- rule:forge-auth-recovery-codes-no-file --> **A set is shown once, laid out for copying.** The codes page presents a new set in one block the
+user can copy whole, and tells them to keep it somewhere safe now, because it will not be shown again. Only the SHA-256 of each code is stored, and
+the page is sent `no-store`.
 
 **Each code works once.** Using one spends it and clears the factor's spent guesses in the same batch. A wrong code spends a guess, against the
 same `maxAttempts` and `lockoutMs` budget the authenticator app uses. Spaces, dashes and letter case are ignored.

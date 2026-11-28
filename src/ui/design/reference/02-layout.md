@@ -27,25 +27,16 @@ alone, none of them related to any other.
 
 ## 1. The scale is the vocabulary
 
-Tailwind v4 builds every spacing utility from one base unit of `0.25rem` (4px), so `p-4` is 16px and `gap-6` is 24px. Anything expressible as a
-multiple of that unit is a legal utility, which is why a rule is needed: the constraint is restraint, not legality. `forge-ui-spacing-scale-only` is
-the Floor — no arbitrary values, no hand-typed pixel offsets.
+<!-- rule:forge-ui-layout-scale-step --> Tailwind v4 builds every spacing utility from one base unit of `0.25rem` (4px), so `p-4` is 16px and
+`gap-6` is 24px. Anything expressible as a multiple of that unit is a legal utility, which is why a rule is needed: the constraint is restraint, not
+legality. `forge-ui-spacing-scale-only` is the Floor — no arbitrary values, no hand-typed pixel offsets.
 
-Default: a surface draws its spacing from a small set of steps chosen up front — `2`, `3`, `4`, `6`, `8`, `12`, `16` is a workable default set —
-rather than picking a fresh value at each decision, unless a brief specifies a density other than forge's ratified default.
-<!-- rule:forge-ui-layout-scale-step -->
-
-Default: no two spacing values on one surface sit within 25% of each other — `gap-5` beside `gap-6` reads as a mistake rather than a distinction,
-while `gap-4` beside `gap-6` reads as deliberate — unless the two values are set by two different forge primitives whose internals the surface does
-not control. <!-- rule:forge-ui-layout-step-distance -->
+<!-- rule:forge-ui-layout-step-distance -->
 
 ## 2. Ambiguous spacing
 
-A group of elements reads as a group when there is more space _around_ it than _within_ it. When the two are equal — or worse, inverted — the reader
-has to parse the content to find the boundaries, which is work the layout was supposed to do.
-
-Default: the gap separating two groups is at least twice the gap separating members within a group, unless a `Separator` or a background change is
-already carrying the boundary. <!-- rule:forge-ui-layout-group-gap-ratio -->
+<!-- rule:forge-ui-layout-group-gap-ratio --> A group of elements reads as a group when there is more space _around_ it than _within_ it. When the
+two are equal — or worse, inverted — the reader has to parse the content to find the boundaries, which is work the layout was supposed to do.
 
 ### 2a. Worked example — a form
 
@@ -101,8 +92,7 @@ import { FormField, Input } from "@y-core/forge/ui/core";
 </FormField.Group>;
 ```
 
-Default: `FormField.Group` and `FormField.Content` keep their built-in gaps, unless a brief sets a density that requires the whole form to move
-together — in which case both move, and the ratio between them is preserved. <!-- rule:forge-ui-layout-field-gap-ladder -->
+<!-- rule:forge-ui-layout-field-gap-ladder -->
 
 ### 2b. Worked example — a card
 
@@ -114,27 +104,21 @@ together — in which case both move, and the ratio between them is preserved. <
 | `Card.Content` | `px-6 py-5` | whatever the content sets |
 | `Card.Footer` | `px-6 py-4` | `gap-2` between actions |
 
-The title and its description sit 6px apart; the header and the content sit 40px apart, because each contributes its own 20px of vertical padding.
-The header's bottom border makes the boundary explicit besides.
+<!-- rule:forge-ui-layout-card-section-rhythm --> The title and its description sit 6px apart; the header and the content sit 40px apart, because
+each contributes its own 20px of vertical padding. The header's bottom border makes the boundary explicit besides.
 
-Default: content inside a `Card` uses the section components rather than padding the root directly, so the section rhythm survives, unless the card
-holds a single edge-to-edge element such as an image or a table that should bleed to the border. <!-- rule:forge-ui-layout-card-section-rhythm -->
-
-Default: spacing between siblings is expressed with `gap-*` on the flex or grid parent rather than margins on the children, unless one child needs a
-distance the others do not. <!-- rule:forge-ui-layout-gap-over-margin -->
+<!-- rule:forge-ui-layout-gap-over-margin -->
 
 ## 3. Stacking
 
-A `Stack` layers its children in one cell: the first child is the readable one and the next two peek out behind it, fanned towards `placement`. It
-is for a pile the reader will open — a deck of cards, a bundle of thumbnails — where the offset says "there is more" and the top item says what.
-
-Default: a `Stack` shows at most three layers and only the top one is read; a pile deeper than that is a count (`Badge` in an `Indicator`) or a
-list, never a taller fan. <!-- rule:forge-ui-layout-stack-depth -->
+<!-- rule:forge-ui-layout-stack-depth --> A `Stack` layers its children in one cell: the first child is the readable one and the next two peek out
+behind it, fanned towards `placement`. It is for a pile the reader will open — a deck of cards, a bundle of thumbnails — where the offset says
+"there is more" and the top item says what.
 
 ## 4. Width and the measure
 
-A container that spans the viewport is not a layout decision; it is the absence of one. Every text region needs a ceiling, and
-`forge-ui-measure-cap` is the Floor that sets it.
+<!-- rule:forge-ui-layout-measure-container --> A container that spans the viewport is not a layout decision; it is the absence of one. Every text
+region needs a ceiling, and `forge-ui-measure-cap` is the Floor that sets it.
 
 | Region | Reach for |
 | --- | --- |
@@ -143,23 +127,16 @@ A container that spans the viewport is not a layout decision; it is the absence 
 | A page's main content column | `max-w-5xl` to `max-w-7xl`, with `mx-auto` |
 | A data table | no ceiling; bound the scroll instead |
 
-Default: a content column carries a `max-w-*` ceiling and centres with `mx-auto`, unless the region is a table, a canvas, or a media element whose
-value comes from filling the space. <!-- rule:forge-ui-layout-measure-container -->
-
 ## 5. Tables and lists
 
-A table earns its markup when a reader compares rows on the same attributes — three columns of like values, scanned down rather than across. One
-value per record is a list, and a `<table>` around it hands assistive technology a grid to navigate for no gain, while costing the responsive
-collapse a list gets free.
-
-Default: tabular data with two or more comparable columns per record uses `Table`, and a single-value-per-record sequence uses a list, unless the
-columns exist only to align a label against its value — a definition list or a `Field` layout carries that better.
-<!-- rule:forge-ui-table-not-list -->
+<!-- rule:forge-ui-table-not-list --> A table earns its markup when a reader compares rows on the same attributes — three columns of like values,
+scanned down rather than across. One value per record is a list, and a `<table>` around it hands assistive technology a grid to navigate for no
+gain, while costing the responsive collapse a list gets free.
 
 ## 6. Grouping without borders
 
-The most common way a machine-composed layout announces itself is a border around everything. A border is the loudest available way to say "these
-things belong together", and it is almost never the one the content needs.
+<!-- rule:forge-ui-layout-border-budget --> The most common way a machine-composed layout announces itself is a border around everything. A border
+is the loudest available way to say "these things belong together", and it is almost never the one the content needs.
 
 Ways to group, in ascending order of force:
 
@@ -169,18 +146,10 @@ Ways to group, in ascending order of force:
 | Middle | A `--muted` background panel, or a `Separator` between runs | The boundary matters but the group is not a distinct object |
 | Heaviest | A `Card`, which draws `--border` and `shadow-sm` | The group is a distinct object the user could act on as a unit |
 
-Default: grouping is expressed by spacing first, by a `--muted` background or a `Separator` second, and by a `Card`'s border last, unless a brief
-describes a surface of peer objects — a dashboard of independent panels — where the card border is what makes them countable.
-<!-- rule:forge-ui-layout-border-budget -->
+<!-- rule:forge-ui-layout-separator-over-border -->
 
-Default: a divider between rows of one list uses `Separator` rather than a `border-b` utility on each row, unless the rows are already interactive
-and need a hover background that a `<hr>` would interrupt. <!-- rule:forge-ui-layout-separator-over-border -->
-
-Default: a panel that needs to read as recessed rather than raised uses a `--muted` background with no border, unless it sits directly on a
-`--muted` surface already, where the two would merge. <!-- rule:forge-ui-layout-muted-panel -->
-
-`forge-ui-no-nested-card` is the Floor here. When a card's content needs internal grouping, that is exactly the case the `--muted` panel above
-exists for.
+<!-- rule:forge-ui-layout-muted-panel --> `forge-ui-no-nested-card` is the Floor here. When a card's content needs internal grouping, that is
+exactly the case the `--muted` panel above exists for.
 
 ### 6a. Before / after — the bordered list
 
@@ -214,11 +183,8 @@ import { Card, Separator } from "@y-core/forge/ui/core";
 
 ## 7. Bounding a region that grows
 
-A list whose length comes from data will eventually be longer than its slot. Letting the page grow is right for a primary content column and wrong
-for a sidebar, a panel, or anything beside it.
-
-Default: a region whose height is driven by unbounded data and is not the page's main column is wrapped in `ScrollArea` with an explicit height,
-unless the region is the page's primary content, where the document scroll is the correct scroll. <!-- rule:forge-ui-layout-scroll-area-bound -->
+<!-- rule:forge-ui-layout-scroll-area-bound --> A list whose length comes from data will eventually be longer than its slot. Letting the page grow
+is right for a primary content column and wrong for a sidebar, a panel, or anything beside it.
 
 ```tsx
 import { ScrollArea } from "@y-core/forge/ui/core";

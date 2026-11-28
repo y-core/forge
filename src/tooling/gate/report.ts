@@ -2,7 +2,7 @@ import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { formatFinding } from "./finding";
 import { failsWhenAbsent } from "./steps";
-import type { Finding } from "./types";
+import type { Finding, GateFailure } from "./types";
 import type { GateReceipt, GateTier, Step, StepReach } from "./types";
 import type { SummaryInput } from "./types";
 
@@ -25,6 +25,38 @@ export function formatFailureExcerpt(output: string, tail: number): string {
     .slice(-tail)
     .map((line) => `    ${line}`)
     .join("\n");
+}
+
+const TSC_ERROR = /^(\S+?)\((\d+),\d+\): error (TS\d+: .*)$/;
+
+const LOCATED_ERROR = /^(\S+?):(\d+):\d+: (?:error )?(.*)$/;
+
+const TEST_FAILURE = /^\(fail\) (.*?)(?: \[[\d.]+m?s\])?$/;
+
+/** A failed command step's output as `--json` failures: each located compiler, linter or test error, else the output's tail. @internal */
+export function commandFailures(step: string, output: string, tail: number): GateFailure[] {
+  const found: GateFailure[] = [];
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    const located = TSC_ERROR.exec(line) ?? LOCATED_ERROR.exec(line);
+    if (located !== null) found.push({ step, file: located[1] ?? "", line: Number(located[2]), message: located[3] ?? "" });
+    const test = TEST_FAILURE.exec(line);
+    if (test !== null) found.push({ step, message: `test failed: ${test[1] ?? ""}` });
+  }
+  return found.length > 0 ? found : [{ step, message: formatFailureExcerpt(output, tail).replace(/^ {4}/gm, "") }];
+}
+
+/** A failed check step's `fail` findings as `--json` failures. @internal */
+export function findingFailures(step: string, findings: readonly Finding[]): GateFailure[] {
+  return findings
+    .filter((finding) => finding.level === "fail")
+    .map((finding) => ({
+      step,
+      ...(finding.rule === undefined ? {} : { rule: finding.rule }),
+      ...(finding.file === undefined ? {} : { file: finding.file }),
+      ...(finding.line === undefined ? {} : { line: finding.line }),
+      message: finding.message,
+    }));
 }
 
 /** Formats a check step's findings, indented to match a command step's failure excerpt. */

@@ -13,4 +13,14 @@ export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url
 export const CSS_DIR = "src/ui/assets/css";
 
 /** Every tree the comment budget holds, with the generated bundles a local `wrangler dev` leaves in any `.wrangler` excluded. */
-export const COMMENT_BUDGET_SOURCES = ["src", "config", "warden/src", "tests", ".types", "playwright.config.ts", "!**/.wrangler"];
+export const COMMENT_BUDGET_SOURCES = [
+  "src",
+  "config",
+  "warden/src",
+  "warden/claude/skills",
+  ".claude/skills",
+  "tests",
+  ".types",
+  "playwright.config.ts",
+  "!**/.wrangler",
+];

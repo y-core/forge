@@ -51,15 +51,10 @@ mapping — is [`04-color-authoring.md`][ca]'s, which also carries the palette a
 
 ### 1a. Why twelve steps, and never a generated shade
 
-A neutral scale needs enough steps that every surface, border and text role has a defensible one, and few enough that two designers reaching for "a
-light grey" land on the same value. Forge ships twelve, and each carries a published meaning, so a step is looked up rather than eyeballed.
+<!-- rule:forge-ui-color-scale-ramp-only --> A neutral scale needs enough steps that every surface, border and text role has a defensible one, and
+few enough that two designers reaching for "a light grey" land on the same value. Forge ships twelve, and each carries a published meaning, so a
+step is looked up rather than eyeballed.
 
-Default: a shade comes from a declared step of the scale, or from a semantic token built on one, and is never generated on the fly — no `color-mix`
-against an arbitrary percentage, no one-off opacity faking an intermediate grey — unless a brief introduces a brand hue, which is then declared as
-steps in a theme file like every other. <!-- rule:forge-ui-color-scale-ramp-only -->
-
-Default: two adjacent steps are not used together as a foreground/background pair — `--gray-9` on `--gray-10` is a contrast failure before it is an
-aesthetic one — unless the pair is a _decorative_ boundary against its own surface, where low contrast is the point.
 <!-- rule:forge-ui-color-scale-adjacent-stops -->
 
 ### 1b. Decorative lines against affordances
@@ -84,16 +79,10 @@ should be and where Radix puts it; `--input` and `--track` are step 10 (3.33 in 
 preserving the one-step gap that keeps `focus:border-ring` from being a no-op. Adopting step 7 because it is _called_ the UI element border puts a
 text field's sole boundary back under the floor.
 
-**Steps 7 and 8 keep Radix's values.** The two systems are not in disagreement — they answer different questions with different instruments. Radix's
-guarantee is about _text_, at steps 11 and 12, and is stated in APCA; 1.4.11 is measured with WCAG 2.x's relative-luminance ratio, and 7 was never a
-number Radix put under that floor.
-
-What settles it is that **Radix's own text-field pattern does not reach 3:1 either** — a step-4 fill inside a step-7 border measures 1.16 (fill
-against the page), 1.49 (border against the page) and 1.28 (border against fill) in light. Adopting that shape would buy a tint, not an identifier,
-so forge's mapping is the stricter line rather than a workaround for a defect. And the geometry closes the alternative: on a near-white page a 3:1
-identifier has to be step 10 or darker, so a compliant step 7 would land darker than Radix's step 10 and squeeze steps 7–10 into a span too narrow
-to stay perceptually even. `theme-base.css` holds the mapping itself. The accepted cost is that forge's input border is visibly heavier than a
-Radix-based UI's.
+**Steps 7 and 8 keep Radix's values**, because Radix's guarantee is about text at steps 11 and 12, stated in APCA, while 1.4.11 is a WCAG 2.x ratio
+Radix never put step 7 under. **Radix's own text-field pattern does not reach 3:1 either**, and on a near-white page a 3:1 identifier has to be step
+10 or darker, so forge's mapping is the stricter line rather than a workaround; `theme-base.css` holds it. The accepted cost is an input border
+visibly heavier than a Radix-based UI's.
 
 Where a control has a fill to be identified by, none of this binds — `Switch` and `Slider` are read by their track, and `CheckboxGroup` and
 `RadioGroup` are painted so that a checked box is a filled box. It is the text field, whose interior is the page colour, that leaves its border
@@ -101,18 +90,12 @@ carrying the whole identification.
 
 ### 1d. One step along the scale, never an opacity tint
 
-Default: a surface that needs "slightly lighter" or "slightly darker" moves one step along the scale rather than applying an opacity modifier to the
-current colour, unless the element is genuinely translucent over content it must not hide — a scrim or an overlay, which is what `--overlay` and the
-absolute `--black-a1` … `--black-a12` and `--white-a1` … `--white-a12` ramps are for. <!-- rule:forge-ui-color-scale-no-adhoc-tint -->
-
-Opacity tinting looks equivalent and is not: it composites against whatever is behind, so the same class produces a different result on
-`--background` than on `--card`, and a different result again under `.dark`.
+<!-- rule:forge-ui-color-scale-no-adhoc-tint --> Opacity tinting looks equivalent and is not: it composites against whatever is behind, so the same
+class produces a different result on `--background` than on `--card`, and a different result again under `.dark`.
 
 **The absolute alpha ramps are the sanctioned form of translucency, and a per-scheme one cannot be.** `--black-a1` through `--black-a12` and
-`--white-a1` through `--white-a12` are identical in both modes, and that mode-stability is the whole point. A per-scheme alpha step composites over
-its own scheme's step 1, which makes it page-relative and so mode-inverting — black over a light page, white over a dark one. A scrim has to darken
-whatever is behind it in _both_ modes, so a page-relative step cannot express one, which is why forge ships no per-scheme alpha scale. `--overlay`
-is `--black-a6`, the dialog backdrop.
+`--white-a1` through `--white-a12` are identical in both modes, while a per-scheme alpha step composites over its own scheme's step 1 and so inverts
+with the mode, and a scrim has to darken whatever is behind it in both. `--overlay` is `--black-a6`, the dialog backdrop.
 
 The `--cast-*` and `--rim-*` families in `theme-colors.css` are the sanctioned mode-swapping composition of those two ramps: each is a
 `light-dark()` that selects one absolute step against `transparent`, so a single shadow value can carry ink in light and a rim in dark. See
@@ -140,24 +123,15 @@ The `--cast-*` and `--rim-*` families in `theme-colors.css` are the sanctioned m
 
 The `--status-*` tokens are the other half of the semantic layer, and they answer a different question — see §7.
 
-Default: interactive feedback — hover, open, selected — is expressed with `--accent` and its paired foreground, as `buttonVariants` does for
-`secondary` and `ghost`, unless the element's resting state is already `--accent`, in which case it moves to `--primary`.
 <!-- rule:forge-ui-color-semantic-accent-interactive -->
 
-Default: a background token is set together with its `*-foreground` partner and never with a foreground from a different pair, unless the element
-inherits a foreground from a parent that has already set the matching one. <!-- rule:forge-ui-color-semantic-pairing -->
-
-`forge-ui-foreground-pairing` is the Floor that makes this non-negotiable; the rule above is the positive form of it, and the table is where you
-look up which partner is correct.
+<!-- rule:forge-ui-color-semantic-pairing --> `forge-ui-foreground-pairing` is the Floor that makes this non-negotiable; this rule is the positive
+form of it, and the table is where you look up which partner is correct.
 
 ## 3. Colour supports meaning; it never carries it
 
-A red badge means "failed" only to a reader who can see red, is not looking at the screen in sunlight, and already knows the convention. Everyone
-else needs the word.
-
-Default: every state distinguished by colour is also distinguished by a word, an icon, or a position — a `Badge` says "Failed" as well as being red,
-an `Alert` carries an `Alert.Title` — as required by the Floor rule `forge-ui-not-color-alone`, unless the colour is decorative and encodes no state
-at all. <!-- rule:forge-ui-color-semantic-support-only -->
+<!-- rule:forge-ui-color-semantic-support-only --> A red badge means "failed" only to a reader who can see red, is not looking at the screen in
+sunlight, and already knows the convention. Everyone else needs the word.
 
 ### 3a. Before / after — status in a table
 
@@ -208,13 +182,10 @@ the accent ramp rather than the greys, so it is the one that carries a hue.
 Because `@theme inline` resolves each Tailwind colour utility through `var()`, `bg-card` means whatever `--card` currently means. Toggling `.dark`
 on the document element moves every one of them at once, with no recompile — the class changes `color-scheme`, and the browser re-picks each branch.
 
-This is the whole case for `forge-ui-color-token-only`: a raw utility **survives** the theme switch, and that is the failure. `bg-gray-100` stays
-light grey when the page goes dark, so the element it was applied to becomes a bright rectangle in the middle of a dark surface. `bg-card` moves
-with the theme. The rule is not stylistic tidiness — an untokenised colour is a visible defect the moment a user flips the theme.
-
-Default: a colour reaches the page through a semantic token — including the `--status-*` family for the status intents — and a scale step is
-named directly only inside `theme-base.css` or a theme file, unless the colour is a fixed hue no forge token covers, in which case the utility
-carries its own `dark:` counterpart. <!-- rule:forge-ui-color-theme-no-raw-utility -->
+<!-- rule:forge-ui-color-theme-no-raw-utility --> This is the whole case for `forge-ui-color-token-only`: a raw utility **survives** the theme
+switch, and that is the failure. `bg-gray-100` stays light grey when the page goes dark, so the element it was applied to becomes a bright rectangle
+in the middle of a dark surface. `bg-card` moves with the theme. The rule is not stylistic tidiness — an untokenised colour is a visible defect the
+moment a user flips the theme.
 
 The exemption is the `dark:` counterpart, not the fixed hue: a raw utility with no dark half survives the theme switch.
 
@@ -245,11 +216,8 @@ Note the border went away as well — see `forge-ui-layout-muted-panel` in `02-l
 `forge-ui-contrast-floor` fixes the ratios. What that Floor does not say, and what the layering makes easy to forget, is that a passing ratio is a
 property of _one scale in one mode_.
 
-**Every shipped scheme is built on one lightness ramp and differs only in hue**, so every audited ratio is the same across them to within **0.05**,
-by construction rather than by coincidence, which is why the contract in `src/tooling/gate/checks/contrast-parse.ts` can pin one set of numbers and
-have them describe every scheme alike. A scheme swap cannot move a pair across its floor.
-
-The ratios themselves are `src/tooling/gate/checks/contrast-parse.ts`'s to own.
+**Every shipped scheme is built on one lightness ramp and differs only in hue**, so every audited ratio agrees across them by construction and a
+scheme swap cannot move a pair across its floor; the ratios are `src/tooling/gate/checks/contrast-parse.ts`'s to own.
 
 That guarantee is a property of the construction, not of theming in general. A scheme an application authors itself is on its own ramp and is bound
 by no such distance, which is what the rules below are for.
@@ -259,23 +227,14 @@ hue itself, so those ratios are the same under every scheme. Everything a gray s
 
 ### 5a. Auditing a pair, a scheme and a theme file
 
-Default: a foreground/background pair is verified in both `:root` and `.dark`, for every scheme the application ships, unless the application loads
-exactly one theme file and locks the mode. <!-- rule:forge-ui-color-theme-both-modes -->
+<!-- rule:forge-ui-color-theme-both-modes -->
 
-Default: `--muted-foreground` on `--muted` is audited explicitly for every scheme, because it is the pair with the least headroom in the system —
-light mode puts `#646464` on `#f0f0f0` and dark mode `#b4b4b4` on `#222222`, through `--gray-11` on `--gray-3` — and a failure is repaired in the
-theme file rather than worked around at the call site, unless a brief pins the scheme's steps as fixed brand values, in which case the repair moves
-to what `--gray-11` is worth in the failing mode. <!-- rule:forge-ui-color-theme-muted-pair -->
+<!-- rule:forge-ui-color-theme-muted-pair --> That pair matters disproportionately because it is where most of the text on any forge surface lands:
+`Card.Description`, `FormField.Description`, `Field`'s label span, and `FormField.Separator`'s content all sit on it.
 
-That pair matters disproportionately because it is where most of the text on any forge surface lands: `Card.Description`, `FormField.Description`,
-`Field`'s label span, and `FormField.Separator`'s content all sit on it.
-
-Default: adding a theme file includes an audit of its steps against the semantic mapping in `theme-base.css` rather than an assumption that the
-mapping transfers, unless the new file changes only the tint of an already-audited scale at identical lightness.
-<!-- rule:forge-ui-color-theme-per-theme-audit -->
-
-`theme-stone.css`, `theme-gray.css` and `theme-slate.css` are the worked example of that carve-out rather than exceptions to the rule: they rotate
-the hue of `theme-neutral.css`'s ramp and change no step's lightness, which is exactly the case the exemption names.
+<!-- rule:forge-ui-color-theme-per-theme-audit --> `theme-stone.css`, `theme-gray.css` and `theme-slate.css` are the worked example of that
+carve-out rather than exceptions to the rule: they rotate the hue of `theme-neutral.css`'s ramp and change no step's lightness, which is exactly the
+case the exemption names.
 
 ## 6. `--destructive` pairs like every other surface token
 
@@ -293,8 +252,8 @@ on a dark page, which is what `--destructive-text` exists for. The same holds fo
 | A filled destructive button | `Button tone='destructive'` |
 | A destructive badge or alert | `Badge tone='destructive'` or `Alert tone='destructive'`, and set no colours yourself |
 
-Default: `bg-destructive` is set together with `text-destructive-foreground` and never with a foreground picked by hand; the destructive colour used
-as text is `text-destructive-text` rather than the fill. <!-- rule:forge-ui-color-semantic-destructive-pair -->
+Which foreground the destructive fill takes, and which token its text takes, is Floor: `forge-ui-color-semantic-destructive-pair`, in
+`floor.md`.
 
 ## 7. Status colour is forge's; the fills are the app's
 
@@ -312,15 +271,10 @@ a token with no consumer is a token nobody checks.
 
 ### 7a. The ownership split
 
-`--destructive`, `--success` and `--warning` are **fills the application owns**: an app may re-point them to its brand. `--status-*` are **fixed
-status hues forge owns**, which no scheme swap and no brand re-point moves — and no shipped scheme moves anything else either, since a theme file
-re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground` on a failure panel is still the wrong reach: a panel
-that follows the brand stops meaning "failed". The right reach is a `--status-*` token.
-
-Default: a status surface is expressed with the `--status-*` token for its intent and tier — or by consuming the `Alert`, `Toast` or `Badge` tone
-that already does — and never with a fixed palette utility, unless a brief calls for a signal hue outside forge's four intents, in which case it is
-declared as a token pair in a theme file, or written as a light utility with its own `dark:` counterpart.
-<!-- rule:forge-ui-color-semantic-variant-fixed -->
+<!-- rule:forge-ui-color-semantic-variant-fixed --> `--destructive`, `--success` and `--warning` are **fills the application owns**: an app may
+re-point them to its brand. `--status-*` are **fixed status hues forge owns**, which no scheme swap and no brand re-point moves — and no shipped
+scheme moves anything else either, since a theme file re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground`
+on a failure panel is still the wrong reach: a panel that follows the brand stops meaning "failed". The right reach is a `--status-*` token.
 
 ### 7b. Why no `dark:` twin is written
 
@@ -337,22 +291,14 @@ _app's_ own `dark:` utilities too, the escape hatch is re-declaring the variant 
 
 ## 8. Tone by intent, appearance by emphasis
 
-`tone` and `appearance` are two questions, not one: what the message _is_, and how loudly this surface has to say it. `Button`, `Badge`, `Alert` and
-`Toast` all paint from the same tone table, so the same word means the same thing wherever it is passed.
-
-Default: pick `tone` from what the message is — `destructive` for loss or an irreversible act, `warning` for a risk the reader can still avoid,
-`success` for a claim that something completed, `info` for neutral information, `primary` for the one primary action a surface has, and `neutral`
-for everything else — unless a brief gives a tone its own meaning, which is then applied everywhere that meaning appears.
-<!-- rule:forge-ui-tone-by-intent -->
+<!-- rule:forge-ui-tone-by-intent --> `tone` and `appearance` are two questions, not one: what the message _is_, and how loudly this surface has to
+say it. `Button`, `Badge`, `Alert` and `Toast` all paint from the same tone table, so the same word means the same thing wherever it is passed.
 
 A tone chosen for how it looks rather than for what it means is how a page ends up with three primary buttons and a green chip reporting a failure.
 
-Default: `soft` is the resting emphasis for `Alert`, `Badge` and `Toast`, and `solid` is reserved for the one surface that must lead the page,
-never two solid panels in view at once — unless the component is `Button`, whose resting appearance is its own fill.
-<!-- rule:forge-ui-soft-vs-solid -->
-
-Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's. Those components already default to `soft`, so
-the shipped default is the rule and passing `appearance='solid'` is the decision that has to be worth making.
+<!-- rule:forge-ui-soft-vs-solid --> Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's. Those
+components already default to `soft`, so the shipped default is the rule and passing `appearance='solid'` is the decision that has to be worth
+making.
 
 ## 9. Radius is one decision, not four
 

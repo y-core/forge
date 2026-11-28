@@ -1,0 +1,24 @@
+{
+  "id": "consumer-d1-list",
+  "tree": "consumer",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "accept": ["tests/guestbook.accept.ts"],
+  "traps": [
+    {
+      "id": "sql-in-loop",
+      "rules": ["dependency:forge/STORAGE_BINDINGS.md#1h", "canon:CODE_REVIEW.md#3a"],
+      "detector": { "kind": "step", "label": "lint" }
+    },
+    {
+      "id": "raw-env",
+      "rules": ["canon:APP_ARCHITECTURE.md#3a", "canon:CODE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "c\\.env\\.(?!DB\\b)[A-Z_]+", "paths": ["src"], "pcre": true }
+    },
+    {
+      "id": "migration-lint",
+      "rules": ["dependency:forge/DATABASE_MANAGEMENT.md#5", "canon:CODE_REVIEW.md#3a", "canon:CONFIG_BASELINE.md#4"],
+      "detector": { "kind": "test", "file": "tests/migration-lint.accept.ts" }
+    }
+  ]
+}

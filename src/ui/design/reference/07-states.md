@@ -7,20 +7,6 @@ description: "Empty, loading, error and success: the states a surface must desig
 
 Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules cited below are not.
 
-Every surface that displays data owes four states, not one. The success path is the one that gets designed; the other three are the ones a user
-actually meets on a slow network, a cold cache, or a first login.
-
-| State | Owed on | Forge primitives |
-| --- | --- | --- |
-| Empty | any collection | `Alert`, `Button`, `Card` |
-| Loading | anything fetched | `Skeleton`, `Spinner`, `Progress` |
-| Error | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
-| Success | any mutation | `Toast` `success`, `Flash` |
-
-**Default: design all four before shipping the surface.** <!-- rule:forge-ui-state-four --> `forge-ui-empty-state` makes the empty one a Floor
-obligation; the other three are Defaults because a surface that cannot fail — a static footer — genuinely owes only the first. Override for a
-surface with no data and no mutation.
-
 ---
 
 ## 0. Quick Reference
@@ -31,12 +17,13 @@ surface with no data and no mutation.
 - §3 Error: in place or as a toast, always with the retry, and why status colour is not `--destructive`
 - §4 Success: the toast that confirms a mutation, the flash that survives a redirect, and naming what happened
 - §5 Progress and measurement: `Progress` for a known total, `Meter` for a value in a range
+- §6 The states a surface owes: empty, loading, error and success, each designed before the surface ships
 
 ---
 
 ## 1. Loading: `Skeleton` or `Spinner`
 
-The choice is not about duration. It is about whether you already know the shape of what is arriving.
+<!-- rule:forge-ui-state-skeleton-shape --> The choice is not about duration. It is about whether you already know the shape of what is arriving.
 
 | Given | Choose |
 | --- | --- |
@@ -45,25 +32,15 @@ The choice is not about duration. It is about whether you already know the shape
 | The wait lives inside a control rather than a region | `Spinner` |
 | The work is measurable and the total is known | `Progress` |
 
-**Default: a region whose result shape is known renders `Skeleton` blocks in that shape.**
-<!-- rule:forge-ui-state-skeleton-shape -->
+`Skeleton` is `animate-pulse rounded-md bg-muted` and is `aria-hidden`, so it is a visual placeholder only.
 
-`Skeleton` is `animate-pulse rounded-md bg-muted` and is `aria-hidden`, so it is a visual placeholder only. Override when the region may resolve to
-an empty state, and a skeleton would promise rows that never arrive.
+<!-- rule:forge-ui-state-spinner-scope --> `Spinner` requires an `icon` (`ForgeIcon<"spinner">`) and renders an `sr-only` label with no role — the
+label is what the busy channel announces, so give it a real one.
 
-**Default: a `Spinner` marks a wait inside a control or a wait of unknown shape, never a region whose layout you can already draw.**
-<!-- rule:forge-ui-state-spinner-scope --> `Spinner` requires an `icon` (`ForgeIcon<"spinner">`) and renders an `sr-only` label with no role
-— the label is what the busy channel announces, so give it a real one. Override for a very short wait in a known-shape region, where a skeleton
-flash is more disruptive than a small spinner.
+<!-- rule:forge-ui-state-preserve-layout --> A skeleton shorter than its content makes the page jump when the content lands, which costs a click
+more often than the wait did.
 
-**Default: the placeholder occupies the same box the result will.**
-<!-- rule:forge-ui-state-preserve-layout -->
-
-A skeleton shorter than its content makes the page jump when the content lands, which costs a click more often than the wait did. Override when the
-result's height is genuinely unbounded.
-
-**Default: one loading indicator per loading region.** <!-- rule:forge-ui-state-one-indicator --> A `Spinner` in the submit button _and_ a skeleton
-over the table means two claims about one wait. Override when two genuinely independent requests are in flight in two regions.
+<!-- rule:forge-ui-state-one-indicator --> A `Spinner` in the submit button _and_ a skeleton over the table means two claims about one wait.
 
 ### 1a. Before / after
 
@@ -92,16 +69,11 @@ import { Card, Skeleton } from "@y-core/forge/ui/core";
 </Card.Content>;
 ```
 
-**Default: a submitting control keeps its label and gains a `Spinner`, rather than swapping the label out.**
-<!-- rule:forge-ui-state-submit-spinner --> A button whose text changes to "Loading…" loses its width and its meaning at once. Override when the
-control is icon-only, where the spinner replaces the glyph in the same box.
+<!-- rule:forge-ui-state-submit-spinner --> A button whose text changes to "Loading…" loses its width and its meaning at once.
 
-Default: `busy` — and `Button`'s `loading`, which sets it — marks a submission the server already knows about and stamped into the response it sent;
-a wait driven by the request lifecycle is `htmx-indicator`'s instead, per [`11-htmx.md`][htmx], and no one control carries both — unless the wait is
-neither, where a `Spinner` beside the control is the whole answer.
-<!-- rule:forge-ui-busy-vs-indicator --> `busy` renders `aria-busy` and `data-busy`, so it is true
-for exactly as long as the markup carrying it. `htmx-indicator` is revealed and hidden by htmx around the request. A control wearing both announces
-one wait twice and stops announcing it at two different moments.
+<!-- rule:forge-ui-busy-vs-indicator --> `busy` renders `aria-busy` and `data-busy`, so it is true for exactly as long as the markup carrying it.
+`htmx-indicator` is revealed and hidden by htmx around the request. A control wearing both announces one wait twice and stops announcing it at two
+different moments.
 
 ---
 
@@ -110,15 +82,10 @@ one wait twice and stops announcing it at two different moments.
 An empty collection is a state to compose, not markup to omit. The pattern is a sentence saying what would be here, and the one control that puts
 something here.
 
-**Default: an empty state is an `Alert` (or a `Card.Content` paragraph) plus one `Button` performing the action the user came for.**
-<!-- rule:forge-ui-state-empty-composed --> It satisfies `forge-ui-empty-state`; this rule fixes the _composition_. Override when the surface has no
-user-initiated way to fill it — a log stream — where the sentence stands alone and says why.
+<!-- rule:forge-ui-state-empty-composed --> It satisfies `forge-ui-empty-state`; this rule fixes the _composition_.
 
-**Default: hide the controls that operate on nothing.**
-<!-- rule:forge-ui-state-hide-empty-controls -->
-
-`Tabs`, filter `Select`s, sort `ToggleGroup`s and bulk-action `Toolbar`s all render happily over zero rows and all mislead. Override when the filter
-is what _caused_ the emptiness, in which case keep it and add a control that clears it.
+<!-- rule:forge-ui-state-hide-empty-controls --> `Tabs`, filter `Select`s, sort `ToggleGroup`s and bulk-action `Toolbar`s all render happily over
+zero rows and all mislead.
 
 ```tsx
 // Wrong — the absence of rows rendered as the absence of markup.
@@ -152,21 +119,11 @@ import { Alert, Button, Card } from "@y-core/forge/ui/core";
 
 ## 3. Error
 
-**Default: a failure that belongs to a visible surface renders an `Alert` `tone='destructive'` in place, and the surface keeps its content.**
-<!-- rule:forge-ui-state-error-inline --> Replacing a table with an error message destroys the data the user was reading. Override when the content
-is known stale and showing it would mislead.
+<!-- rule:forge-ui-state-error-inline --> Replacing a table with an error message destroys the data the user was reading.
 
-**Default: a failure of work the user has navigated away from renders a `Toast` `tone='destructive'`.**
-<!-- rule:forge-ui-state-error-toast -->
+<!-- rule:forge-ui-state-error-toast --> Background saves, long uploads, anything the user navigated away from.
 
-Background saves, long uploads, anything the user navigated away from. Override when the failure blocks the next step, which is a `Dialog` or an
-in-place `Alert`.
-
-**Default: every error state carries the retry, next to the message.**
-<!-- rule:forge-ui-state-error-retry -->
-
-A `tone='neutral' appearance='outline'` `Button` in the same `Alert`. Override when retrying cannot help — a validation failure, a permission denial
-— where the correct control is the one that fixes the cause.
+<!-- rule:forge-ui-state-error-retry --> A `tone='neutral' appearance='outline'` `Button` in the same `Alert`.
 
 Note on tokens: `Alert` and `Toast` take their non-`neutral` colours from the `--status-*` family rather than from `--destructive` / `--success` /
 `--warning`, through the soft appearance each tone resolves to. That is the shipped behaviour, and it is why `forge-ui-foreground-pairing` has
@@ -179,18 +136,11 @@ held across modes so a near-white foreground clears it; error **text** is `text-
 
 ## 4. Success
 
-**Default: a completed mutation is confirmed by a `Toast` `success`, not by an `Alert`.**
-<!-- rule:forge-ui-state-success-toast -->
+<!-- rule:forge-ui-state-success-toast --> An `Alert` is a persistent property of a surface; a success is an event about an action.
 
-An `Alert` is a persistent property of a surface; a success is an event about an action. Override when the result changes what the surface _is_ — a
-subscription that just ended — where a persistent `Alert` is the honest rendering.
-
-**Default: a confirmation that must survive a redirect goes through the flash primitives.**
-<!-- rule:forge-ui-state-flash-redirect -->
-
-`createFlash` sets the signed cookie server-side; `FlashContainer` renders the queue into a positioned `Toast.Container`; `Flash` renders the toasts
-alone inside a container you already have; `FlashOob` renders them as htmx out-of-band swaps into `#flash-container`. Override when the mutation
-returns a fragment to the same page, where a `Toast` rendered directly is simpler.
+<!-- rule:forge-ui-state-flash-redirect --> `createFlash` sets the signed cookie server-side; `FlashContainer` renders the queue into a positioned
+`Toast.Container`; `Flash` renders the toasts alone inside a container you already have; `FlashOob` renders them as htmx out-of-band swaps into
+`#flash-container`.
 
 ```tsx
 import { FlashContainer } from "@y-core/forge/ui/server";
@@ -198,10 +148,7 @@ import { FlashContainer } from "@y-core/forge/ui/server";
 <FlashContainer messages={messages} position='bottom-right' />;
 ```
 
-**Default: a success message names what happened, not that something happened.**
-<!-- rule:forge-ui-state-success-specific -->
-
-`Toast.Title` carries the object, `Toast.Description` the consequence. Override for a bulk operation, where the count is the message.
+<!-- rule:forge-ui-state-success-specific --> `Toast.Title` carries the object, `Toast.Description` the consequence.
 
 ---
 
@@ -215,15 +162,11 @@ import { FlashContainer } from "@y-core/forge/ui/server";
 | A quantity within a known range — disk used, quota, score | `Meter` |
 | A task with no known total | `Spinner` |
 
-**Default: `Progress` renders only when the total is known.**
-<!-- rule:forge-ui-state-progress-determinate -->
+When `Progress` may render at all is Floor: `forge-ui-state-progress-determinate`, in `floor.md`.
 
-Give it a `label`, which becomes its `aria-label`. Override never — an indeterminate progress bar is a spinner drawn as a lie about measurability.
-
-**Default: a measured value uses the `Meter` compound in full — `Meter.Label`, `Meter.Value`, `Meter.Track`.**
 <!-- rule:forge-ui-state-meter-composed --> `Meter.Label` requires `for`, because an unassociated label is decoration; the bar is drawn from `low` /
 `high` / `optimum` and needs no indicator element — forge paints it in the theme's own `--success` / `--warning` / `--destructive`, on the quiet
-track `Progress` uses. Override when the value has no range to sit in, which makes it a number, not a meter.
+track `Progress` uses.
 
 ```tsx
 import { Meter } from "@y-core/forge/ui/core";
@@ -235,6 +178,22 @@ import { Meter } from "@y-core/forge/ui/core";
 </Meter>;
 ```
 
+---
+
+## 6. The states a surface owes
+
+Every surface that displays data owes four states, not one. The success path is the one that gets designed; the other three are the ones a user
+actually meets on a slow network, a cold cache, or a first login.
+
+| State | Owed on | Forge primitives |
+| --- | --- | --- |
+| Empty | any collection | `Alert`, `Button`, `Card` |
+| Loading | anything fetched | `Skeleton`, `Spinner`, `Progress` |
+| Error | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
+| Success | any mutation | `Toast` `success`, `Flash` |
+
+<!-- rule:forge-ui-state-four --> `forge-ui-empty-state` makes the empty one a Floor obligation; the other three are Defaults because a surface that
+cannot fail — a static footer — genuinely owes only the first.
+
 [color-7a]: ./04-color.md#7a-the-ownership-split
-[htmx]: ./11-htmx.md
 [tg-4]: ../../../../docs/THEME_GENERATION.md#4-a-status-hue-holds-its-fill

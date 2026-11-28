@@ -172,3 +172,40 @@ describe("forge's own Worker-source ban", () => {
     },
   );
 });
+
+describe("the shipped lint base's layer rules, over the workers-consumer app", () => {
+  const app = join(ROOT, "tests/fixtures/workers-consumer/app");
+
+  it("refuses the planted controller→controller import and nothing else in the app", () => {
+    const run = spawnSync(join(ROOT, "node_modules/.bin/oxlint"), ["--format", "json", "-c", ".oxlintrc.json", "src"], {
+      cwd: app,
+      encoding: "utf-8",
+    });
+    const { diagnostics } = JSON.parse(run.stdout) as { diagnostics: { filename: string; help?: string; labels: { span: { line: number } }[] }[] };
+
+    expect(diagnostics.map(({ filename, labels, help }) => [filename, labels[0]?.span.line, help?.split(" ")[0]])).toEqual([
+      ["src/controllers/home.ts", 2, "[app-architecture-controller-imports-controller]"],
+    ]);
+  });
+
+  // Each layer override replaces the rule's options wholesale, so it restates the base's bans beside its own pattern.
+  const base = read("oxlint.base.json") as {
+    rules: Record<string, [string, { paths: unknown[]; patterns: unknown[] }]>;
+    overrides: { files: string[]; rules: Record<string, [string, { paths: unknown[]; patterns: unknown[] }] | undefined> }[];
+  };
+  const own = base.rules["eslint/no-restricted-imports"]?.[1];
+  const layers = base.overrides.filter((override) => ["src/controllers/**", "src/services/**", "src/views/**"].includes(override.files[0] ?? ""));
+
+  it.each(layers.map((override) => [override.files[0], override] as const))(
+    "restates the base's import bans in its `%s` override",
+    (_files, override) => {
+      const options = override.rules["eslint/no-restricted-imports"]?.[1];
+      expect(options?.paths).toEqual(own?.paths ?? []);
+      expect(options?.patterns.slice(0, -1)).toEqual(own?.patterns ?? []);
+    },
+  );
+
+  it("declares all three layer overrides", () => {
+    expect(layers).toHaveLength(3);
+  });
+});

@@ -21,7 +21,7 @@ description: "How to review: the blocking invariants, tiered detection with a co
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves
-- §3b Tier 2 — Ripgrep With Triage: where the commands live, and the triage classes each states
+- §3b Tier 2 — Pattern Sweep With Triage: where the patterns live, and the triage classes that shape them
 - §3c Tier 3 — Judgement: what to read when no command can decide
 - §4 Severity Calibration: critical, major, minor, informational
 - §5 Verification Protocol: try to disprove a finding; the default is reject
@@ -55,8 +55,8 @@ is what decides it.
   writing, because "none" is the strongest version of this field.
 - **Fix** — stated as an outcome, and aimed at the root cause. The sink is where the fix belongs; patching one caller leaves the next one.
 
-**If you cannot write the exploit scenario, downgrade the severity.** The scenario is the test of whether the finding is real. A finding whose
-scenario reads "an attacker could somehow" is a §5 question, not a finding.
+**If you cannot write the exploit scenario, downgrade the severity**: a scenario that reads "an attacker could somehow" is a §5 question, not a
+finding.
 
 Not this:
 
@@ -110,7 +110,7 @@ breaking change — which is precisely what a pre-1.0 version number exists to a
 
 ### 3a. Tier 1 — Gated
 
-**A rule with a gate step is not a review item.** Do not hand-review these; run the gate and read its output.
+**A rule with a gate step is not a review item**: run the gate and read its output.
 
 | Rule class | detect |
 | --- | --- |
@@ -124,33 +124,22 @@ breaking change — which is precisely what a pre-1.0 version number exists to a
 
 The repository's step-list config names the current steps ([`TESTING.md`][testing-6e] §6e); the labels above are rule classes, not step names.
 
-**If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.** A review finding that a
-gate should have caught is a gate defect first and a code defect second.
+**If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
 
-### 3b. Tier 2 — Ripgrep With Triage
+### 3b. Tier 2 — Pattern Sweep With Triage
 
-**Every §2 invariant that no gate step proves carries a command in the repository's own `docs/` review document.** A rule detected by
-hand-inspection is a rule that gets reviewed on the passes somebody remembered it, and the commands are written with the repository's real package
-names, namespace directories, and exemption globs — which makes them implementation by construction, and is why none of them lives here.
+**Every §2 invariant that no gate step proves carries a pattern in the repository's own rule register, run by `warden check`.** The patterns are
+written with the repository's real package names, namespace directories and exemption globs, which makes them implementation and is why none lives
+here. `validate-rules` refuses a `warn` pattern with no triage note and a `fail` pattern with one, compiles every pattern, and refuses a lookaround
+without `pcre`. Most patterns are `warn` because of one of these false-positive classes; the class dictates how the pattern is written:
 
-**Every command is written with its false-positive class, stated beside it. A command without its triage note is worse than no command** — it gets
-run once, returns noise, and is never run again. These triage classes account for nearly all of them, and each dictates something about how the
-command is written:
+- **An exempt tier.** A rule that holds for runtime source but not for build-time tooling or tests needs its exemption as exclusion globs, or the
+  pattern returns dozens of legitimate hits and is ignored.
+- **A pattern that also occurs as data.** A marker inside a test fixture that feeds it in as input, or inside a template literal a generator
+  emits, matches too. Anchor narrowly, and read the hit before deleting anything.
 
-- **An exempt tier.** A rule that holds for runtime source but not for build-time tooling, or for production source but not for tests, needs its
-  exemption in the command as exclusion globs. Without them the command returns dozens of legitimate hits and will be ignored — the exclusions are
-  the difference between a command that is run and one that is not.
-- **A regex engine that must be named.** A command using a lookahead requires PCRE2 (`-P`); the default engine either errors or silently matches
-  everything, and the second failure mode is the one that produces a false green.
-- **A pattern that also occurs as data.** A search for a marker matches the same marker inside a test fixture that feeds it in as **input**, and
-  inside template-literal contents a generator emits into its output. Anchor the pattern narrowly, and read the hit before deleting anything: a hit
-  inside a backtick string is code, not a comment.
-
-A command whose threshold is numeric — a character count, a line count — is a **heuristic floor, not the rule.** Read every hit against the rule the
-owning document states.
-
-**Where a repository wires a comment-budget gate step, the budget is Tier 1 and not a review item at all** — §3a governs it, and no command for it
-belongs here. What the step cannot decide — whether a sentence earns its place — stays with §3c either way.
+A numeric threshold — a character count, a line count — is a **heuristic floor, not the rule.** Read every hit against the rule the owning document
+states. Where a repository wires a comment-budget gate step, the budget is Tier 1 (§3a), not a pattern.
 
 Violations reachable by no command at all — restating the code, narration, a judgement about surface — belong to §3c.
 
@@ -208,8 +197,8 @@ gate does not clear it. The reverse holds too: disorder fixed outside the change
 - **Informational — note only.** Future namespace splits, alternative API designs, performance observations with no security impact; a missing
   second layer where another layer already blocks the attack.
 
-**Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
-every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
+**Excess prose is Major, absence is Minor — the asymmetry is deliberate**: a missing summary line costs one read, an unbudgeted one is re-read on
+every pass and goes stale silently. **Never report "expand this comment" as a finding.**
 
 **The asymmetry reaches README prose on the same terms.** A section restating a signature, narrating how the code works, or re-housing prose the
 comment budget evicted is Major; a task a README does not yet teach is Minor. "Document this more fully" is not a finding.
@@ -222,8 +211,7 @@ Minor.
 ## 5. Verification Protocol
 
 **The verification pass tries to disprove the finding, and the finding survives only if that attempt fails.** The default is reject. A review that
-verifies by looking for confirmation will confirm almost everything it looked at, which is how a report arrives long, plausible and mostly wrong —
-and a reader who finds two false positives stops trusting the other thirty.
+verifies by looking for confirmation confirms almost everything, and a reader who finds two false positives stops trusting the other thirty.
 
 Before reporting any finding:
 
@@ -234,8 +222,7 @@ Before reporting any finding:
 4. **Check the runtime** before flagging an API as unavailable — `crypto.subtle`, streams, and `URL` are all present in Workers.
 
 **A security finding shows the whole path or it is not reported.** It names who acts — a caller trusted less than the code assumes — what they send,
-which control that input gets past, and what it then reaches. A finding that cannot fill in all four has found a pattern that looks like an attack,
-not an attack.
+which control that input gets past, and what it then reaches; one that cannot fill in all four has found a pattern, not an attack.
 
 **A finding you could not verify is a question, not a finding.** Report it as one, naming the one fact you could not establish and the check — a
 file to read, a command to run — that would settle it.
@@ -262,9 +249,8 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`][cr-5d] §5d |
 | A non-null assertion in a test file | Permitted where the lint config relaxes it for tests; it stays an error in production source |
 
-**This table is extended, never replaced, by the repository's own `docs/` review doc.** A repository-specific pattern — a named carve-out, a public
-constructor, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5c] §5c — is recorded there with the same two columns, and a reviewer
-reads both.
+**This table is extended, never replaced, by the repository's own `docs/` review doc**, which records a repository-specific pattern — a named
+carve-out, a public constructor, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5c] §5c — in the same two columns.
 
 [ag-6c]: ../shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-1]: ./BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary

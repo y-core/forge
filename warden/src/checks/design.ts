@@ -1,25 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { stripJsonc } from "../../../src/tooling/cli/jsonc";
 import { parseConsumerExportNames } from "../../../src/tooling/gate/checks/barrel-parse";
 import {
   findBarrelImports,
   findCustomPropertyCitations,
   findRuleCitations,
   findRuleMarkers,
-  findSplitRuleMarkers,
-  isValidRuleId,
   parseDeclaredCustomProperties,
 } from "../../../src/tooling/gate/checks/design-parse";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
 import { checkResult, fail, scannedNothing } from "../../../src/tooling/gate/finding";
 import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
-import { lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "../../../src/tooling/lint/design-rules";
-import { MODERN_CSS_RULES } from "../../../src/tooling/lint/modern-css-rules";
-import plugin from "../../../src/tooling/lint/plugin";
-import type { RuleId } from "../../../src/tooling/lint/types";
 import { findCodeFences } from "./docs";
 import { findSubpathCitations } from "./docs-parse";
 import {
@@ -34,21 +27,6 @@ import {
   unresolvedName,
 } from "./fence-compile";
 
-// Each states a rule a `docs/` doc owns rather than a corpus file, so neither register names
-// one and the round trip would otherwise read them as unrouted.
-/** The plugin rules that state no design-corpus rule. */
-const STATES_NO_CORPUS_RULE = new Set([
-  "suppression-needs-reason",
-  "data-slot-before-spread",
-  "exact-markup-assertion",
-  "sql-delete-authorised",
-  "sql-explicit-transaction",
-  "sql-in-loop",
-  "sql-tag-called-directly",
-  "type-import-external",
-  "type-import-separation",
-]);
-
 /** What the design check needs to know about the project. @public */
 export interface DesignCheckConfig {
   root: string;
@@ -62,25 +40,12 @@ export interface DesignCheckConfig {
   cssDir: string;
   /** Source root walked for rule violations, relative to `root`. Defaults to `src`. */
   sourceDir?: string;
-  /** The oxlint config the plugin's rules must be enabled in, relative to `root`. Defaults to `.oxlintrc.json`. */
-  oxlintConfig?: string;
   /** Markdown outside `designDir` whose `tsx` fences compile too, relative to `root`. */
   fencedDocs?: readonly string[];
   /** The compiler options a fence compiles under, relative to `root`. Defaults to `tsconfig.json`. */
   tsconfig?: string;
-}
-
-/** The rules an oxlint config turns on, or `undefined` when the file could not be read. */
-function readEnabledRules(path: string): Set<string> | undefined {
-  type Block = { rules?: Record<string, unknown> };
-  let parsed: Block & { overrides?: readonly Block[] };
-  try {
-    parsed = JSON.parse(stripJsonc(readFileSync(path, "utf-8"))) as Block & { overrides?: readonly Block[] };
-  } catch {
-    return undefined;
-  }
-  const entries = [parsed, ...(parsed.overrides ?? [])].flatMap((block) => Object.entries(block.rules ?? {}));
-  return new Set(entries.filter(([, level]) => (Array.isArray(level) ? level[0] : level) !== "off").map(([rule]) => rule));
+  /** The Floor document, relative to `designDir`, and each rule id's register statement; a marker elsewhere whose statement does not open `Default:` fails. */
+  floor?: { file: string; statements: ReadonlyMap<string, string> };
 }
 
 /** What a fence check needs to know about the project. */
@@ -217,6 +182,25 @@ export function checkDocFences(config: DocFencesCheckConfig): CheckResult {
   );
 }
 
+/** Every marker outside the Floor document whose register statement does not open `Default:`. */
+function misfiledFloorFindings(sources: ReadonlyMap<string, string>, floorPath: string, statements: ReadonlyMap<string, string>): Finding[] {
+  const findings: Finding[] = [];
+  for (const [file, source] of sources) {
+    if (file === floorPath) continue;
+    for (const { line, id } of findRuleMarkers(source)) {
+      const statement = statements.get(id);
+      if (statement === undefined || statement.startsWith("Default:")) continue;
+      findings.push(
+        fail(
+          `rule marker \`${id}\` is a Floor rule outside \`${floorPath}\` — move it into the Floor's Verify or Refuse half and cite its id here, or open its statement \`Default:\` with an \`unless …\` clause`,
+          { file, line },
+        ),
+      );
+    }
+  }
+  return findings;
+}
+
 /** Run every check. @public */
 export function checkDesign(config: DesignCheckConfig): CheckResult {
   const { root, packageName, designDir, cssDir } = config;
@@ -267,32 +251,10 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
   for (const file of corpusFiles) sources.set(file, readFileSync(resolve(root, file), "utf-8"));
 
   const defined = new Set<string>();
-  const origin = new Map<string, string>();
-  for (const [file, source] of sources) {
-    for (const { line, id } of findSplitRuleMarkers(source)) {
-      findings.push(
-        fail(`rule marker \`${id}\` is split across lines — keep \`<!-- rule:… -->\` on one line, or the id drops out of the defined set`, {
-          file,
-          line,
-        }),
-      );
-    }
-    for (const { line, id } of findRuleMarkers(source)) {
-      if (!isValidRuleId(id)) {
-        findings.push(
-          fail(`rule id \`${id}\` is malformed — ids are \`forge-ui-\` prefixed, kebab-case, and carry no trailing punctuation`, { file, line }),
-        );
-        continue;
-      }
-      const first = origin.get(id);
-      if (first !== undefined) {
-        findings.push(fail(`duplicate rule id \`${id}\` — already defined at ${first}`, { file, line }));
-        continue;
-      }
-      origin.set(id, `${file}:${line}`);
-      defined.add(id);
-    }
+  for (const source of sources.values()) {
+    for (const { id } of findRuleMarkers(source)) defined.add(id);
   }
+  if (config.floor !== undefined) findings.push(...misfiledFloorFindings(sources, `${designDir}/${config.floor.file}`, config.floor.statements));
 
   const declared = new Set<string>();
   for (const file of collectFiles(root, cssDir, (name) => name.endsWith(".css"))) {
@@ -336,51 +298,6 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
 
   const fenceCheck = checkFences(config, sources, { langs: ["tsx"], docs: false });
   findings.push(...fenceCheck.findings);
-
-  const registered = new Set(Object.keys(plugin.rules));
-  const oxlintConfig = config.oxlintConfig ?? ".oxlintrc.json";
-  const enabled = readEnabledRules(resolve(root, oxlintConfig));
-
-  const corpusSet = new Set(corpusFiles);
-  const table = "design-rules.ts";
-  for (const [ruleId, corpusPath] of Object.entries(RULE_CORPUS_PATH) as [RuleId, string][]) {
-    if (!defined.has(ruleId)) {
-      findings.push(fail(`RULE_CORPUS_PATH names \`${ruleId}\`, which no corpus file defines with a marker`, { file: table }));
-    }
-    if (!corpusSet.has(corpusPath)) {
-      findings.push(fail(`RULE_CORPUS_PATH routes \`${ruleId}\` to \`${corpusPath}\`, which is not a corpus file`, { file: table }));
-    }
-
-    if (!RULE_ENFORCER[ruleId].includes("lint")) continue;
-
-    const key = lintKeyOf(ruleId);
-    if (!registered.has(key))
-      findings.push(fail(`RULE_ENFORCER calls \`${ruleId}\` a lint rule, but the plugin registers no \`${key}\``, { file: table }));
-    if (enabled !== undefined && !enabled.has(`forge/${key}`)) {
-      findings.push(fail(`\`forge/${key}\` is not enabled — a registered rule that no config turns on reports nothing`, { file: oxlintConfig }));
-    }
-  }
-  const routed = new Set<string>();
-  for (const [ruleId, rule] of Object.entries(MODERN_CSS_RULES)) {
-    if (rule.enforcer !== "lint") continue;
-    const key = lintKeyOf(ruleId);
-    routed.add(key);
-    if (!registered.has(key))
-      findings.push(
-        fail(`MODERN_CSS_RULES calls \`${ruleId}\` a lint rule, but the plugin registers no \`${key}\``, { file: "modern-css-rules.ts" }),
-      );
-    if (enabled !== undefined && !enabled.has(`forge/${key}`)) {
-      findings.push(fail(`\`forge/${key}\` is not enabled — a registered rule that no config turns on reports nothing`, { file: oxlintConfig }));
-    }
-  }
-
-  for (const [ruleId, enforcers] of Object.entries(RULE_ENFORCER)) if (enforcers.includes("lint")) routed.add(lintKeyOf(ruleId));
-  for (const key of registered) {
-    if (STATES_NO_CORPUS_RULE.has(key) || routed.has(key)) continue;
-    findings.push(fail(`the plugin registers \`forge/${key}\`, which no rule register routes to it`, { file: "lint.ts" }));
-  }
-
-  if (enabled === undefined) findings.push(fail("could not be read, so no plugin rule could be held against it", { file: oxlintConfig }));
 
   return checkResult(
     findings,

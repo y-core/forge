@@ -53,11 +53,10 @@ description: "The non-negotiable coding rules: zero global state, explicit error
 
 ### 1a. No Module-Level Mutable Variables
 
-**Never store request-scoped data in a module-level variable.** Each Workers isolate handles one request at a time, but isolates are recycled —
-module-level mutations bleed between requests sharing a module instance.
+<!-- rule:code-rules-module-state --> Each Workers isolate handles one request at a time, but isolates are recycled — module-level mutations bleed
+between requests sharing a module instance.
 
-The prohibition and its rationale are both scoped to **request-scoped data in a Worker**. Code that never executes in a Worker is covered by §1e,
-not by this rule.
+The prohibition and its rationale are scoped to **request-scoped data in a Worker**; code that never executes in one is §1e's.
 
 ```ts
 let currentUser: User | null = null; // never do this
@@ -67,8 +66,8 @@ let currentUser: User | null = null; // never do this
 
 ### 1b. Factory Function Pattern
 
-**Use a factory to create stateful behaviour.** The factory captures configuration — immutable after creation — never request state. The options
-object is captured once, at creation time; everything request-scoped is read off the context the returned function is called with.
+**Use a factory to create stateful behaviour**: it captures configuration once, immutable after creation, and reads everything request-scoped off
+the context its returned function is called with.
 
 ```ts
 export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
@@ -92,7 +91,7 @@ One file owns each such value, and it is named in the source-of-truth register (
 
 **Each verb carries one rule:**
 
-- **`create*`** names **any factory** that instantiates behaviour from captured configuration. Never `make*`, never `new*`.
+- <!-- rule:code-rules-factory-verb --> **`create*`** names **any factory** that instantiates behaviour from captured configuration.
 - **`resolve*`** names a **request-time accessor** that reads a binding or a value off the context and fails closed when it is absent.
 - **`define*`** names a **declarative configuration object** consumed by a builder.
 
@@ -109,20 +108,17 @@ not re-litigate it every pass.
 
 ### 1e. Browser-Only Modules Are Exempt
 
-**§1a does not apply to modules that never execute in a Worker.** Its prohibition is on _request-scoped_ data and its rationale is isolate
-recycling; a module loaded only by the browser has neither a request nor an isolate to bleed between. Its module scope is the page, and it is
-discarded on navigation.
+**§1a does not apply to modules that never execute in a Worker**, because a module loaded only by the browser has neither a request nor an isolate
+to bleed between: its module scope is the page, discarded on navigation.
 
 Module-level mutable state is therefore the house style in browser-only code — reactive-graph bookkeeping, mounted-controller registries,
 per-document caches. Rewriting them as factories would buy nothing: there is one document, and these are page-scoped singletons by nature.
 `BOUNDARIES.md` §1 owns the import-path boundary that makes the exemption safe.
 
-**Stating it explicitly rather than leaving it implied**, because the alternative is a recurring review finding against browser-only files that
-carry no exemption marker and need none.
+**It is stated explicitly** because otherwise browser-only files, which carry no exemption marker and need none, draw a recurring review finding.
 
-**§4a still applies in full.** Page-scoped state that outlives a test is state a test has to be able to reset. Where module state is observable,
-ship the seam that drains it — a disposer, a registry keyed on `Document`, an explicit reset. Where there is no such seam, tests must not depend on
-the order they run in.
+**§4a still applies in full**: where page-scoped module state is observable, ship the seam that drains it — a disposer, a registry keyed on
+`Document`, an explicit reset — and where there is none, tests must not depend on their order.
 
 ---
 
@@ -158,8 +154,8 @@ A declarative handler builder accepts a recovery hook, and **the default differs
   half-rendered navigation is worse than an error page.
 - A **fragment** handler with no hook returns a **self-contained error fragment**, because it is swapping into a page that is already correct.
 
-**Both log on the way out.** The difference is only in what the client receives, never in whether the failure is recorded. **Use these hooks for
-per-route recovery instead of ad-hoc `try/catch`**, which is invisible to a reader auditing the route map.
+**Both log on the way out**; they differ only in what the client receives. **Use these hooks for per-route recovery instead of ad-hoc
+`try/catch`**, which is invisible to a reader auditing the route map.
 
 ---
 
@@ -172,9 +168,8 @@ loader. `BOUNDARIES.md` §3 owns the rule and the ordered pipeline.
 
 ### 3b. The Validation Facade
 
-**All validation goes through the single validation facade the project publishes. Never import the underlying schema library directly** — not in
-application code, not in a shared namespace, not in a test. Schemas are built from the facade's re-exported combinators, so a version bump to the
-library reaches every schema through one file.
+<!-- rule:code-rules-validation-facade --> Schemas are built from the facade's re-exported combinators, so a version bump to the library reaches
+every schema through one file.
 
 The facade is reached by the spelling the repository publishes it under — a relative path to the namespace inside the library that owns it, the
 published subpath from an application consuming that library:
@@ -189,8 +184,8 @@ A direct import bypasses the facade exactly as production code would and will no
 
 ### 3c. Abort-Early Validation
 
-**Use `{ abortEarly: true }` in the facade's `v.safeParse` call for form validation** so the first failing field is reported immediately. Omit the
-flag when a response must enumerate every error.
+**Use `{ abortEarly: true }` in the facade's `v.safeParse` call for form validation** so the first failing field is reported immediately, and omit
+it when a response must enumerate every error.
 
 ---
 
@@ -201,8 +196,8 @@ and an application, so `TESTING.md` §2 owns placement and §4 owns fakes.
 
 ### 4a. No Globals to Mock
 
-Because the codebase uses factory functions and Web-standard APIs, **tests call functions directly without mocking global state**. A function that
-cannot be tested without a mock is a design signal: make its dependency an argument.
+Because the codebase uses factory functions and Web-standard APIs, **tests call functions directly without mocking global state**; a function that
+needs a mock should take its dependency as an argument.
 
 ### 4b. Capturing Arguments in Fakes
 
@@ -238,17 +233,16 @@ continuously; the comment's value is paid once, at most.
 named intermediate. Naming and convention done well leave no compelling reason for prose that regurgitates what is already evident. §7 is what makes
 that possible, and §7a states the pairing from the naming end.
 
-**A restatement goes.** A second layer of prose saying what the code or another comment already says is deleted, unless it clarifies something
-that cannot be expressed any other way. Duplicated prose promotes confusion and stale references on top of the debt it already is.
+**A restatement goes**: prose saying what the code or another comment already says is deleted unless it clarifies what nothing else can express.
 
 ### 5a. The Entire Permitted Budget
 
-Exactly three forms of comment are allowed in the source tree. Nothing else is.
+<!-- rule:code-rules-comment-budget -->
 
 **Machine-readable directives are not comments and are outside this budget entirely** — they are compiler or tooling _input_ that happens to use
-comment syntax: `@jsx*` pragmas, `biome-ignore`, lint suppressions, and project-specific allow markers. Never delete one. Where a directive carries
-a human-readable reason field, that reason must be **self-contained**: a reason reading "see the note above" breaks the moment the note it points at
-is deleted. Write it so it survives alone.
+comment syntax: `@jsx*` pragmas, `biome-ignore`, lint suppressions, and project-specific allow markers. Never delete one.
+
+<!-- rule:code-rules-directive-reason --> A reason reading "see the note above" breaks the moment the note it points at is deleted.
 
 **A linter override's reason in a configuration file is a directive reason, not source prose.** Where a repository's configuration baseline requires
 one above every override, that requirement stands and this budget does not contradict it. The carve-out is scoped to the override it sits above; it
@@ -266,8 +260,8 @@ step checks, so the rule and the check say the same thing.
 export function createApp<Bindings extends object = Record<string, unknown>>(options?: AppOptions<Bindings>): App<Bindings>;
 ```
 
-**2. The visibility tags `@public` and `@internal`.** These are machine-readable markers, not prose. `@internal` is what keeps a symbol out of the
-published surface without keeping it out of cross-module use. They append to the TSDoc line and do not earn it extra lines.
+**2. The visibility tags `@public` and `@internal`**, machine-readable markers appended to the TSDoc line without earning it extra lines.
+`@internal` keeps a symbol off the published surface without keeping it out of cross-module use.
 
 **3. A rare inline comment carrying a genuinely non-obvious _why_.** This is the exceptional case, and it is exceptional in the literal sense — most
 files contain zero. It is permitted only when all four hold:
@@ -285,23 +279,22 @@ const clientIp = trustedClientIp(request) ?? fallbackIp(request);
 
 ### 5b. Forbidden Outright
 
-Delete these from every file a change touches, in existing code as readily as in new code; there is no deprecation window. A file the change does
-not touch is outside its footprint, so what you notice there is filed as a task rather than fixed in passing (`AGENT_WORKFLOW.md` §1b).
+<!-- rule:code-rules-comment-forbidden --> Delete these from every file a change touches, in existing code as readily as in new code; there is no
+deprecation window. A file the change does not touch is outside its footprint, so what you notice there is filed as a task rather than fixed in
+passing (`AGENT_WORKFLOW.md` §1b).
 
 - **Multi-paragraph TSDoc.** Design rationale, alternatives weighed, history, numbered justifications, "for four reasons", "two earlier attempts
   were wrong".
-- **`@example` blocks.** A signature plus a one-line summary is the usage documentation. If an API genuinely cannot be used from its types, that is
-  an API defect — fix the API. Consumer-facing usage belongs in the unit's `README.md` or its governing document, where it has a single home and
-  does not ride along in every read of the source.
+- **`@example` blocks.** A signature plus a one-line summary is the usage documentation; an API unusable from its types is a defect to fix, and
+  consumer-facing usage belongs in the unit's `README.md` or its governing document.
 - **Restating the code.** `// increment the counter`, `// Returns true if valid`. §5f owns the interface-field form of this defect.
 - **Section banners and separators.** `// ---- helpers ----`, `// === Types ===`, box-drawing rules. File structure is what files and exports are
   for.
 - **Commented-out code.** Git holds it.
 - **Narration of the obvious.** `// Guard clause`, `// Early return`, `// Loop over items`.
-- **Self-referential meta-commentary.** A comment about why a comment exists, or about what a previous attempt at the comment got wrong, is never
-  load-bearing.
-- **Justifying a decision the code cannot observe.** If two orderings, spellings, or shapes are provably indistinguishable to every caller, the
-  choice needs no defence in the source. If it genuinely matters, a _test_ asserts it — a comment cannot.
+- **Self-referential meta-commentary** — why a comment exists, or what an earlier attempt at it got wrong.
+- **Justifying a decision the code cannot observe.** A choice provably indistinguishable to every caller needs no defence in the source; one that
+  matters is asserted by a _test_.
 - **TODO / FIXME / XXX.** Unactionable in-band. Open a ledger task.
 
 ### 5c. Where Rationale Belongs Instead
@@ -329,9 +322,8 @@ a one-line note saying what makes it malformed, when that is not visible from th
 
 ### 5e. A Behavioural Claim Is an Assertion
 
-**A behavioural claim is an assertion, not a sentence.** Where a comment asserts behaviour, find the test that pins it. If none does, the assertion
-is what was missing: write it, then delete the prose. A sentence claiming behaviour nothing asserts is a claim no reader can falsify and every
-reader must re-read.
+**A behavioural claim is an assertion, not a sentence**, because a claim nothing asserts is one no reader can falsify and every reader must
+re-read.
 
 The procedure, in order:
 
@@ -346,8 +338,8 @@ nothing that holds it. `TESTING.md` §3f states the same handoff from the receiv
 
 ### 5f. A Field Is a Symbol
 
-**A field is a symbol, judged as one.** An interface field earns at most one line, and earns nothing when its name and its type already say it. A
-line that adds a default, a unit, a constraint or a caveat earns its place; one that spells the field name back in words does not.
+<!-- rule:code-rules-field-gloss --> A field is a symbol, judged as one: it earns at most one line, and earns nothing when its name and its type
+already say it.
 
 ```ts
 interface ScanOptions {
@@ -397,9 +389,9 @@ early-exiting.
 
 ### 7a. The Name Is the First Hop
 
-**A symbol you cannot name, you cannot navigate to — by any tool.** Once a symbol is in hand, its definition, its references, and its type are all
-exact and cost one lookup. Nothing supplies the symbol itself. A question arrives as words — _where is the retry delay computed_ — and the only
-index from those words to the code is the words already in the code.
+**A symbol you cannot name, you cannot navigate to — by any tool.** Once in hand, its definition, references and type each cost one exact lookup,
+but nothing supplies the symbol itself: a question arrives as words — _where is the retry delay computed_ — and the only index from them to the
+code is the words already in it.
 
 This is the division of labour `AGENT_WORKFLOW.md` §2 states, seen from the other end: **discovery is name-shaped, understanding is
 tool-shaped.** §7 governs the first half only. A symbol whose name carries no word from its domain is unreachable by the question that should find
@@ -430,12 +422,11 @@ other says one thing four times. **This is a floor of one domain word, not a tar
 **One concept, one word, across the whole tree.** Where `org`, `customer`, and `tenant` all name the same entity, the codebase holds three names for
 one thing and no way to say so.
 
-The cost is not retrieval — a reference lookup finds the symbol under any spelling. It is comprehension: a reader holding two words for one entity
-cannot tell whether the code models one thing or two, and the safe assumption is two. That reader writes a second helper beside a first that already
-did the job, and the synonym pair becomes a real duplicate.
+The cost is comprehension, not retrieval: a reader holding two words for one entity cannot tell whether the code models one thing or two, assumes
+two, and writes a second helper beside the first, so the synonym pair becomes a real duplicate.
 
-**An import alias is the same defect at smaller scale.** Renaming a symbol at its call site replaces a name the codebase agreed on with one only
-that file knows, so a reader arriving with the agreed word does not find it there. Alias to resolve a genuine collision, never for taste.
+**An import alias is the same defect at smaller scale**, swapping the agreed name for one only that file knows: alias to resolve a genuine
+collision, never for taste.
 
 ### 7d. Parameters Distinguished by Type, Not Order
 
@@ -454,8 +445,8 @@ into a type error:
 function grantAccess(grant: { userId: UserId; resourceId: ResourceId; role: Role }): Result<Grant>;
 ```
 
-The compiler is the one reviewer that cannot be skipped, and this is the cheapest class of bug to hand it. Distinct from §3, which governs
-_untrusted_ input arriving at a boundary: §7d governs _internal_ signatures, where the values are already trusted and the whole risk is positional.
+The compiler is the one reviewer that cannot be skipped. Where §3 governs _untrusted_ input at a boundary, §7d governs _internal_ signatures, whose
+values are trusted and whose whole risk is positional.
 
 ### 7e. Casing, Prefixes and Exports
 

@@ -233,8 +233,8 @@ describe("the shipped agent definitions", () => {
 
   it("are merged for both kinds, every slot filled", () => {
     expect(agents.map(({ name }) => name)).toEqual([
-      ...["cc-dev.md", "cc-doc.md", "cc-plan.md", "cc-test.md", "cc-tester.md"].map((file) => `apps/${file}`),
-      ...["cc-dev.md", "cc-doc.md", "cc-plan.md", "cc-test.md", "cc-tester.md"].map((file) => `libs/${file}`),
+      ...["cc-dev.md", "cc-doc.md", "cc-plan.md", "cc-reviewer.md", "cc-test.md", "cc-tester.md"].map((file) => `apps/${file}`),
+      ...["cc-dev.md", "cc-doc.md", "cc-plan.md", "cc-reviewer.md", "cc-test.md", "cc-tester.md"].map((file) => `libs/${file}`),
     ]);
   });
 
@@ -273,14 +273,20 @@ describe("the shipped agent definitions", () => {
   });
 });
 
-describe("the shipped reviewer skills", () => {
+describe("the shipped reviewers", () => {
   // A reviewer reviews and closes; a repair it made itself would be a change nobody reviews.
-  for (const skill of ["warden-review", "review-handoff"]) {
-    it(`${skill} cannot edit while it is active`, () => {
-      const source = readFileSync(join(WARDEN_ROOT, "claude/skills/shared", skill, "SKILL.md"), "utf-8");
-      expect(/^disallowed-tools: (.*)$/m.exec(source)?.[1]?.split(", ")).toEqual(["Edit", "Write"]);
-    });
-  }
+  it("warden-review cannot edit while it is active", () => {
+    const source = readFileSync(join(WARDEN_ROOT, "claude/skills/shared/warden-review/SKILL.md"), "utf-8");
+    expect(/^disallowed-tools: (.*)$/m.exec(source)?.[1]?.split(", ")).toEqual(["Edit", "Write"]);
+  });
+
+  it("cc-reviewer cannot edit, spawn a stand-in, or skip the review skill", () => {
+    const source = readFileSync(join(WARDEN_ROOT, "claude/agents/shared/cc-reviewer.md"), "utf-8");
+    const tools = /^tools: (.*)$/m.exec(source)?.[1]?.split(", ") ?? [];
+    expect(/^disallowedTools: (.*)$/m.exec(source)?.[1]?.split(", ")).toEqual(["Edit", "Write"]);
+    expect([tools.includes("Agent"), tools.includes("Edit"), tools.includes("Write")]).toEqual([false, false, false]);
+    expect(/^skills: (.*)$/m.exec(source)?.[1]).toBe("warden-review");
+  });
 });
 
 describe("the shipped session skills", () => {
@@ -292,9 +298,15 @@ describe("the shipped session skills", () => {
     }
   });
 
-  it("render the repository's own review worktree into review-handoff", () => {
-    const text = layerTree([SKILLS], "cornellaw").get("review-handoff/SKILL.md") ?? "";
+  it("render the repository's own review worktree into cc-reviewer", () => {
+    const text = layerTree(syncTrees(join(WARDEN_ROOT, "claude"), "libs")[0]?.from ?? [], "cornellaw").get("cc-reviewer.md") ?? "";
     expect([text.includes("~/work/cornellaw-review"), text.includes("~/work/forge-review")]).toEqual([true, false]);
+  });
+
+  // A reviewer rung over a cross-session message has to be running; an agent the handoff dispatches does not.
+  it("dispatch cc-reviewer from handoff, never a session over SendMessage", () => {
+    const text = readFileSync(join(SKILLS, "handoff/SKILL.md"), "utf-8");
+    expect([text.includes("`cc-reviewer`"), text.includes("SendMessage"), text.includes("ListAgents")]).toEqual([true, false, false]);
   });
 
   // A closed task reaches main only through `merge`; a handoff whose reply names no such skill strands it in `done`.
@@ -318,7 +330,6 @@ describe("the shipped fleet settings", () => {
     settings.permissions.deny.some((rule: string) => {
       const pattern = /^Bash\((.*)\)$/.exec(rule)?.[1];
       if (pattern === undefined) return false;
-      const bare = pattern.endsWith(" *") ? pattern.slice(0, -2) : undefined;
       const regex = (glob: string) =>
         new RegExp(
           `^${glob
@@ -326,6 +337,12 @@ describe("the shipped fleet settings", () => {
             .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
             .join(".*")}$`,
         );
+      // Claude Code reads a trailing `:*` (not `:**`) as a prefix rule: the glob before it, followed by anything or by nothing.
+      if (pattern.endsWith(":*")) {
+        const prefix = pattern.slice(0, -2).trimEnd();
+        return regex(prefix).test(command) || regex(`${prefix} *`).test(command);
+      }
+      const bare = pattern.endsWith(" *") ? pattern.slice(0, -2) : undefined;
       return regex(pattern).test(command) || (bare !== undefined && regex(bare).test(command));
     });
 
@@ -348,9 +365,10 @@ describe("the shipped fleet settings", () => {
     "push --prune origin refs/heads/*:refs/heads/*",
     "push --all origin",
     "push --no-verify origin main",
+    "push origin :task/x",
+    "push :task/x",
     "push origin +main",
     "push +main",
-    "push origin :task/x",
     "push origin main +task/x",
   ];
 
@@ -361,6 +379,10 @@ describe("the shipped fleet settings", () => {
     `git -C . -c a=b ${verb}`,
     `git --no-pager ${verb}`,
   ];
+
+  it("holds no rule ending in `:*`, which Claude Code reads as a prefix rule", () => {
+    expect(settings.permissions.deny.filter((rule: string) => rule.endsWith(":*)"))).toEqual([]);
+  });
 
   it("denies every git write the flow never makes, plainly and behind any leading global option", () => {
     const spellings = HARMFUL.flatMap(spell);

@@ -70,7 +70,9 @@ export default definePage(routes.home, {
 The optional second argument sets the response status and adds headers — where an error page declares itself:
 
 ```tsx
-return renderPage(<NotFoundPage />, { status: 404, headers: { "cache-control": "no-store" } });
+import { renderPage } from "@y-core/forge/render/jsx";
+
+const response = renderPage(<NotFoundPage />, { status: 404, headers: { "cache-control": "no-store" } });
 ```
 
 Do not pass a `content-type`: the HTML one is fixed, and `@y-core/forge/http` throws when a caller supplies its own.
@@ -87,7 +89,7 @@ import { renderToString } from "@y-core/forge/render/jsx";
 import { fragmentResponse } from "@y-core/forge/http";
 
 const rows = await renderToString(<ResultRows items={items} />);
-return fragmentResponse(rows, 200);
+const response = fragmentResponse(rows, 200);
 ```
 
 The result is a `SafeHtml` value — already escaped, and passed through untouched by the renderer and the response builders rather than escaped a

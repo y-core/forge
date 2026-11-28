@@ -13,6 +13,8 @@ import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
 import {
+  commandFailures,
+  findingFailures,
   formatFailureExcerpt,
   formatFindingBlock,
   formatFixSummary,
@@ -35,6 +37,8 @@ import { GATE_TIERS } from "./types";
 import type {
   CheckStep,
   CommandStep,
+  Finding,
+  GateFailure,
   GateRunReport,
   GateTier,
   Step,
@@ -63,6 +67,7 @@ const gateFlags = {
   reuse: { type: "boolean" as const, description: "Exit green at once when a passing run of this exact tree is on record at this tier or above" },
   affected: { type: "boolean" as const, description: "Run only the steps whose watched paths the working tree's changes touch (a scoped run)" },
   report: { type: "string" as const, description: "Write report.json and every step's whole log into this directory, whatever the verdict" },
+  json: { type: "boolean" as const, description: "Print nothing but the failures, as a JSON array of { step, rule, file, line, message }" },
 };
 
 const binFlags = {
@@ -174,15 +179,19 @@ function resolveTier(flag: string | undefined): { ok: true; tier: GateTier } | {
   return { ok: true, tier: named };
 }
 
-function reportFailure(label: string, output: string, tail: number, cwd: string): void {
-  console.log(formatFailureExcerpt(output, tail));
+function reportFailure(label: string, output: string, tail: number, cwd: string, log: (line: string) => void): void {
+  log(formatFailureExcerpt(output, tail));
   const path = writeFullLog(label, output, cwd);
-  if (path !== undefined) console.log(formatFullLogPath(path));
+  if (path !== undefined) log(formatFullLogPath(path));
 }
 
 // A check that throws is a defect in the check, not a verdict — but the gate still owes a summary
 // line, so the throw is reported as that step's failure rather than unwinding the whole run.
-async function runCheck(step: CheckStep, tier: GateTier, style: Colorize): Promise<{ ok: boolean; ms: number; report: string; plain: string }> {
+async function runCheck(
+  step: CheckStep,
+  tier: GateTier,
+  style: Colorize,
+): Promise<{ ok: boolean; ms: number; report: string; plain: string; findings: readonly Finding[] }> {
   const started = Date.now();
   try {
     const result = await step.run(tier);
@@ -191,10 +200,11 @@ async function runCheck(step: CheckStep, tier: GateTier, style: Colorize): Promi
       ms: Date.now() - started,
       report: formatFindingBlock(result.findings, style),
       plain: formatFindingBlock(result.findings, PLAIN),
+      findings: result.findings,
     };
   } catch (error) {
     const thrown = `    ${error instanceof Error ? error.message : String(error)}`;
-    return { ok: false, ms: Date.now() - started, report: thrown, plain: thrown };
+    return { ok: false, ms: Date.now() - started, report: thrown, plain: thrown, findings: [{ level: "fail", message: thrown.trim() }] };
   }
 }
 
@@ -228,6 +238,9 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       // The gate writes its progress to stdout, so it is stdout's level that decides. Redirect it
       // and the ticks go plain; leave it attached and they are coloured, whatever stderr is doing.
       const style = ctx?.out ?? PLAIN;
+      // Under --json the stream is withheld and the failures are the whole of stdout, so a caller parses it rather than reads it.
+      const log = flags.json === true ? (_line: string): void => {} : (line: string): void => console.log(line);
+      const failures: GateFailure[] = [];
       // Annotated: TS narrows past a never-returning call only through an explicitly typed callee.
       const quit: (code: number) => never = ctx?.io.exit ?? exit;
       const resolved = resolveTier(flags.tier);
@@ -240,6 +253,13 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       if (!table.ok) {
         console.error(table.error);
         quit(1);
+      }
+      if (flags.json === true) {
+        const clash = [flags.fix === true && "fix", flags.list === true && "list"].find((name) => name !== false);
+        if (clash !== undefined) {
+          console.error(`--json prints a run's failures, so it takes no --${clash}.`);
+          quit(1);
+        }
       }
       if (flags.report !== undefined) {
         const clash = [
@@ -303,7 +323,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
       if (flags.list) {
         const reach = await settle();
-        console.log(
+        log(
           formatList(
             banner,
             steps.map((step) => listLabel(step, tier, reach[step.label])),
@@ -315,7 +335,8 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       }
 
       if (steps.length === 0) {
-        console.log(formatNothingAffected(banner, { changed: changed?.length ?? 0, total }, style));
+        log(formatNothingAffected(banner, { changed: changed?.length ?? 0, total }, style));
+        if (flags.json === true) console.log("[]");
         return;
       }
 
@@ -342,33 +363,33 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             } catch (error) {
               thrown = error instanceof Error ? error.message : String(error);
             }
-            console.log(formatStepLine(`fix:${step.label}`, thrown === undefined, Date.now() - started, style));
+            log(formatStepLine(`fix:${step.label}`, thrown === undefined, Date.now() - started, style));
             if (thrown === undefined) {
               fixed++;
             } else {
-              console.log(`    ${thrown}`);
+              log(`    ${thrown}`);
               broke = true;
             }
             continue;
           }
           const absent = await absentRequirement(step, probed);
           if (absent !== undefined) {
-            console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
+            log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
             if (failsWhenAbsent(tier)) broke = true;
             else skipped++;
             continue;
           }
           const [bin, ...args] = step.fix;
           const result = captureStep(bin, args, cwd, step);
-          console.log(formatStepLine(`fix:${step.label}`, result.code === 0, result.ms, style));
+          log(formatStepLine(`fix:${step.label}`, result.code === 0, result.ms, style));
           if (result.code === 0) {
             fixed++;
           } else {
-            reportFailure(step.label, result.output, step.tail, cwd);
+            reportFailure(step.label, result.output, step.tail, cwd, log);
             broke = true;
           }
         }
-        console.log(formatFixSummary({ gate: banner, fixed, unfixable, skipped }));
+        log(formatFixSummary({ gate: banner, fixed, unfixable, skipped }));
         if (broke || skipped > 0) quit(1);
         return;
       }
@@ -381,10 +402,11 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         const required = steps.filter((step) => selection.reach[step.label] !== "untouched").map((step) => step.label);
         const receipt = tree === undefined ? undefined : readReceipt(cwd);
         if (receipt !== undefined && tree !== undefined && receiptCovers(receipt, { tree, tier, base, labels: required })) {
-          console.log(formatReused(banner, receipt, style));
+          log(formatReused(banner, receipt, style));
+          if (flags.json === true) console.log("[]");
           return;
         }
-        console.log(formatReuseMiss({ tree, tier }, style));
+        log(formatReuseMiss({ tree, tier }, style));
       }
 
       const reach = await settle();
@@ -404,14 +426,15 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
       for (const [index, step] of steps.entries()) {
         if (reach[step.label] === "untouched") {
-          console.log(formatUntouched(step.label, pending?.length ?? 0, style));
+          log(formatUntouched(step.label, pending?.length ?? 0, style));
           records.push({ label: step.label, status: "untouched", durationMs: 0 });
           continue;
         }
 
         const absent = await absentRequirement(step, probed);
         if (absent !== undefined) {
-          console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
+          log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
+          failures.push({ step: step.label, message: `${absent.tool} is not available — ${absent.hint}` });
           if (failsWhenAbsent(tier)) {
             records.push({ label: step.label, status: "setup", durationMs: 0 });
             failedAt = { label: step.label, at: index + 1 };
@@ -423,12 +446,13 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         if (isCheckStep(step)) {
-          const { ok, ms, report, plain } = await runCheck(step, tier, style);
-          console.log(formatStepLine(step.label, ok, ms, style));
+          const { ok, ms, report, plain, findings } = await runCheck(step, tier, style);
+          log(formatStepLine(step.label, ok, ms, style));
           // Warnings are worth printing on a pass too — they are the check's only voice.
-          if (report !== "") console.log(report);
+          if (report !== "") log(report);
           records.push({ label: step.label, status: ok ? "passed" : "failed", durationMs: ms, ...logged(step.label, plain) });
           if (!ok) {
+            failures.push(...findingFailures(step.label, findings));
             failedAt = { label: step.label, at: index + 1 };
             break;
           }
@@ -438,17 +462,18 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
         const [bin, ...args] = step.cmd;
         const result = captureStep(bin, args, cwd, step, reportDir === undefined ? undefined : step.results);
-        console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
+        log(formatStepLine(step.label, result.code === 0, result.ms, style));
         records.push({ label: step.label, durationMs: result.ms, ...commandStatus(result), ...logged(step.label, result.output) });
         if (result.code !== 0) {
-          reportFailure(step.label, result.output, step.tail, cwd);
+          reportFailure(step.label, result.output, step.tail, cwd, log);
+          failures.push(...commandFailures(step.label, result.output, step.tail));
           failedAt = { label: step.label, at: index + 1 };
           break;
         }
         passed++;
       }
 
-      console.log(
+      log(
         formatSummary(
           {
             gate: banner,
@@ -486,9 +511,10 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       if (unscoped && tree !== undefined && keepsReceipt) {
         if (!green) clearReceipt(cwd);
         else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, tier, ...(base === undefined ? {} : { base }), labels });
-        else console.log(formatReceiptWithheld(style));
+        else log(formatReceiptWithheld(style));
       }
 
+      if (flags.json === true) console.log(JSON.stringify(failures, null, 2));
       if (failedAt !== undefined || passed === 0 || skipped > 0) quit(1);
     },
   });

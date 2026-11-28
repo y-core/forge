@@ -46,6 +46,13 @@ describe("formatFinding()", () => {
     expect(formatFinding(fail("bad", { file: "src/a.tsx", line: 4 }))).toBe("FAIL src/a.tsx:4: bad");
   });
 
+  it("opens the message with the rule id when the finding names one", () => {
+    expect([formatFinding(fail("msg", { rule: "x" })), formatFinding(warn("msg", { file: "src/a.ts", line: 2, rule: "x" }))]).toEqual([
+      "FAIL: [x] msg",
+      "warn src/a.ts:2: [x] msg",
+    ]);
+  });
+
   it("marks a warning distinctly from a failure, so a reader can tell them apart at a glance", () => {
     expect(formatFinding(warn("no link definition"))).toBe("warn: no link definition");
   });

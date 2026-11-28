@@ -1,5 +1,5 @@
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 /** An optional property signature, with the annotation whose union has to admit `undefined`. */
 interface PropertySignatureNode extends AstNode {
@@ -16,15 +16,14 @@ function admitsUndefined(annotation: AstNode | undefined): boolean {
 }
 
 /** An optional property a consumer passes a value into, declared without `| undefined`. */
-export const optionalPropUndefined: LintRule = {
+export const optionalPropUndefined = defineLintRule("forge-ui-optional-prop-undefined", {
   meta: {
     type: "problem",
     docs: {
       description: "Under `exactOptionalPropertyTypes`, a bare `?:` forces a consumer into a guard-form spread that `jsx-a11y` cannot read.",
     },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-optional-prop-undefined");
+  create(_context, report) {
     return {
       TSPropertySignature(node: AstNode) {
         const property = node as PropertySignatureNode;
@@ -35,4 +34,4 @@ export const optionalPropUndefined: LintRule = {
       },
     };
   },
-};
+});

@@ -1,0 +1,24 @@
+diff --git a/src/ui/conformance.test.tsx b/src/ui/conformance.test.tsx
+index 6850b0c7..b9ba9aff 100644
+--- a/src/ui/conformance.test.tsx
++++ b/src/ui/conformance.test.tsx
+@@ -68,7 +68,6 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
+   Carousel: { slot: "carousel" },
+   CheckboxGroup: { props: { name: "cg" }, stateProps: MESSAGE_INVALID, slot: "checkbox-group", stateAttr: "data-orientation" },
+   Collapsible: { slot: "collapsible" },
+-  DescriptionList: { slot: "description-list" },
+   Dialog: { props: { id: "d1" }, slot: "dialog" },
+   Drawer: { props: { id: "dr1" }, slot: "drawer", stateAttr: "data-side" },
+   EmptyState: { slot: "empty-state" },
+diff --git a/src/ui/core/mod.ts b/src/ui/core/mod.ts
+index 8bac9836..33d1cc1a 100644
+--- a/src/ui/core/mod.ts
++++ b/src/ui/core/mod.ts
+@@ -13,7 +13,6 @@ export { Carousel } from "./carousel";
+ export type { CarouselSnap } from "./types";
+ export { CheckboxGroup } from "./checkbox-group";
+ export { Collapsible } from "./collapsible";
+-export { DescriptionList } from "./description-list";
+ export { Dialog } from "./dialog";
+ export { Drawer } from "./drawer";
+ export { EmptyState } from "./empty-state";

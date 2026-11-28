@@ -1,0 +1,158 @@
+diff --git a/src/controllers/contact.ts b/src/controllers/contact.ts
+new file mode 100644
+index 00000000..7d21d975
+--- /dev/null
++++ b/src/controllers/contact.ts
+@@ -0,0 +1,17 @@
++import { fragmentResponse } from "@y-core/forge/http";
++import { renderPage, renderToString } from "@y-core/forge/render/jsx";
++
++import { defineAction, definePage } from "../app/handlers";
++import { ContactSchema } from "../model/contact";
++import { routes } from "../routes";
++import { ContactThanks, ContactView } from "../views/contact";
++
++export const contactPage = definePage(routes.contact, {
++  loader: (_c, config) => ({ siteName: config.siteName }),
++  view: (_c, _config, state) => renderPage(ContactView({ siteName: state.data.siteName, action: routes.contactSubmit.href() })),
++});
++
++export const contactSubmit = defineAction(routes.contactSubmit, {
++  schema: ContactSchema,
++  handle: async (data, _c, config) => fragmentResponse(await renderToString(ContactThanks({ name: data.name, siteName: config.siteName }))),
++});
+diff --git a/src/model/contact.ts b/src/model/contact.ts
+new file mode 100644
+index 00000000..aa658b4b
+--- /dev/null
++++ b/src/model/contact.ts
+@@ -0,0 +1,9 @@
++import { formMultilineText, formText, v } from "@y-core/forge/validation";
++
++export const ContactSchema = v.strictObject({
++  name: v.pipe(formText(), v.minLength(1), v.maxLength(100)),
++  email: v.pipe(formText(), v.email(), v.maxLength(254)),
++  message: v.pipe(formMultilineText(), v.minLength(10), v.maxLength(2000)),
++});
++
++export type ContactMessage = v.InferOutput<typeof ContactSchema>;
+diff --git a/src/router.ts b/src/router.ts
+index dcb03340..8bc45614 100644
+--- a/src/router.ts
++++ b/src/router.ts
+@@ -2,9 +2,10 @@ import type { Forge } from "@y-core/forge/app";
+ import { createController } from "@y-core/forge/router";
+ 
+ import type { Bindings } from "./app/types";
++import { contactPage, contactSubmit } from "./controllers/contact";
+ import { homePage } from "./controllers/home";
+ import { routes } from "./routes";
+ 
+ export function registerRoutes(app: Forge<Bindings>): void {
+-  app.map(routes, createController(routes, { actions: { home: homePage } }));
++  app.map(routes, createController(routes, { actions: { home: homePage, contact: contactPage, contactSubmit } }));
+ }
+diff --git a/src/routes.ts b/src/routes.ts
+index dbe528b1..b4fc3c45 100644
+--- a/src/routes.ts
++++ b/src/routes.ts
+@@ -1,3 +1,3 @@
+-import { get, route } from "@y-core/forge/router";
++import { get, post, route } from "@y-core/forge/router";
+ 
+-export const routes = route({ home: get("/") });
++export const routes = route({ home: get("/"), contact: get("/contact"), contactSubmit: post("/contact") });
+diff --git a/src/views/contact.tsx b/src/views/contact.tsx
+new file mode 100644
+index 00000000..57b47c9d
+--- /dev/null
++++ b/src/views/contact.tsx
+@@ -0,0 +1,35 @@
++export function ContactView({ siteName, action }: { siteName: string; action: string }) {
++  return (
++    <html lang='en'>
++      <head>
++        <meta charset='utf-8' />
++        <title>Contact {siteName}</title>
++      </head>
++      <body>
++        <main>
++          <h1>Contact {siteName}</h1>
++          <form method='post' action={action}>
++            <label>
++              Name <input name='name' required />
++            </label>
++            <label>
++              Email <input name='email' type='email' required />
++            </label>
++            <label>
++              Message <textarea name='message' required />
++            </label>
++            <button type='submit'>Send</button>
++          </form>
++        </main>
++      </body>
++    </html>
++  );
++}
++
++export function ContactThanks({ name, siteName }: { name: string; siteName: string }) {
++  return (
++    <p>
++      Thanks, {name}. {siteName} will be in touch.
++    </p>
++  );
++}
+diff --git a/tests/contact.test.ts b/tests/contact.test.ts
+new file mode 100644
+index 00000000..a7d1d4f4
+--- /dev/null
++++ b/tests/contact.test.ts
+@@ -0,0 +1,47 @@
++import { afterEach, beforeEach, describe, expect, it } from "bun:test";
++
++import { openBunD1 } from "@y-core/forge/testing/d1/bun";
++import type { TestD1 } from "@y-core/forge/testing/d1/bun";
++
++import { createWorker } from "../src/worker";
++import { testEnv } from "./env";
++
++let d1: TestD1;
++
++beforeEach(async () => {
++  d1 = await openBunD1();
++});
++
++afterEach(async () => {
++  await d1.dispose();
++});
++
++function submit(fields: Record<string, string>): Promise<Response> {
++  return createWorker({ scriptSrc: ["'self'"] }).request("/contact", { method: "POST", body: new URLSearchParams(fields) }, testEnv(d1));
++}
++
++const textOf = async (res: Response) => (await res.text()).split(/<[^>]+>/).filter((part) => part.trim() !== "");
++
++describe("the contact form", () => {
++  it("renders a form posting name, email and message back to itself", async () => {
++    const html = await (await createWorker({ scriptSrc: ["'self'"] }).request("/contact", {}, testEnv(d1))).text();
++
++    expect([...html.matchAll(/<(?:input|textarea)[^>]*\sname="([^"]+)"/g)].map((match) => match[1])).toEqual(["name", "email", "message"]);
++    expect(/<form method="post" action="([^"]*)"/.exec(html)?.[1]).toBe("/contact");
++  });
++
++  it("thanks the sender by name, on behalf of the site", async () => {
++    const res = await submit({ name: "Ada", email: "ada@example.com", message: "Hello there, Forge." });
++
++    expect(res.status).toBe(200);
++    expect(await textOf(res)).toEqual(["Thanks, Ada. Forge Eval will be in touch."]);
++  });
++
++  it("refuses a message too short to act on, with 422", async () => {
++    expect((await submit({ name: "Ada", email: "ada@example.com", message: "Hi" })).status).toBe(422);
++  });
++
++  it("refuses a field the form never had", async () => {
++    expect((await submit({ name: "Ada", email: "ada@example.com", message: "Hello there, Forge.", admin: "1" })).status).toBe(422);
++  });
++});

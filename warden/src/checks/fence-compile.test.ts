@@ -220,6 +220,24 @@ describe("compileFences()", () => {
     }
   });
 
+  it("resolves an installed package from the step tsconfig's tree, so it keeps its real types and is never untyped", () => {
+    const body = 'import * as v from "valibot";\nconst count: number = v.parse(v.string(), "one");';
+    const result = compileFences([{ file: "README.md", line: 3, body }], project);
+
+    expect(result.ok && result.data.map(({ line, code }) => ({ line, code }))).toEqual([{ line: 4, code: 2322 }]);
+  });
+
+  it("compiles repository source that imports a package a fence imports too, against the package's real types", () => {
+    const body =
+      'import type { KeyBinding } from "@codemirror/view";\nimport { viewportKeymap } from "@y-core/forge/render/markdown/editor/client/commands";\nconst bindings: readonly KeyBinding[] = [];\nvoid [bindings, viewportKeymap];';
+    const result = compileFences([{ file: "README.md", line: 3, body }], {
+      ...project,
+      paths: { "@y-core/forge/*": [fileURLToPath(new URL("../../../src/*", import.meta.url))] },
+    });
+
+    expect(result).toEqual({ ok: true, data: [] });
+  });
+
   it("fails when the step tsconfig cannot be read", () => {
     const absent = { tsconfig: join(tmpdir(), "forge-fences-absent", "tsconfig.json"), paths: {} };
     const result = compileFences([{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], absent);

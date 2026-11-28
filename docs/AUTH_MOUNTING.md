@@ -55,13 +55,11 @@ step-up factor. Copy the wiring from there. This section rules on the order it f
 the guard policy table's ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 
 **The `csrf` policy must cover the whole mount, or the chain throws at registration.** Every auth page mints a token, so every group
-`createAuthGuards` returns carries a sample URL for every form of every route its `routes` maps, an optional segment kept and dropped and each
-param or wildcard filled with its own name, and `approval.contribution` its prompt's `path`, as `csrfCovers`; a group spread into an app's own
-contribution keeps them. `applyMiddlewareChain` refuses a chain with no `csrf` policy, `paths` that miss one of them, or an `exclude` entry that
-matches one, naming the route, the contribution or guard group listing it, and the `paths` or the entry. So keep
-`exclude` beside the mount: `["/public/*"]` registers, and `["/members/*"]` over a mount at `/members` throws. The check tries those samples, not
-every value, so an `exclude` must not name an auth route at any value: `/members/account/passkeys/abc` registers, and leaves that passkey's page
-answering `500`.
+`createAuthGuards` returns, and `approval.contribution`, carries a sample URL for every form it serves as `csrfCovers`; a group spread into an app's
+own contribution keeps them. `applyMiddlewareChain` refuses a chain with no `csrf` policy, `paths` that miss one of them, or an `exclude` entry that
+matches one, naming the route, the contribution or guard group listing it, and the `paths` or the entry. So keep `exclude` beside the mount:
+`["/public/*"]` registers, and `["/members/*"]` over a mount at `/members` throws. The check tries those samples, not every value, so an `exclude`
+must not name an auth route at any value: `/members/account/passkeys/abc` registers, and leaves that passkey's page answering `500`.
 
 **`createAuthGuards` sends a CSRF-refused sign-out to its confirm page itself, with no hook passed.** A sign-out posted from a page open past
 the token's life lands on the `GET` sign-out confirm page, or gets a `204` with `HX-Redirect` under htmx, not a bare 403 that leaves the session
@@ -78,8 +76,7 @@ factor registry is the same: the test's `factorRegistryFor` builds a `createFact
 **A deployment offering no passkey factor must name a `settledPath` of its own — both of them.** The mount test gives the guard chain
 `accountRoutes`' `passkeys` page, and `AuthWebOptions.settledPath` defaults to that same page when it is omitted. That page answers **404**
 wherever the factor registry offers no passkey factor, so on such a deployment a completed sign-in, and a settled visitor bounced off an enrolment
-page, both land on a 404. Name a path the deployment actually serves — the account root is the usual choice — and set it in both places, because the
-two are read independently: this one is where a completed sign-in lands, the guard's is where a visitor owing nothing is sent off an enrolment page.
+page, both land on a 404. Name a path the deployment serves, usually the account root, in both places, since each is read independently.
 
 **Why that registry is per request, and whether it is the same one `resolveServices` holds.** §3 says the email-OTP and passkey factors are built
 per request because their seams read a `UserStore`; the passkey factor also takes **this request's session id**, which is what the WebAuthn
@@ -96,8 +93,10 @@ cookie. The canonical mount test uses cookie storage.
 
 **Under cookie storage, the address a visitor typed sits readable in their cookie until sign-in completes.** The cookie is signed, so nobody
 can alter it, and httpOnly, so page JavaScript cannot read it. It is not encrypted, so anyone holding the device's cookie store can read the
-address, and so can any log that captures request `Cookie` headers. Do not log `Cookie` headers: such a log already holds the session's bearer
-token, which is the worse leak. Forge does not encrypt the address, because the verify page prints it to whoever holds the cookie anyway.
+address, and so can any log that captures request `Cookie` headers. Forge does not encrypt the address, because the verify page prints it to
+whoever holds the cookie anyway.
+
+<!-- rule:forge-no-cookie-header-log --> Such a log already holds the session's bearer token, which is the worse leak.
 
 **Set the cookie's `maxAge` to at least the session's `absoluteLifetimeMs`.** A signed cookie expires `maxAge` after it was last written.
 Sign-in and step-up write it, but the idle touch that keeps a session alive writes only D1, so a shorter `maxAge` ends an active session before
@@ -129,9 +128,8 @@ cookie name is part of the keying, and a `__Host-` prefix additionally constrain
 re-keys every live session silently — every signed-in visitor is anonymous on the next request, with no error anywhere. Change it where you can
 verify a live session survives, not as a tidy-up.
 
-`applyMiddlewareChain` encodes the order inside a group, so a consumer never writes it ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). `origin`
-and `rateLimit` on a group are **policy data the chain expands into middleware**: a consumer who spreads `group.guards` alone mounts neither,
-and on a guard-less group mounts nothing at all.
+`origin` and `rateLimit` on a group are **policy data the chain expands into middleware** ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e): spreading
+`group.guards` alone mounts neither, and on a guard-less group mounts nothing at all.
 
 **`origin` is required, and omitting it throws.** `createAuthGuards` refuses to return at all once any group it is wiring answers a state-changing
 method with no allowlist behind it — the throw names the group, and it happens inside `app.use(…)`, which is isolate startup on a Worker. Forge
@@ -287,6 +285,8 @@ meet. AAL2 asks for re-authentication at least every 24 hours and after an hour 
 factor and wants AAL2's bounds sets both:
 
 ```ts
+import { authRequestServices } from "@y-core/forge/auth/web";
+
 authRequestServices<Env>({ ...servicesOptions, sessionOptions: { absoluteLifetimeMs: 86_400_000, idleTimeoutMs: 3_600_000 } });
 ```
 

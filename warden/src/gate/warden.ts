@@ -11,6 +11,7 @@ import { canonSources, discover, repoRelative } from "../corpus/source";
 import { type BuildReport, build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { CANON_ROOT, packageNameOf } from "../paths";
+import { ruleStatements } from "../rules/render";
 import { unresolved } from "../search/related";
 import { type Corpus, CORPORA, type SourceDoc, type Tree } from "../types";
 import { canonVersion } from "../version";
@@ -51,11 +52,13 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
     // A build that throws is a document the gate should name, not a stack trace the gate dies on —
     // a `UNIQUE` violation here means two sections claimed one id, which is a located finding.
     let report;
+    let statements: ReadonlyMap<string, string> = new Map();
     try {
-      report = build(db, sources, canonVersion(), packageNameOf(root));
+      statements = ruleStatements({ root, kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+      report = build(db, sources, canonVersion(), packageNameOf(root), statements);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const collision = duplicateChunkId(sources);
+      const collision = duplicateChunkId(sources, statements);
       return checkResult(
         [
           collision === undefined
@@ -93,10 +96,10 @@ function perCorpus(db: Database): string {
 }
 
 /** The first chunk id two sections claim, when a failed build has one to name. */
-function duplicateChunkId(sources: readonly SourceDoc[]): { id: string; file: string } | undefined {
+function duplicateChunkId(sources: readonly SourceDoc[], statements: ReadonlyMap<string, string>): { id: string; file: string } | undefined {
   try {
     const seen = new Set<string>();
-    for (const entry of load(sources)) {
+    for (const entry of load(sources, undefined, statements)) {
       for (const chunk of entry.chunks) {
         if (seen.has(chunk.id)) return { id: chunk.id, file: entry.doc.path };
         seen.add(chunk.id);

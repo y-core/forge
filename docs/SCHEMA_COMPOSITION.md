@@ -12,7 +12,7 @@ audience: consumer
 >
 > Defers to: `DATABASE_MANAGEMENT.md` for the places a migration is applied to, the companion tables, the lint rules, seeds, backups and the CI
 > gate; [`src/tooling/db/README.md`][db-readme] for the command tree, every flag and every export; [`NAMESPACES.md`][namespaces-5g] §5g for why this
-> surface is a `tooling` namespace and never Worker-reachable.
+> surface is a `tooling` namespace.
 
 ---
 
@@ -227,8 +227,8 @@ one on disk — the files before it include the other branch's. `forge db migrat
   and it refuses a file with no compose stamp, a file edited since it was composed, and a name not on disk. `--dry-run` prints what it would restamp
   and writes nothing.
 
-Restamp certifies a file that was proven against a different baseline, and proves nothing about it against this one. It is for the
-merged-and-already-applied case only, where the alternative is a history that can never be applied again; anywhere the file has not run, recompose.
+**Restamp proves nothing about a file against the new baseline**, so it is only for a file already applied, where the alternative is a history
+that can never be applied again.
 
 ## 7. The Scratch Cache
 

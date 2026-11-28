@@ -1,6 +1,5 @@
 import { classExpressionVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 const PALETTE_HUES =
   "red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone";
@@ -10,10 +9,9 @@ const COLOR_UTILITIES = "bg|text|border|ring|from|via|to|fill|stroke|divide|outl
 const PALETTE_UTILITY = new RegExp(`(?<![\\w-])((?:[a-z][a-z0-9-]*:)*)(${COLOR_UTILITIES})-(${PALETTE_HUES})-(?:50|[1-9]00|950)(?![\\w-])`, "g");
 
 /** A raw Tailwind palette utility with no `dark:` counterpart in the same class expression. */
-export const colorThemeNoRawUtility: LintRule = {
+export const colorThemeNoRawUtility = defineLintRule("forge-ui-color-theme-no-raw-utility", {
   meta: { type: "problem", docs: { description: "A raw palette utility is paired with its `dark:` counterpart, or replaced by a theme token." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-color-theme-no-raw-utility");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const paired = new Set<string>();
       const bare = new Map<string, string>();
@@ -30,4 +28,4 @@ export const colorThemeNoRawUtility: LintRule = {
       }
     });
   },
-};
+});

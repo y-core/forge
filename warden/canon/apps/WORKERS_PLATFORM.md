@@ -6,7 +6,7 @@ description: "The V8 isolate model and what module scope may hold, post-response
 # Workers Platform
 
 > Owns the runtime facts an application must design around: the isolate model, work that outlives a response, rate limiting, deployment safety, and
-> asset serving. These are platform properties, not preferences — the rules here are consequences.
+> asset serving. These are platform properties, not preferences.
 >
 > Defers to: [`CODE_RULES.md`][cr-1] §1 for the zero-global-state rule §1 here justifies; [`APP_ARCHITECTURE.md`][aa-3] §3 for typed config access;
 > [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture §3 depends on.
@@ -83,8 +83,8 @@ There is no third option, and code written as though there were one silently los
 
 ### 1d. Cold Start Versus Warm Reuse
 
-Isolates are reused across requests when traffic is steady. **Module scope runs only on cold start**, so module initialisation must be cheap and
-side-effect-free: no network connections, no environment reads, no work whose result depends on which request happened to be first.
+**Module scope runs only on cold start**, so module initialisation is cheap and side-effect-free: no network connections, no environment reads, no
+work whose result depends on which request came first.
 
 An expensive module-level computation is not amortised in the way it would be in a long-lived process — it is paid on every cold start, which under
 bursty traffic is often.
@@ -95,8 +95,8 @@ bursty traffic is often.
 
 ### 2a. The `waitUntil` Pattern
 
-`c.executionCtx.waitUntil(promise)` keeps the isolate alive until the promise settles, _after_ the response has been sent. Use it for work that must
-not block the response but must complete before the isolate is recycled.
+`c.executionCtx.waitUntil(promise)` keeps the isolate alive until the promise settles, _after_ the response is sent: use it for work that must not
+block the response but must finish before the isolate is recycled.
 
 ```ts
 c.executionCtx.waitUntil(logChannel.flush());
@@ -114,12 +114,12 @@ is silent.
 c.executionCtx.waitUntil(logChannel.flush().catch((err) => console.error("flush failed", err)));
 ```
 
-Attach a catch wherever the failure is worth knowing about, which is nearly always.
+Attach a catch wherever the failure is worth knowing about.
 
 ### 2c. Cover Every Started Promise
 
-**The promise handed to `waitUntil` must cover every piece of work the function started**, not only the headline one. A detached branch inside the
-function — a fire-and-forget cleanup, a probabilistic purge — is untracked, so the isolate may suspend before it settles.
+**The promise handed to `waitUntil` must cover every piece of work the function started**, since a detached branch — a fire-and-forget cleanup, a
+probabilistic purge — is untracked and the isolate may suspend before it settles.
 
 The failure is load-dependent and therefore ships: under light traffic the isolate lives long enough for the detached work to finish anyway, and the
 bug appears only when it matters.
@@ -154,8 +154,8 @@ build never resolves is not ([`APP_ARCHITECTURE.md`][aa-1c] §1c). A test that n
 **The default key is the client IP**, read from the platform's own connecting-IP header. That header is trustworthy only because the request
 provably arrived through the platform edge — the trust boundary [`BOUNDARIES.md`][boundaries-3c] §3c states.
 
-**A custom key replaces the client-IP key, so the trust posture does not govern it.** A custom key that reads the connecting-IP header must
-honour that posture itself; extend the trusted IP key with `keySuffix` rather than reading the header.
+**A custom key replaces the client-IP key and escapes its trust posture**, so extend the trusted IP key with `keySuffix` rather than reading the
+connecting-IP header.
 
 **After authentication, key on identity instead.** IP-keyed limits are simultaneously too loose for shared egress and too tight for a large NAT;
 once a request has an authenticated subject, that subject is the honest key.
@@ -166,8 +166,8 @@ once a request has an authenticated subject, that subject is the honest key.
 
 ### 4a. Secrets Are Provisioned, Never Committed
 
-**Never hardcode an API key, token, or credential in a source file.** Provision secrets through the platform CLI, which encrypts them at rest and
-injects them into the environment at runtime, where they appear alongside ordinary bindings.
+<!-- rule:workers-platform-no-hardcoded-secret --> Provision secrets through the platform CLI, which encrypts them at rest and injects them into the
+environment at runtime, where they appear alongside ordinary bindings.
 
 A secret in git is compromised the moment it is pushed and stays compromised after it is deleted, because history retains it. Rotation is the only
 remedy, and it is not a code change.
@@ -180,11 +180,11 @@ missing-key error rather than a mysterious one.
 
 ### 4c. The Pre-Deploy Gate
 
-**The full verification gate must pass before every deployment**, and a failure blocks the deploy ([`TESTING.md`][testing-6] §6). Asset builds run
-before deploy, not as part of it.
+**The full verification gate must pass before every deployment** ([`TESTING.md`][testing-6] §6), and asset builds run before deploy, not as part of
+it.
 
-**Never use a force flag to skip build or asset validation.** The validation exists because a deploy that half-succeeds leaves markup pointing at
-assets that were never uploaded, and the symptom is an unstyled production site.
+<!-- rule:workers-platform-no-force-deploy --> The validation exists because a deploy that half-succeeds leaves markup pointing at assets that were
+never uploaded, and the symptom is an unstyled production site.
 
 ### 4d. Environment Parity
 
@@ -209,16 +209,15 @@ The ruling:
   variables file, for ordinary development in a container (§4b); and the loopback https port on the dev server's own command line, for a browser
   suite that reaches the app without the proxy. It is the single source of truth the allowed-origin set is derived from, and it is validated at boot
   like every other environment value (§4d).
-- **Never a scheme-rewriting middleware.** The rejected alternative reconstructs the request URL or the `Origin` header with the scheme corrected
-  before the guard runs. A guard whose input is rewritten by the app verifies nothing — it launders an attacker-supplied origin into a trusted one,
-  and it is a dev-only code path sitting in the production request chain. Fix the transport, not the evidence.
+- **Never a scheme-rewriting middleware** correcting the request URL or `Origin` header before the guard runs: a guard whose input the app rewrites
+  launders an attacker-supplied origin into a trusted one, and is a dev-only path in the production chain. Fix the transport, not the evidence.
 - **A browser suite targets loopback https**, rather than dropping to http and diverging from the posture under test.
 - **`upgrade-insecure-requests`, HSTS, and `Secure` cookies stay hardcoded.** They are not made conditional on the environment, because under this
   posture they are correct in development by construction.
 
-Where a case needs an origin the site origin cannot express, the extra entries are supplied from a development entry point the production bundle
-never imports — each a normalized https-or-loopback origin that throws at boot otherwise, so the production bundle structurally contains none of
-them. Carried as an ordinary environment variable instead, an extra-origins list is a production allowlist waiting to be widened by a typo.
+An origin the site origin cannot express comes from a development entry point the production bundle never imports, each a normalized
+https-or-loopback origin that throws at boot otherwise. Carried as an ordinary environment variable instead, an extra-origins list is a production
+allowlist waiting to be widened by a typo.
 
 ---
 
@@ -237,14 +236,12 @@ dynamic logic and bypasses edge caching.
 ### 5c. Cache Busting
 
 Where the pipeline does not fingerprint filenames, cache correctness depends on the platform's own asset versioning. **If fingerprinting is added,
-the markup that references the assets must be updated in the same change** — a fingerprinted file with an unfingerprinted reference is a 404 that
-only appears after the first deploy.
+the markup that references the assets must be updated in the same change**, or the reference 404s after the first deploy.
 
 ### 5d. Never Serve Files From a Handler
 
-**Do not add a route that reads and returns a file from the public directory.** It wastes CPU, bypasses the edge cache, and — worse — introduces a
-path-handling surface where directory traversal becomes possible. The asset pipeline has no such surface because it never takes a path from a
-request.
+<!-- rule:workers-platform-no-public-file-route --> It wastes CPU, bypasses the edge cache, and — worse — introduces a path-handling surface where
+directory traversal becomes possible. The asset pipeline has no such surface because it never takes a path from a request.
 
 [aa-1c]: ./APP_ARCHITECTURE.md#1c-development-relaxations-are-modules-the-build-selects
 [aa-3]: ./APP_ARCHITECTURE.md#3-dependency-injection-through-config

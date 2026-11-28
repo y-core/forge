@@ -94,6 +94,9 @@ the preset's `typescript/no-empty-object-type` accepts; a copy curated down to n
 `env` object:
 
 ```ts
+import { importKeyRing } from "@y-core/forge/crypto/keyring";
+import { createAnonymousSession } from "@y-core/forge/session";
+
 const session = createAnonymousSession<Env>({
   ring: (bindings) => importKeyRing([bindings.SESSION_SECRET]),
   kv: (bindings) => bindings.SESSION_KV,
@@ -103,9 +106,9 @@ const session = createAnonymousSession<Env>({
 - **Rewrite `(c) => …c.env.X…` as `(bindings) => …bindings.X…`**, and drop a `getAppContext(c).env` inside one. That covers the chain's `csrf`
   policy, `csrfMintStage`, `createAnonymousSession`, `createFlash`, `defineApproval`, `signedObjectLink`, `resolveAuthServices`, and an auth `ring`.
   A secret that differs per host cannot live in a ring; resolve it per request outside one.
-- **Drop the `createKeyRingResolver(…)` wrapper around a `ring` option** and pass the function itself. The option refuses the wrapper in its
-  type and throws at construction when handed one. Keep the wrapper only for a ring a handler resolves for itself.
-- **Delete any memoisation of your own around a ring.** Forge resolves every `ring` once per `env`, `createFlash`'s included, through
+- **Drop the `createKeyRingResolver(…)` wrapper around a `ring` option** and pass the function itself. The option refuses it. Keep the wrapper only
+  for a ring a handler resolves for itself.
+- **Delete any memoisation of your own around a ring.** Forge resolves every `ring` once per `env` through
   `memoizePerEnv` (`@y-core/forge/context`), which an app may use for its own per-`env` values.
 - **Replace a per-request `cors({ origins: … })` wrapper with an origins resolver.** `cors({ origins: (bindings) => … })` resolves once per
   `env` and reuses its matcher, so a middleware that rebuilt `cors` on every request to read config goes.
@@ -144,10 +147,10 @@ removed from `@y-core/forge/form`, and a contribution carrying `csrf` fails to c
 - **Move every policy into the root `csrf`**, beside `session`. Where several sources each carried one, merge them: the root's `paths` and
   `exclude` cover what each did. Rename `CsrfProtectionOptions` to `CsrfPolicyOptions`.
 - **Sort the app's mutating paths into the policy's path classes.** A target a visitor posts with no session, such as a contact form, goes on
-  `unboundPaths`. An endpoint a server or a tool calls, such as an MCP endpoint, a webhook or a CSP report receiver, sends no token: it goes on
-  the policy's `exclude`, or outside its `paths`, and its guard group takes `origin: { …, missing: "allow" }`, since such a caller sends no
-  `Origin` either. Everything else stays bound. Never exclude the auth mount or the approval prompt: an `exclude` entry over either, or `paths`
-  that miss one of their routes, throws at registration (§7a).
+  `unboundPaths`. An endpoint a server or a tool calls, such as an MCP endpoint, a webhook or a CSP report receiver, sends no token: it goes on the
+  policy's `exclude`, or outside its `paths`, and its guard group takes `origin: { …, missing: "allow" }`, since such a caller sends no `Origin`
+  either. Everything else stays bound. Never exclude the auth mount or the approval prompt; a policy that misses either throws at registration
+  (§7a).
 - **Keep `paths: ["*"]`, the default, when the app renders `authNav`.** A mutation to a URL no route matches then answers `403` before the
   `404`, which is deliberate ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e): a spec expecting `404` for an unrouted `POST` reads `403`.
 - **A token verifies for 24 hours by default.** `maxAgeMs` on the policy sets another value; below 20 hours the app owes the visitor a warning
@@ -191,6 +194,8 @@ verify ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). A route's own `middleware` 
 ([`SECURITY_HARDENING.md`][sh-4e] §4e):
 
 ```ts
+import type { RateLimitOptions } from "@y-core/forge/security";
+
 const contactLimit: RateLimitOptions = { binding: "RATE_LIMITER", methods: ["POST"] };
 ```
 
@@ -246,6 +251,9 @@ old hook received as its argument, and `refusal.guard` narrows it.
 services resolver ([`AUTH_MOUNTING.md`][am-1] §1):
 
 ```ts
+import { applyMiddlewareChain } from "@y-core/forge/app";
+import { createAuthGuards, registerApproval } from "@y-core/forge/auth/web";
+
 applyMiddlewareChain(app, {
   securityHeaders,
   trustCfHeaders: true,
@@ -339,6 +347,12 @@ health checks as a plain object, and the root passes the list, as it does for th
   older `forge-precache` caches, so the app's worker deletes the caches its previous worker named, once, in its own `activate`:
 
 ```ts
+import { attachPrecache } from "@y-core/forge/assets/client";
+import type { ServiceWorkerScope } from "@y-core/forge/assets/client";
+import { PRECACHE_URLS, PRECACHE_VERSION } from "@y-core/forge/assets/precache";
+
+declare const self: ServiceWorkerScope;
+
 attachPrecache(self, { urls: PRECACHE_URLS, version: PRECACHE_VERSION, fallback: "/offline" });
 
 const isPreviousWorkerCache = (name: string): boolean => /^[0-9a-f]{16,}$/.test(name);
@@ -365,11 +379,10 @@ The predicate matches whatever names the previous worker used, a bare digest in 
   so forge's client runtime speaks the `422`, `413`, `400` and `500` fragments once on the `failure` channel ([`FORGE_ERRORS.md`][eh-2a]
   §2a). App code that speaks every swap now says a failure twice; leave it the success swaps. An exact-body spec of a banner reads the
   attribute.
-- **A `503` panel from `refuseAsFragment` and `defineAction`'s `500` fragment now swap.** Both carry `FAILURE_FRAGMENT_HEADER`, so forge's
-  client runtime swaps them as it swaps a 4xx: the panel lands in its `HX-Retarget`, the `500` in the request's own target, and each is
-  spoken once ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a). Delete client code that explained a 5xx the target never showed, and any target or
-  style kept in reserve for that case. An element's `hx-status:5xx` now applies to a 5xx, where htmx ignored it. Any other 5xx still leaves
-  the target as it was.
+- **A `503` panel from `refuseAsFragment` and `defineAction`'s `500` fragment now swap.** Both carry `FAILURE_FRAGMENT_HEADER`, so forge's client
+  runtime swaps them as it swaps a 4xx and speaks each once ([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a). Delete client code and reserved targets that
+  explained a 5xx the target never showed. An element's `hx-status:5xx` now applies to a 5xx, where htmx ignored it; any other 5xx still leaves the
+  target as it was.
 - **Move a `context.url` rewrite out of middleware.** Forge now answers `500` to a request whose middleware changes `context.url` or assigns
   it a new `URL`, and logs `Unhandled error` naming both paths ([`ROUTING_AND_MIDDLEWARE.md`][ram-3a] §3a). Strip a prefix or mount a
   subpath in the Worker's `fetch` export instead, and pass `app.fetch` a `Request` rebuilt on the rewritten URL.

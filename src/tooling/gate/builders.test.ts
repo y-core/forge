@@ -337,6 +337,20 @@ describe("browserRequired() — a Playwright server named by PW_TEST_CONNECT_WS_
   });
 });
 
+describe("the Playwright rows", () => {
+  it("take no `watches`, so no hand-kept list can skip a spec the change reaches", () => {
+    const watches = ["src/**"];
+    // @ts-expect-error -- a Playwright row's options carry no `watches`; the cast-free call is what a table would write
+    const rows = [browserStep({ watches }), crossEngineStep({ watches } as object), workerdStep({ watches } as object)];
+
+    expect(rows.map((step) => [step.label, Object.hasOwn(step, "watches"), step.widen])).toEqual([
+      ["test:browser", false, undefined],
+      ["test:browser:cross-engine", false, undefined],
+      ["test:workerd", false, undefined],
+    ]);
+  });
+});
+
 describe("crossEngineStep()", () => {
   it("runs Firefox and WebKit together through the installed binary, under the label a cron report files them by", () => {
     const step = crossEngineStep();
@@ -352,12 +366,11 @@ describe("crossEngineStep()", () => {
     expect(crossEngineStep().results).toEqual(browserStep().results);
   });
 
-  it("puts the compat server behind the row, and carries the requirement or watches the caller states", () => {
+  it("puts the compat server behind the row, and carries the requirement the caller states", () => {
     const requires = { tool: "Playwright compat server", hint: "start it" };
 
     expect(crossEngineStep().requires?.tool.startsWith("Playwright compat server")).toBe(true);
     expect(crossEngineStep({ requires }).requires).toBe(requires);
-    expect(crossEngineStep({ watches: ["src/**"] }).watches).toEqual(["src/**"]);
   });
 });
 
@@ -699,7 +712,6 @@ describe("builders — derived watches", () => {
 
   it("declares watches on a builder that derives none", () => {
     expect(typecheckStep({ watches: ["src/**"] }).watches).toEqual(["src/**"]);
-    expect(browserStep({ watches: ["src/**"] }).watches).toEqual(["src/**"]);
     expect(contrastStep(CONTRAST, { watches: ["css/**"] }).watches).toEqual(["css/**"]);
   });
 
@@ -763,10 +775,10 @@ describe("builders — derived watches", () => {
 });
 
 describe("configFileStep()", () => {
-  it("labels the row validate-config-files and watches the config modules, with no prerequisite", () => {
+  it("labels the row validate-config-files and watches everything under `config/`, with no prerequisite", () => {
     const step = configFileStep({ root: "/nowhere" });
 
-    expect([step.label, step.watches, Object.hasOwn(step, "requires")]).toEqual(["validate-config-files", ["config/*.config.ts"], false]);
+    expect([step.label, step.watches, Object.hasOwn(step, "requires")]).toEqual(["validate-config-files", ["config/**"], false]);
   });
 
   it("replaces its watches with the caller's", () => {

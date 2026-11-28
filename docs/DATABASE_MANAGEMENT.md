@@ -13,8 +13,8 @@ audience: consumer
 > Defers to: [`SCHEMA_COMPOSITION.md`][sc] for how a declared schema becomes the migration this document applies; [`DATABASE_BACKUPS.md`][db] for
 > the D1 backup pipeline whole and what a restore and a reset check before they act; [`src/tooling/db/README.md`][db-readme] for the command tree,
 > the worked invocations and the exports, with `--help` on each verb for its flags; [`STORAGE_BINDINGS.md`][sb-1] §1 for the runtime D1 client a
-> Worker reads the same database through; [`NAMESPACES.md`][namespaces-5g] §5g for why this surface is a `tooling` namespace and never
-> Worker-reachable; [`BUILD_TOOLING.md`][bt-1c] §1c for the exit contract every verb reports through.
+> Worker reads the same database through; [`NAMESPACES.md`][namespaces-5g] §5g for why this surface is a `tooling` namespace;
+> [`BUILD_TOOLING.md`][bt-1c] §1c for the exit contract every verb reports through.
 
 ---
 
@@ -50,7 +50,7 @@ audience: consumer
 **A migration has no Down, and forge ships nothing that would run one.** A migration file is SQL that moves the schema forward; reversing it is a
 new migration, numbered above it.
 
-**A migration is generated from the desired state, and never written by hand.** Each declared file states its schema in one `schema.sql`
+<!-- rule:forge-db-migration-composed --> Each declared file states its schema in one `schema.sql`
 ([`SCHEMA_COMPOSITION.md`][sc-2] §2), and `forge db migrate compose` writes the migration that takes the migrations already on disk to it, proven
 on a replay before the file exists. A file compose did not write is refused before anything runs (§9b), and the rows a change needs come from a
 seed or the app, never from a migration (§7a).
@@ -154,7 +154,7 @@ Forge writes the history row itself, in the same load as the migration body (§6
 The DDL is `src/tooling/db/migrate/companions.ts`. `id` is apply order; `name` is the file name without `.sql`; `sha256` covers the file with its
 `forge:compose` stamp blanked; `applied_at` is epoch milliseconds, since `STRICT` has no `TIMESTAMP`; `fingerprint` may be `NULL`.
 
-**`id` is never `AUTOINCREMENT`.** A restore replays keys from the dump, and an engine-allocated key would need `sqlite_sequence` carried with
+<!-- rule:forge-db-no-autoincrement --> A restore replays keys from the dump, and an engine-allocated key would need `sqlite_sequence` carried with
 it — the hazard the `autoincrement` lint rule refuses on an app table (§5). Forge's own table does not get to break the rule it enforces.
 
 **The unique index on `name` is what makes a duplicate migration name a hard failure**: two files of the same name fail at apply time on it, as a
@@ -210,14 +210,14 @@ one statement, so its `BEGIN` is not a transaction.
 | `autoincrement` | `AUTOINCREMENT` | A restore replays keys from the dump, and an engine-allocated key needs `sqlite_sequence` carried with it |
 | `explicit-transaction` | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | The load of a migration is already one transaction (§6d), and a nested one fails |
 | `attach-database` | `ATTACH` or `DETACH` | D1 is one database |
-| `add-column-not-null-no-default` | `ALTER TABLE … ADD [COLUMN]` whose column refuses `NULL` — by its own `NOT NULL` outside any parenthesis, or by a top-level `CHECK (col IS NOT NULL)` conjunct on itself — with no non-`NULL` `DEFAULT`; `DEFAULT NULL` counts as none | D1 refuses it on any table that already has rows: the `NOT NULL` form as a `NOT NULL` column with default `NULL`, the `CHECK` form as a failed `CHECK` constraint |
+| `add-column-not-null-no-default` | `ALTER TABLE … ADD [COLUMN]` whose column refuses `NULL`, by `NOT NULL` or a `CHECK`, with no non-`NULL` `DEFAULT` | D1 refuses it on any table that already has rows: the `NOT NULL` form as a `NOT NULL` column with default `NULL`, the `CHECK` form as a failed `CHECK` constraint |
 | `add-column-non-constant-default` | `ADD COLUMN` whose `DEFAULT` is `CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP` or a parenthesised expression | SQLite refuses it |
 | `add-column-constrained` | `ADD COLUMN … PRIMARY KEY` or `… UNIQUE` | SQLite refuses it; a constrained column is a rebuild |
 | `alter-column-unsupported` | `ALTER COLUMN` in an `ALTER TABLE` | D1's SQLite has no `ALTER COLUMN`; changing a column is a rebuild, which compose emits |
 | `pragma-unsupported` | `PRAGMA foreign_keys`, in any form | D1 always enforces foreign keys and ignores the pragma, so the author believes something false; only `defer_foreign_keys` relaxes them, inside a transaction (`SCHEMA_COMPOSITION.md` §4) |
 | `pragma-unsupported` | Any `PRAGMA` outside D1's supported set, which `D1_PRAGMAS` in `src/tooling/db/migrate/lint.ts` holds | D1 refuses it with `SQLITE_AUTH`, so the migration fails where it runs |
 | `table-too-wide` | A `CREATE TABLE` of more than 100 columns, table constraints not counted | D1 refuses a table that wide (`D1_LIMITS.columns`, `STORAGE_BINDINGS.md` §1h); compose also refuses a declared table that wide, which catches an `ADD COLUMN` |
-| `auth-key-blocks-delete` | A foreign key to an `auth_` table that is neither `ON DELETE CASCADE` nor `SET NULL` on columns that can hold `NULL`. A column refuses `NULL` by `NOT NULL`, by `PRIMARY KEY`, or by a `CHECK` top-level `AND` conjunct that is exactly `col IS NOT NULL`, `col NOT NULL`, `col NOTNULL` or `NOT col IS NULL`; a top-level `OR` holds nothing | D1 refuses the auth deletes `purgeAuthEphemera` and `remove` make; a key the lint misses — such as one whose `CHECK` refuses `NULL` another way, like `typeof(col) = 'text'` — shows as the purge's `blocked` |
+| `auth-key-blocks-delete` | A foreign key to an `auth_` table that is neither `ON DELETE CASCADE` nor `SET NULL` on columns that can hold `NULL`; `src/tooling/db/migrate/lint.ts` holds which constraints count as refusing `NULL` | D1 refuses the auth deletes `purgeAuthEphemera` and `remove` make; a key the lint misses — such as one whose `CHECK` refuses `NULL` another way, like `typeof(col) = 'text'` — shows as the purge's `blocked` |
 | `generated-edited` | A file with no `forge:compose` stamp, or one whose stamp's `body` hash differs from the file below it | Compose writes every migration (§9b); edit `schema.sql` and compose again |
 
 `generated-edited` is what holds every migration to compose, and the whole composer rests on it: were DDL able to reach the database without
@@ -445,7 +445,7 @@ release. The same rows give the same `sha256`, so "regenerate, then expect an em
 ## 8. Every Position Is Declared
 
 **The host config, `db.config.ts` in the app's `config/` directory, default-exporting `defineDbConfig({...})`, names every file `forge db` reads,
-and nothing else is read.** An installed package contributes no DDL to your database because it happens to ship some; it contributes DDL because the
+and nothing else is read.** An installed package contributes DDL only because the
 app asked for it, by path, in a file a reviewer can see.
 
 It declares the desired-state files in load order, the seeds directories in run order, the one migrations directory, where the composed snapshot
@@ -458,14 +458,15 @@ the file declaring the table it points at. **Every path is resolved against the 
 `wrangler d1 migrations` and forge never apply two sets of files. A path starting with `@` is a package specifier, resolved through its package's
 exports as the app installed it. The file itself is optional: with none, `compose` and `schema check` say so and name what to write.
 
-**There is no namespace.** Nothing is discovered from a `package.json`, so a path names itself, and it is the name a refusal, the snapshot,
-`status` and the companion tables all use (§4a, §4c).
+<!-- rule:forge-db-schema-by-specifier --> **There is no namespace.** Nothing is discovered from a `package.json`, so a path names itself, and it is
+the name a refusal, the snapshot, `status` and the companion tables all use (§4a, §4c). A specifier reads the same on every machine; a
+`node_modules` path does not.
 
 **A library publishes a desired state and no SQL that runs.** The app composes one migration sequence of its own from every declared schema
 ([`SCHEMA_COMPOSITION.md`][sc-1] §1), and nothing is copied in or renamed on the way. A library change that needs data takes §7a's sequence across
 releases: one adds the shape, a CHANGELOG entry names the fill the consumer writes, and a later one tightens it. A library checkout composes no
-migration and keeps no snapshot; `forge db schema check --replay` (`SCHEMA_COMPOSITION.md` §6) loading its declarations into a throwaway D1 is the
-whole of what it can check about itself. No verb prints the declarations as one document, which would be another rendering to keep in step.
+migration and keeps no snapshot; `forge db schema check --replay` (`SCHEMA_COMPOSITION.md` §6) loading its declarations into a throwaway D1 is all
+it can check about itself. No verb prints the declarations as one document, which would be another rendering to keep in step.
 
 ---
 

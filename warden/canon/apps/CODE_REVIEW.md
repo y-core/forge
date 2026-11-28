@@ -21,7 +21,7 @@ description: "How to review an application: the blocking invariants, tiered dete
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves
-- §3b Tier 2 — Ripgrep With Triage: commands and their false-positive classes
+- §3b Tier 2 — Pattern Sweep With Triage: `warden check`, and the rules its patterns hold
 - §3c Tier 3 — Judgement: what to read when no command can decide
 - §4 Severity Calibration: critical, major, minor, informational
 - §5 Verification Protocol: try to disprove a finding; the default is reject
@@ -61,8 +61,7 @@ is what decides it.
   writing, because "none" is the strongest version of this field.
 - **Fix** — stated as an outcome, and aimed at the root cause. The sink is where the fix belongs; patching one caller leaves the next one.
 
-**If you cannot write the exploit scenario, downgrade the severity.** The scenario is the test of whether the finding is real. A finding whose
-scenario reads "an attacker could somehow" is a §5 question, not a finding.
+**If you cannot write the exploit scenario, downgrade the severity**: one that reads "an attacker could somehow" is a §5 question, not a finding.
 
 Not this:
 
@@ -116,7 +115,7 @@ precisely what a pre-1.0 version exists to avoid.
 
 ### 3a. Tier 1 — Gated
 
-**A rule with a gate step is not a review item.** Do not hand-review these; run the gate and read its output.
+**A rule with a gate step is not a review item**: run the gate and read its output.
 
 | Rule class | detect |
 | --- | --- |
@@ -128,92 +127,21 @@ precisely what a pre-1.0 version exists to avoid.
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
 
-### 3b. Tier 2 — Ripgrep With Triage
+### 3b. Tier 2 — Pattern Sweep With Triage
 
-**Every command here has a known false-positive class, stated with it. A command without its triage note is worse than no command** — it gets run
-once, returns noise, and is never run again.
+**Run `warden check` — `warden_check` over MCP — and read each hit against the triage it carries.** Each pattern is a register entry with its
+false-positive class beside it, so the sweep is one call and the commands live once, in the register; `rg` reproduces any of them, and `warden
+check` prints the command. A `warn` hit is a candidate, not a verdict; a `fail` pattern already holds in the gate.
 
-**Raw environment access for a configured value**
-
-```bash
-rg -n 'c\.env\.[A-Z_]+' src/ --glob '!src/app/config.ts'
-```
-
-_Triage:_ accessing a **binding object** — a KV namespace, a database, a rate limiter — is correct and expected. A hit reading a **secret or a
-scalar setting** bypasses schema validation and is a defect ([`APP_ARCHITECTURE.md`][aa-3a] §3a).
-
-**Handler calling out directly instead of through a service**
-
-```bash
-rg -n '\bfetch\(' src/controllers/
-```
-
-_Triage:_ a hit forwarding an incoming `Request` unchanged, or calling a library helper that happens to be named `fetch`, is fine. A hit
-constructing an outbound call to an external API is a layer violation ([`APP_ARCHITECTURE.md`][aa-2c] §2c).
-
-**Facade breach — a wrapped dependency imported directly**
-
-```bash
-rg -n 'from "<wrapped-pkg>"' src/ tests/
-```
-
-_Triage:_ any hit is a breach, **including in a test**. A test that imports the wrapped package bypasses the facade exactly as production code would
-([`FORGE_CONSUMPTION.md`][fc-2a] §2a).
-
-**Browser-only import in a Worker-reachable file**
-
-```bash
-rg -n 'from "[^"]*/client(/|")' src/ --glob '!src/client/**'
-```
-
-_Triage:_ the application's own browser entry directory is the legitimate importer. A hit in a view or a controller is the failure
-[`BOUNDARIES.md`][boundaries-1b] §1b names — it typechecks and fails on the first real request.
-
-**Inline script without a nonce**
-
-```bash
-rg -n '<script(?![^>]*nonce)' src/views/
-```
-
-_Triage:_ needs `-P`. A `<script src=…>` with no inline body still needs the nonce under a strict policy, so it is a true positive; a `<script>`
-inside a string that is documentation, not markup, is not.
-
-**Substring assertion on rendered markup**
-
-```bash
-rg -n 'toContain\(|toMatch\(|\.includes\(' --glob '*.test.ts*'
-```
-
-_Triage:_ legitimate on non-markup strings — an error message, a log line — and on an array or a `Set`, where `.includes(` and
-`toContain` test membership, not a substring. **A hit asserting on rendered markup is a defect** ([`TESTING.md`][testing-3a] §3a).
-
-**Request headers building an absolute URL**
-
-```bash
-rg -n -i "headers\.get\(['\"](host|x-forwarded-[a-z]+)['\"]\)" src/
-```
-
-_Triage:_ a hit that only logs the value, or compares it against configured values, is fine. A hit whose value reaches an absolute URL — a redirect,
-a link in an email, a callback address — lets the client choose the origin, which is a header trusted without a decision to trust it
-([`BOUNDARIES.md`][boundaries-3c] §3c).
-
-**Redirect target taken from the request**
-
-```bash
-rg -n "searchParams\.get\(['\"](next|return|returnTo|redirect|redirectTo|url)['\"]\)" src/
-```
-
-_Triage:_ a hit that never reaches a redirect is fine. A hit passed to a redirect is an open redirect unless it goes through the library's check
-first — a local check is the security surface [`FORGE_CONSUMPTION.md`][fc-3d] §3d keeps out of application code.
-
-**Method override**
-
-```bash
-rg -n -i "_method|x-http-method-override" src/
-```
-
-_Triage:_ a hit in a test asserting the override is refused is fine. A hit that reads the value to change how a request is routed is the defect
-[`BOUNDARIES.md`][boundaries-2e] §2e names.
+- <!-- rule:apps-code-review-raw-env --> Configured values are validated once ([`APP_ARCHITECTURE.md`][aa-3a] §3a).
+- <!-- rule:apps-code-review-controller-fetch --> Layer skipping ([`APP_ARCHITECTURE.md`][aa-2c] §2c).
+- <!-- rule:apps-code-review-facade-breach --> The consumer lint base refuses each wrapped package ([`FORGE_CONSUMPTION.md`][fc-2a] §2a).
+- <!-- rule:apps-code-review-client-import --> The runtime boundary ([`BOUNDARIES.md`][boundaries-1b] §1b).
+- <!-- rule:apps-code-review-script-nonce --> A strict policy refuses a script the nonce does not name.
+- <!-- rule:apps-code-review-substring-markup --> Exact match ([`TESTING.md`][testing-3a] §3a).
+- <!-- rule:apps-code-review-host-header-url --> A header trusted without a decision to trust it ([`BOUNDARIES.md`][boundaries-3c] §3c).
+- <!-- rule:apps-code-review-open-redirect --> A local check is the surface [`FORGE_CONSUMPTION.md`][fc-3d] §3d keeps out of application code.
+- <!-- rule:apps-code-review-method-override --> A route answers only the method it declares ([`BOUNDARIES.md`][boundaries-2e] §2e).
 
 The comment budget is gated (§3a) and carries no command here. What a gate cannot decide — whether a sentence earns its place — is §3c.
 
@@ -289,7 +217,7 @@ gate does not clear it. The reverse holds too: disorder fixed outside the change
   observations with no security impact; a missing second layer where another layer already blocks the attack.
 
 **Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
-every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
+every pass, reachable by no gate, and stale silently. **Never report "expand this comment" as a finding.**
 
 **The asymmetry reaches README prose on the same terms.** A section restating a signature, narrating how the code works, or re-housing prose the
 comment budget evicted is Major; a task a README does not yet teach is Minor. "Document this more fully" is not a finding.
@@ -314,8 +242,7 @@ Before reporting any finding:
 5. **Check the runtime** before flagging an API as unavailable — `crypto.subtle`, streams, and `URL` are all present in Workers.
 
 **A security finding shows the whole path or it is not reported.** It names who acts — a caller trusted less than the code assumes — what they send,
-which control that input gets past, and what it then reaches. A finding that cannot fill in all four has found a pattern that looks like an attack,
-not an attack.
+which control that input gets past, and what it then reaches; one that cannot fill in all four has found a pattern, not an attack.
 
 **A finding you could not verify is a question, not a finding.** Report it as one, naming the one fact you could not establish and the check — a
 file to read, a command to run — that would settle it.
@@ -324,7 +251,7 @@ file to read, a command to run — that would settle it.
 
 ## 6. Valid Patterns — Do Not Flag
 
-These look wrong and are correct. Each has been mistaken for a defect before.
+These look wrong and are correct.
 
 | Pattern | Why it is correct |
 | --- | --- |
@@ -341,9 +268,8 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | A non-null assertion in a test file | Permitted where the lint config relaxes it for tests; it stays an error in production source |
 | `@public` / `@internal` on a TSDoc line | Machine-readable markers, explicitly budgeted — [`CODE_RULES.md`][cr-5a] §5a |
 
-**This table is extended, never replaced, by the application's own `docs/` review doc.** A repository-specific pattern — an editor workaround, a
-documented gap, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5d] §5d — is recorded there with the same two columns, and a
-reviewer reads both.
+**The application's own `docs/` review doc extends this table, never replaces it**, recording a repository-specific pattern — an editor workaround,
+a documented gap, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5d] §5d — in the same two columns; a reviewer reads both.
 
 [aa-1c]: ./APP_ARCHITECTURE.md#1c-development-relaxations-are-modules-the-build-selects
 [aa-2c]: ./APP_ARCHITECTURE.md#2c-no-layer-skipping

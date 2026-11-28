@@ -14,9 +14,8 @@ disallowed-tools: Edit, Write
 
 # Warden Review
 
-A code review held to the governing corpus rather than to general taste. This file routes; it
-restates no rule, because the rules are indexed and reachable and a second copy of them here would
-disagree with the first (`AGENT_GUIDE.md` §8).
+A code review held to the governing corpus rather than to general taste. This file routes and restates
+no rule (`AGENT_GUIDE.md` §8).
 
 ## Scope
 
@@ -41,8 +40,10 @@ Take the scope from the request. Default to the **uncommitted working tree** whe
    out at it (`AGENT_WORKFLOW.md` §5b) — so a pre-existing failure is not attributed to the change.
    The author's task-check receipt for this exact tree answers it in one line; the full gate is not
    part of a review.
-3. **Work the tiers in order** — §3a gated, §3b ripgrep with the triage class each command states,
-   §3c judgement. A tier-1 rule the gate already proves is not re-inspected by hand.
+3. **Work the tiers in order** — §3a gated; §3b is one `warden_check` call over the scope (`diff` or
+   `files`), each hit read against the triage it carries; §3c judgement. A rule the gate already proves
+   is not re-inspected by hand. To ask the register or the corpus a question that would take several
+   searches, use one `warden_query`.
 4. **Verify before reporting** (§5): try to disprove each finding, and keep it only if that fails.
    Classify per §4. Check §6 before reporting anything that looks wrong — several correct patterns
    are listed there.

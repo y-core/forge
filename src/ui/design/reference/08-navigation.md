@@ -56,9 +56,8 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 | `NavMegaMenu` | A wide panel of `NavGroup` columns opened from one bar trigger — §1c says when it earns its place |
 | `NavGroup` | A heading over destinations that stay **visible**. At section level, or as a `NavMegaMenu` column |
 
-`filters` is a visibility convenience and never a permission: every filtered item's label and `href` reach every viewer, and only its painting is
-suppressed. Reach for it to keep a bar uncluttered, never to keep a destination secret — the route needs its own guard either way. An empty list
-hides, since no token can match it.
+`filters` is a visibility convenience and never a permission: every filtered item's label and `href` still reach every viewer, so the route needs
+its own guard. An empty list hides, since no token can match it.
 
 `resolveHref` takes a route-map **key** and returns a URL, and nothing requires that URL to be a route: an in-page navigation resolves each key to a
 fragment, which is what lets one `Navbar` serve as a table of contents for a single long page.
@@ -67,107 +66,69 @@ fragment, which is what lets one `Navbar` serve as a table of contents for a sin
 would be a group inside a `role="menu"` popup, and keeping it out of `NavItem` makes that a compile error rather than a case the renderer has to
 degrade at runtime.
 
-A group renders as a `<div role="group" aria-labelledby>` labelled by a `<p>` heading, never by an `<h2>`. `Navbar` has no way to know which heading
-level it is nested under, and picking one for its type size is exactly what `forge-ui-heading-order` forbids; the ARIA pairing gives the
-programmatic association without asserting a level. Its children render as bar links rather than menu rows, because visible destinations are the
-whole reason to reach for a group.
+A group renders as a `<div role="group" aria-labelledby>` labelled by a `<p>` heading, never an `<h2>`, because `Navbar` cannot know which level it
+is nested under (`forge-ui-heading-order`). Its children render as bar links, since visible destinations are the reason to reach for a group.
 
 Never give the bar `role="menubar"`: forge ships no menubar controller, so the role would announce a keyboard interface that is not there.
 
 ### 1b. One bar, built from a definition
 
-**Default: one `Navbar` per application, and it holds destinations only.**
-<!-- rule:forge-ui-nav-one-primary -->
+<!-- rule:forge-ui-nav-one-primary --> A second primary bar means the user must learn which one holds what before they can navigate at all. A
+page-scoped table of contents is a different axis from the destinations bar rather than a rival to it. Anything narrower than a documented second
+axis is a `NavSlot` in the first bar more often than it is a second bar.
 
-A second primary bar means the user must learn which one holds what before they can navigate at all. Override for a documented second axis — a
-persistent product switcher above a section nav, or a page-scoped table of contents over the sections of the page currently open, which is a
-different axis from the destinations bar rather than a rival to it. Anything narrower than a documented second axis is a `NavSlot` in the first bar
-more often than it is a second bar.
+<!-- rule:forge-ui-nav-config-driven --> The definition is what gives every item its `data-filter` marker, its generated menu ids, and its correct
+first paint from `activeFilters`.
 
-**Default: build the bar from a `NavDefinition` rather than hand-writing links into a `<nav>`.**
-<!-- rule:forge-ui-nav-config-driven -->
-
-The definition is what gives every item its `data-filter` marker, its generated menu ids, and its correct first paint from `activeFilters`. Override
-never for the bar itself; a page-level sub-nav that is genuinely not the primary bar is ordinary markup.
-
-**Default: two or three `NavSection`s.** <!-- rule:forge-ui-nav-section-count --> Sibling sections spread across the bar, so two reads as ends
-and three as ends-plus-centre. A fourth has no spatial meaning left to claim. Override under a brief for a dense application bar with a declared
-zone model.
+<!-- rule:forge-ui-nav-section-count --> Sibling sections spread across the bar, so two reads as ends and three as ends-plus-centre. A fourth has no
+spatial meaning left to claim.
 
 ### 1c. Menus, groups and megamenus
 
-**Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — on the desktop bar a submenu
-opens `side="inline-end"` beside its parent panel, and in the collapsed panel it nests as an indented disclosure — but a destination three levels
-deep is a destination the user will not find twice. Override for a reference-style application whose navigation is genuinely a tree.
+<!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — on the desktop bar a submenu opens `side="inline-end"` beside its
+parent panel, and in the collapsed panel it nests as an indented disclosure — but a destination three levels deep is a destination the user will not
+find twice.
 
-**Default: when the destinations under a heading should be scannable, reach for `NavGroup`, not `NavMenu`.**
 <!-- rule:forge-ui-nav-group-over-menu --> A dropdown is the wrong affordance for destinations the user is meant to survey: it costs a click to see
 anything, and it hides the very list that tells them what this surface contains. `NavGroup` keeps the same heading and spends vertical space
-instead. Override when the bar is horizontal and short on room — which is where a `NavMenu` earns its click — or when the group is long enough that
-showing it would push the rest of the bar off screen. A horizontal bar with several groups under one label folds them into a `NavMegaMenu`, whose
-panel keeps every group scannable at once.
+instead. A horizontal bar with several groups under one label folds them into a `NavMegaMenu`, whose panel keeps every group scannable at once.
 
-**Default: grouped children earn a megamenu only when a section has three or more groups the reader scans side by side; one group is a `NavMenu`,
-and a bar holds at most one megamenu.**
-<!-- rule:forge-ui-nav-megamenu-when -->
+<!-- rule:forge-ui-nav-megamenu-when --> A megamenu is the widest thing a bar can open, and its value is the side-by-side survey. A second megamenu
+on one bar is a second survey competing for the same panel space; one group under a trigger is a dropdown wearing a panel. The counts are the
+affordance.
 
-A megamenu is the widest thing a bar can open, and its value is the side-by-side survey. A second megamenu on one bar is a second survey competing
-for the same panel space; one group under a trigger is a dropdown wearing a panel. Override never — the counts are the affordance.
-
-**Default: identity, theme and search go in a `NavSlot`, never a `NavLink`.**
-<!-- rule:forge-ui-nav-slot-not-link -->
-
-A `NavLink` announces a destination; an account menu and a `ThemeToggle` are not destinations. Override never.
+<!-- rule:forge-ui-nav-slot-not-link --> A `NavLink` announces a destination; an account menu and a `ThemeToggle` are not destinations.
 
 ### 1d. Placement and the collapsible rail
 
-**Default: leave `placement` unset and let the collapse mode pick it — `"top"` for the ordinary bar.**
-<!-- rule:forge-ui-nav-placement-top -->
+<!-- rule:forge-ui-nav-placement-top --> Of `NavPlacement`'s other values, `bottom` suits a mobile-first surface and `right` a rail on the trailing
+edge.
 
-`NavPlacement` also offers `bottom`, `left` and `right`. A left rail is the standing override for an application with more than roughly seven
-primary destinations — and the shape `collapsible="always"` already resolves to, so it needs no `placement` of its own. `bottom` suits a
-mobile-first surface, and `right` a rail on the trailing edge; each of those is an override, taken deliberately.
-
-**Default: a `collapsible="always"` bar is a left rail, and needs no `placement` to say so.**
-<!-- rule:forge-ui-nav-rail-collapsible -->
-
-`collapsible` decides which breakpoints the bar hides behind its toggle: `"mobile"`, the default, expands the bar and hides the toggle from `md:`
-up, so a side rail under it cannot be collapsed at all at the widths where it takes the most room — and a rail is the placement where reclaiming
-that room matters most. `"always"` keeps the toggle and the vertical panel at every breakpoint, which is the rail shape, so `placement` resolves to
-`"left"` under it rather than to the top strip a never-expanding full-width bar would otherwise be. Pair it with `defaultOpen` when the rail should
-start expanded; below `md` the `navbar` scope closes it at resume, so it decides a wide viewport's first state and not a phone's. Override with
-`placement="right"` for a trailing-edge rail, or with an explicit horizontal placement for the rare bar that stays collapsed at every width.
+<!-- rule:forge-ui-nav-rail-collapsible --> Under the default `"mobile"`, a side rail cannot be collapsed at all at the widths where it takes the
+most room — and a rail is the placement where reclaiming that room matters most. How `collapsible` resolves `placement`, and how `defaultOpen`
+behaves below `md`, is the props' TSDoc.
 
 ### 1e. The rail's box in the layout
 
-**Default: the rail's width and `shrink-0` go on the flex item, which is the `Resumable` scope root.** <!-- rule:forge-ui-nav-rail-flex-item -->
-`Resumable` takes a `class` for exactly this: the scope root is the box the parent flex row lays out, while `Navbar`'s own `class` lands on
-the `<details>` two boxes further in. A width set there only _looks_ right, because every box between happens to size to its content — and a
-`shrink-0` set there guards an element the flex algorithm was never going to shrink, leaving the item that can shrink unguarded. Override when
-the rail's parent is not a flex row: a grid parent sizes the track, and the width belongs to the track definition rather than to either box.
+<!-- rule:forge-ui-nav-rail-flex-item --> `Resumable` takes a `class` for exactly this: the scope root is the box the parent flex row lays out,
+while `Navbar`'s own `class` lands on the `<details>` two boxes further in. A width set there only _looks_ right, because every box between happens
+to size to its content — and a `shrink-0` set there guards an element the flex algorithm was never going to shrink, leaving the item that can shrink
+unguarded.
 
-**Default: a vertical rail stays pinned to the viewport and scrolls its own overflow.**
-<!-- rule:forge-ui-nav-rail-persists -->
-
-That needs a **definite height on the scope root's parent**, and the reason is a cascade rule rather than a forge one: a percentage height resolves
-against the parent's height and computes to `auto` the moment one ancestor is `auto`, so a chain with a single gap buys nothing. Forge supplies
-the two links above the `<details>` — the scope root and the `<nav>` landmark both take `h-full` in rail mode — which leaves the consumer owning
-exactly one, the box the scope root is laid out in. A stretched flex item in a `flex` row is one. Override for a short rail on a short page,
-where scrolling away with the content costs the reader nothing.
+<!-- rule:forge-ui-nav-rail-persists --> That needs a **definite height on the scope root's parent**, and the reason is a cascade rule rather than a
+forge one: a percentage height resolves against the parent's height and computes to `auto` the moment one ancestor is `auto`, so a chain with a
+single gap buys nothing. Forge supplies the two links above the `<details>` — the scope root and the `<nav>` landmark both take `h-full` in rail
+mode — which leaves the consumer owning exactly one, the box the scope root is laid out in. A stretched flex item in a `flex` row is one.
 
 ### 1f. The collapsed rail's width
 
-**Default: collapsed, the rail is one button wide — `w-14`, 56px — with the toggle at the leading edge; open, it is 16rem with the toggle
-trailing.**
-<!-- rule:forge-ui-nav-rail-collapsed-width -->
-
-56px clears `forge-ui-hit-target` for the toggle, which is the only control a collapsed rail still shows, and the toggle moves to the trailing edge
-once open, beside the panel it closes. **At `md` and above** the rail stays in the flow at both widths — no floating, no absolute positioning,
-nothing escaping its column on overflow — so the content beside it reflows rather than being covered. The documented override is below `md`, where
-`collapsedAs="drawer"` takes the panel out of the flow deliberately (`forge-ui-nav-drawer-when`); the flex item then wants `max-md:w-auto`, so an
-open rail does not reserve a column for a panel that is not in it. State the narrow width as the **override over a wide base** (`has-[…]:w-14` on a
-`w-64` item), never a narrow base widened when open: a browser without `:has()` then degrades to the full column rather than pinning a strip that
-clips the open panel. Override under a brief for a collapsed state that shows glyphs with labels, which needs more than one button of width.
+<!-- rule:forge-ui-nav-rail-collapsed-width --> 56px clears `forge-ui-hit-target` for the toggle, which is the only control a collapsed rail still
+shows, and the toggle moves to the trailing edge once open, beside the panel it closes. **At `md` and above** the rail stays in the flow at both
+widths — no floating, no absolute positioning, nothing escaping its column on overflow — so the content beside it reflows rather than being covered.
+The documented override is below `md`, where `collapsedAs="drawer"` takes the panel out of the flow deliberately (`forge-ui-nav-drawer-when`); the
+flex item then wants `max-md:w-auto`, so an open rail does not reserve a column for a panel that is not in it. State the narrow width as the
+**override over a wide base** (`has-[…]:w-14` on a `w-64` item), never a narrow base widened when open: a browser without `:has()` then degrades to
+the full column rather than pinning a strip that clips the open panel.
 
 ```tsx
 import { Navbar } from "@y-core/forge/ui/chrome";
@@ -179,8 +140,8 @@ import { Resumable } from "@y-core/forge/ui/server";
 </Resumable>
 ```
 
-Costs: the flex item has no width and no `shrink-0` of its own, so the column sizes to its content and shrinks under pressure; the collapsed width
-never applies to the element that is actually in the row, and the height chain the rail's own scrolling depends on starts at a box nobody stretched.
+Costs: the flex item has no width or `shrink-0` of its own, so the column sizes to its content, the collapsed width never applies, and the rail's
+height chain starts at a box nobody stretched.
 
 ```tsx
 // Right — width, shrink and the collapsed override on the flex item; the parent supplies the height.
@@ -197,35 +158,17 @@ import { Resumable } from "@y-core/forge/ui/server";
 
 ### 1g. The collapsed panel below `md`
 
-`collapsedAs` decides what the collapsed panel _does_, where `collapsible` decides _when_ it collapses. `"inline"`, the default, expands the panel
-in the document flow, which pushes the page down by the panel's height. `"drawer"` takes it out of the flow below `md`: a fixed panel sliding in
-from one edge, over a backdrop, leaving the content behind it exactly where it was.
+<!-- rule:forge-ui-nav-drawer-when --> `collapsedAs` decides what the collapsed panel _does_, where `collapsible` decides _when_ it collapses.
+`"inline"`, the default, expands the panel in the document flow, which pushes the page down by the panel's height. `"drawer"` takes it out of the
+flow below `md`: a fixed panel sliding in from one edge, over a backdrop, leaving the content behind it exactly where it was.
 
-**Default: a bar whose panel would displace the page on a phone takes `collapsedAs="drawer"`.**
-<!-- rule:forge-ui-nav-drawer-when -->
+A panel of a few links pushes the page down by less than a drawer's backdrop and slide are worth.
 
-Override with `inline` for a panel of a few links, whose push down the page is shorter than a drawer's backdrop and slide are worth.
+<!-- rule:forge-ui-nav-drawer-edge --> A rail takes no `drawerEdge`.
 
-**Default: the edge is derived from `placement`.**
-<!-- rule:forge-ui-nav-drawer-edge -->
+A drawer's glyphs and its ways out are Floor: `forge-ui-nav-drawer-glyphs` and `forge-ui-nav-drawer-dismiss`, in `floor.md`.
 
-Override with `drawerEdge` for a top bar whose leading edge an app's own drawer already holds. A rail takes no `drawerEdge`.
-
-**Default: a rail that opens off-canvas draws `panel-open`/`panel-close`; a top bar keeps its hamburger.**
-<!-- rule:forge-ui-nav-drawer-glyphs -->
-
-Override never — the props select the glyph, so a rail drawer's `icon` must supply `panel-open` and `panel-close`.
-
-**Default: a drawer is dismissable four ways — the toggle, the backdrop, Escape, and a link inside it.**
-<!-- rule:forge-ui-nav-drawer-dismiss -->
-
-Override never — the backdrop serves a pointer, Escape a keyboard, the toggle a page with JavaScript off, and a link the reader leaving for a
-destination, so a drawer missing one traps whoever reached for it.
-
-**Default: no ancestor of the bar carries `backdrop-filter`, `filter` or `transform`.**
-<!-- rule:forge-ui-nav-drawer-containing-block -->
-
-Override for a bar whose panel stays `inline`. Only a fixed-position drawer is captured by a filtered or transformed ancestor.
+<!-- rule:forge-ui-nav-drawer-containing-block --> Only a fixed-position drawer is captured by a filtered or transformed ancestor.
 
 ```tsx
 import { Navbar } from "@y-core/forge/ui/chrome";
@@ -255,15 +198,11 @@ The slide itself depends on the closed `<details>`'s content being rendered, whi
 
 ### 1h. Labelling destinations
 
-**Default: name a destination for what the user wants there, not for the system that serves it.**
-<!-- rule:forge-ui-nav-user-labels -->
+<!-- rule:forge-ui-nav-user-labels --> A `NavLink` labelled "Invoices" beats one labelled "Billing service"; "Team" beats "Identity". The label is
+the whole affordance, so it is where the naming work goes.
 
-A `NavLink` labelled "Invoices" beats one labelled "Billing service"; "Team" beats "Identity". The label is the whole affordance, so it is where the
-naming work goes. Override when the system's own term _is_ the user's term — a developer console, where "Workers" is what the user came for.
-
-**Default: every `NavLink` carries visible text.** <!-- rule:forge-ui-nav-text-labels --> Icon-only bar items depend on recognition the user does
-not have on their first visit, and each one then needs its own accessible name under `forge-ui-accessible-name` plus a target meeting
-`forge-ui-hit-target`. Override for a `Toolbar` rail, whose items are icon-only by design and carry `label` for exactly that reason.
+<!-- rule:forge-ui-nav-text-labels --> Icon-only bar items depend on recognition the user does not have on their first visit, and each one then
+needs its own accessible name under `forge-ui-accessible-name` plus a target meeting `forge-ui-hit-target`.
 
 ### 1i. Indicating the current location
 
@@ -304,71 +243,50 @@ const config: NavDefinition = {
 };
 ```
 
-**Default: the current destination is indicated on every page, by `aria-current` plus a visible cue.** <!-- rule:forge-ui-nav-current-location -->
-Colour alone does not qualify — `forge-ui-not-color-alone` — so pair it with weight or a rule. Override when the surface has exactly one
-destination.
+<!-- rule:forge-ui-nav-current-location --> Colour alone does not qualify — `forge-ui-not-color-alone` — so pair it with weight or a rule.
 
 An in-page navigation has no request to read either: the URL does not change as the reader scrolls, so the marker can only be a runtime one.
 `mountScrollSpy` from `@y-core/forge/ui/client` watches the sections the fragment links point at and stamps `aria-current="location"` on the link
 for the one being read. A bar-level link styles that state itself, shifting weight as well as colour, so the paired cue is already there and the app
 adds nothing to get it.
 
-Default: mark a fragment link `aria-current="location"` and a link that changes the page `aria-current="page"` — the question is whether a request
-was made, not whether the control looks like navigation. <!-- rule:forge-ui-nav-current-in-page --> `Carousel.Dots` is the case that looks like the
-exception and is not: the dots are `Pagination` by markup, but each is an anchor to a slide in the document already on screen, so they mark
-`location` as scroll-spy does while `Pagination` proper keeps `page`. **A dots row is also not a landmark by default** — a landmark promises the
-reader that jumping there reaches the site's navigation, and a picker belonging to one widget does not; it renders `role="group"` with its label,
-so two carousels on a page add two groups and no navigation regions. `Carousel.Dots` takes `landmark` for a consumer whose row genuinely is the
-page's navigation.
+Which `aria-current` value a link takes is Floor: `forge-ui-nav-current-in-page`, in `floor.md`.
 
 ---
 
 ## 2. `Dock`
 
-A `Dock` is the phone-width primary navigation: a fixed bottom bar of three to five top-level destinations of equal weight, each a glyph over a
-one-word label. It hides from the `hideAbove` breakpoint up — `md` by default, or `lg` — and the `Navbar` takes over there, so the two are never
-visible at once; `hideAbove="never"` keeps it at every width.
-
-Default: reach for `Dock` only when every destination is a top-level one and there are at most five; a sixth belongs behind the `Navbar`'s menu, and
-a bar that must also hold a user slot or a search box is a bottom-placed `Navbar`. <!-- rule:forge-ui-nav-dock-when -->
+<!-- rule:forge-ui-nav-dock-when --> A `Dock` is the phone-width primary navigation: a fixed bottom bar of three to five top-level destinations of
+equal weight, each a glyph over a one-word label. It hides from the `hideAbove` breakpoint up — `md` by default, or `lg` — and the `Navbar` takes
+over there, so the two are never visible at once; `hideAbove="never"` keeps it at every width.
 
 ## 3. `Toolbar`
 
 The chrome `Toolbar` renders a rail from a `ToolbarDefinition`: `groups`, each a `ToolbarGroup` of `ToolbarItem`s, where an item is a
 `ToolbarAction`, a `ToolbarPopover`, a `ToolbarSeparator` or a `ToolbarSlot`. A separator is emitted automatically between sibling groups.
 
-**Default: `Toolbar` holds verbs that act on the object currently open; `Navbar` holds destinations.**
-<!-- rule:forge-ui-nav-toolbar-verbs -->
+<!-- rule:forge-ui-nav-toolbar-verbs --> A destination in a toolbar reads as an action and gets clicked by accident.
 
-Override never — a destination in a toolbar reads as an action and gets clicked by accident.
+<!-- rule:forge-ui-nav-toolbar-groups --> Groups already separate; a separator between each item separates nothing.
 
-**Default: express grouping with `ToolbarGroup`, not with an explicit `ToolbarSeparator` between every item.**
-<!-- rule:forge-ui-nav-toolbar-groups --> Groups already separate; a separator between each item separates nothing. Override when a single group
-needs one internal break, which is what the explicit shape is for.
-
-**Default: an infrequent or multi-part action is a `ToolbarPopover`, not another `ToolbarAction`.**
-<!-- rule:forge-ui-nav-toolbar-popover -->
-
-A rail of twelve equally-weighted glyphs has no hierarchy. `ToolbarPopover` takes `content` and an optional `titleAction`, which is where the
-second-tier controls belong. Override for a rail whose every item is a peer tool — a drawing palette.
+<!-- rule:forge-ui-nav-toolbar-popover --> A rail of twelve equally-weighted glyphs has no hierarchy. `ToolbarPopover` takes `content` and an
+optional `titleAction`, which is where the second-tier controls belong.
 
 ---
 
 ## 4. `Pagination`, and when scrolling is not it
 
-A paged list has an addressable position: the reader can bookmark page 4, come back to it, and reach the footer. Infinite scroll gives up all three,
-and it gives them up on exactly the lists — search results, audit logs, order history — where returning to a known row is the task.
-
-Default: page a long list with `Pagination`, never with infinite scroll, unless the list is a feed with no stable ordering, where there is no
-position to return to. <!-- rule:forge-ui-pagination-vs-scroll -->
+<!-- rule:forge-ui-pagination-vs-scroll --> A paged list has an addressable position: the reader can bookmark page 4, come back to it, and reach the
+footer. Infinite scroll gives up all three, and it gives them up on exactly the lists — search results, audit logs, order history — where returning
+to a known row is the task.
 
 `Carousel.Dots` is `Pagination` by anchor — each dot is an `href="#slide-id"` — so the same addressability argument applies: a slide the reader can
 link to, and return to, is a slide worth paging; a strip with no stable slides is a feed and wants no dots.
 
 ## 5. `Tabs`, and when it is a router in disguise
 
-`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden="until-found"`, so the first render is correct with no JavaScript
-and find-in-page reaches every panel — once `mountTabs` runs, a match selects its panel's tab.
+<!-- rule:forge-ui-nav-tabs-loaded --> `Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden="until-found"`, so the first
+render is correct with no JavaScript and find-in-page reaches every panel — once `mountTabs` runs, a match selects its panel's tab.
 
 | Given | Choose |
 | --- | --- |
@@ -377,18 +295,13 @@ and find-in-page reaches every panel — once `mountTabs` runs, a match selects 
 | Views that each need a fetch | links, or `Tabs` with `activation="manual"` |
 | Steps in an order the user must follow | neither — a sequence, not a tab set |
 
-**Default: `Tabs` only when every panel's content is already on the page.**
-<!-- rule:forge-ui-nav-tabs-loaded -->
+`activation="manual"` waits for Enter, Space or a click rather than selecting on focus.
 
-Override with `activation="manual"`, which waits for Enter, Space or a click rather than selecting on focus, when a panel is expensive enough that
-arrow-key traversal would fire several loads.
+<!-- rule:forge-ui-nav-tabs-not-router --> A tab set that changes the address bar is a router wearing a tablist's ARIA, and it breaks the back
+button in a way the roles then misdescribe. Route-addressable views are navigation.
 
-**Default: a view with its own URL is a link, not a tab.** <!-- rule:forge-ui-nav-tabs-not-router --> A tab set that changes the address bar is a
-router wearing a tablist's ARIA, and it breaks the back button in a way the roles then misdescribe. Override never — route-addressable views are
-navigation.
-
-**Default: hide a `Tabs` whose panels are all empty.** <!-- rule:forge-ui-nav-tabs-empty --> The empty-state rule in `07-states.md` —
-`forge-ui-state-hide-empty-controls` — covers the general case; this is that case for `Tabs`.
+<!-- rule:forge-ui-nav-tabs-empty --> The empty-state rule in `07-states.md` — `forge-ui-state-hide-empty-controls` — covers the general case; this
+is that case for `Tabs`.
 
 **Without script, the cue follows the panel on screen and the announced selection does not.** Following another tab's fragment, or a
 find-in-page match in a hidden panel, shows that panel, hides the selected one and takes the cue off the server's tab, so no tab looks selected.
@@ -413,23 +326,13 @@ that is revealed shows beside the selected one instead of replacing it.
 | `DEFAULT_THEME_PREF` | The server-side default, resolved client-side |
 | `FOUC_SCRIPT` | The inline script that sets both before first paint |
 
-**Default: embed `FOUC_SCRIPT` in an inline `<script>` in the `<head>`, and list its hash in the CSP `script-src`.**
-<!-- rule:forge-ui-nav-fouc-script -->
+<!-- rule:forge-ui-nav-fouc-script --> Without it, a user whose stored preference is dark gets one light frame on every navigation. That is a design
+defect, not a build detail: it is visible and it is repeated.
 
-Without it, a user whose stored preference is dark gets one light frame on every navigation. That is a design defect, not a build detail: it is
-visible and it is repeated. Override never.
+Reading the constants rather than restating them is Floor: `forge-ui-nav-theme-constants`, in `floor.md`.
 
-**Default: read the theme constants rather than restating their string values.**
-<!-- rule:forge-ui-nav-theme-constants -->
-
-A hand-written `"dark"` in an app's own `@custom-variant` is a second writer of `DARK_CLASS` in a repository forge's gate cannot see. Override
-never.
-
-**Default: `ThemeToggle` lives in the chrome, as a `NavSlot`, not on a settings page.**
-<!-- rule:forge-ui-nav-theme-toggle-placement -->
-
-One button cycling light → dark → system, whose accessible name tracks the active theme with no JavaScript because each glyph carries its own
-`sr-only` label. Override when the app already has a preferences surface the user visits, in which case the toggle may appear in both.
+<!-- rule:forge-ui-nav-theme-toggle-placement --> One button cycling light → dark → system, whose accessible name tracks the active theme with no
+JavaScript because each glyph carries its own `sr-only` label.
 
 ```tsx
 import { Navbar, ThemeToggle } from "@y-core/forge/ui/chrome";

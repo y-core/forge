@@ -1,0 +1,39 @@
+{
+  "name": "forge-eval-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "warden": {
+    "kind": "apps"
+  },
+  "scripts": {
+    "dev": "forge db migrate && forge cf dev",
+    "fix": "forge verify --fix",
+    "lint": "forge verify --only lint",
+    "test": "bun test",
+    "verify": "forge verify",
+    "verify:static": "forge verify --tier static",
+    "verify:unit": "forge verify --tier unit",
+    "verify:scheduled": "forge verify --tier scheduled",
+    "db:backup": "forge db backup",
+    "db:compose": "forge db migrate compose",
+    "db:lint": "forge db lint",
+    "db:migrate": "forge db migrate",
+    "db:reset": "forge db reset",
+    "db:restore": "forge db restore",
+    "db:schema:check": "forge db schema check",
+    "db:status": "forge db migrate status"
+  },
+  "dependencies": {
+    "@y-core/forge": "file:/tmp/forge-eval.tgz"
+  },
+  "devDependencies": {
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "wrangler": "^4.164.0"
+  }
+}

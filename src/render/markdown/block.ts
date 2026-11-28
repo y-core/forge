@@ -8,6 +8,7 @@ import type {
   MarkdownDocument,
   MarkdownListInfo,
   MarkdownListItem,
+  MarkdownTableCell,
   MarkdownTableRow,
   MarkdownUnit,
   MarkdownUnitBounds,
@@ -476,7 +477,7 @@ function scanContainers(
   function createRow(cells: number[]): MarkdownTableRow {
     const start = cells[0] ?? 0;
     const end = cells.at(-1) ?? start;
-    const children = [];
+    const children: MarkdownTableCell[] = [];
     for (let index = 0; index < cells.length; index += 2) {
       const cellStart = cells[index] ?? 0;
       const cellEnd = cells[index + 1] ?? cellStart;

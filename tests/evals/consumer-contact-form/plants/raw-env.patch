@@ -1,0 +1,13 @@
+diff --git a/src/controllers/contact.ts b/src/controllers/contact.ts
+index 7d21d975..ff562cd2 100644
+--- a/src/controllers/contact.ts
++++ b/src/controllers/contact.ts
+@@ -7,7 +7,7 @@ import { routes } from "../routes";
+ import { ContactThanks, ContactView } from "../views/contact";
+ 
+ export const contactPage = definePage(routes.contact, {
+-  loader: (_c, config) => ({ siteName: config.siteName }),
++  loader: (c) => ({ siteName: c.env.SITE_NAME }),
+   view: (_c, _config, state) => renderPage(ContactView({ siteName: state.data.siteName, action: routes.contactSubmit.href() })),
+ });
+ 

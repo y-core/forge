@@ -46,17 +46,14 @@ There is exactly **one** result primitive, taken from the shared library rather 
 
 ```ts
 import { ok, err, result, toError, type Result } from "@y-core/forge/result";
-
-type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 ```
 
-**Return `Result` from any function that can fail predictably** — a service call, a parse, a lookup.
+`Result`'s type declaration owns its shape. **Return `Result` from any function that can fail predictably** — a service call, a parse, a lookup.
 
-**There is exactly one failure field: `error`.** No `errors`, no `reason`, no `message`. A second failure field is how a codebase ends up with two
-half-honoured conventions and call sites checking the wrong one.
+**There is exactly one failure field, `error`**, never a second such as `errors`, `reason` or `message`, which leaves two half-honoured conventions.
 
-**Build values with `ok()` / `err()`, never object literals.** They are the one documented exception to the `create*` naming rule
-([`CODE_RULES.md`][cr-1d] §1d): they construct values, not configured objects.
+<!-- rule:apps-error-handling-result-literal --> They are the one documented exception to the `create*` naming rule ([`CODE_RULES.md`][cr-1d] §1d):
+they construct values, not configured objects.
 
 ### 1b. Narrowing a Result
 
@@ -69,18 +66,14 @@ const contact = parsed.data; // narrowed — no cast
 ```
 
 **A cast after a `Result` check is a defect.** The discriminant exists so the narrowing is free; reaching for `as` means the guard was written in a
-shape the compiler cannot follow, and the fix is the guard.
+shape the compiler cannot follow.
 
 ### 1c. Domain Aliases
 
-A domain alias narrows **only** the failure type. The discriminant stays `ok`; the failure channel stays `error`.
+A domain alias narrows **only** the failure type; `ValidationResult`'s and `GuardResult`'s declarations own their shapes. **Never collapse a
+validation result's per-field messages into one error**, since the list is what lets a response surface every failing field at once.
 
-- A **validation result** carries a flat list of already-formatted messages, one per failing field, ready to render. Do not collapse them into a
-  single error — the list is what lets a response surface every failing field at once.
-- A **guard result** carries no success value and fails with a reason code, typically a string-literal union.
-
-**Never echo a guard's reason code to a client.** It is a server diagnostic that names which check failed — exactly what a probing client is trying
-to learn.
+**Never echo a guard's reason code to a client**: it names which check failed, exactly what a probing client is trying to learn.
 
 ---
 
@@ -88,9 +81,8 @@ to learn.
 
 ### 2a. Never Return a Bare Nullable
 
-**A function that can fail does not return `T | null` or `T | undefined`.** A nullable return collapses every distinct failure into one
-indistinguishable absence, so the caller cannot tell "not found" from "malformed" from "the binding was missing" — and it invites `??`, which turns
-a failure into a default.
+**A function that can fail does not return `T | null` or `T | undefined`**: its caller cannot tell "not found" from "malformed" from "the binding
+was missing", and it invites `??`, which turns a failure into a default.
 
 `undefined` remains correct for a value that is _legitimately optional_, where absence is not a failure and carries no reason worth reporting.
 
@@ -124,8 +116,7 @@ anyway.
 **Set the status on the response builder, not on the renderer.** A renderer returns markup; the status is a property of the HTTP response. Splitting
 them means one renderer serves every status instead of one renderer per status.
 
-**A fragment must target the element the client asked it to replace.** A fragment that renders correctly into the wrong target is a worse failure
-than an error page, because it looks like it worked.
+**A fragment must target the element the client asked it to replace**, because one rendered into the wrong target looks like it worked.
 
 ### 3b. What a Client Never Receives
 
@@ -155,7 +146,7 @@ under which a fail-open exception may be ratified. This section restates none of
 
 ### 4b. No Error Path Ships an Unprotected Response
 
-**An error response carries the same hardening a success response would**, and where it cannot, it carries a self-contained baseline instead.
+**An error response carries the same hardening a success response would, or else a self-contained baseline.**
 
 The distinction is chain depth. An error thrown _inside_ the middleware chain unwinds through it, so the response still reaches whatever queues
 security headers. An error thrown _outside_ it — during config resolution, before routing — never reaches the application's middleware, so the
@@ -177,16 +168,16 @@ Predictable outcomes of valid interactions: a missing required field, a malforme
 **These are not exceptional and are not logged at error level** — they are user-generated, and logging them at error level drowns the signal that
 matters.
 
-**Return a `Result` from the validating or deciding function**, and render the failure from the handler (§3a). **Never throw** — a throw hides the
-error path from the type system and forces callers into `try/catch`.
+**Return a `Result` from the validating or deciding function and render the failure from the handler (§3a), never throw**: a throw hides the
+error path from the type system.
 
 ### 5b. Unexpected Errors — Programming Defects
 
 Type errors, null dereferences, unreachable branches actually reached. **Let them propagate.** The framework's error boundary catches them, returns
 a `500` that exposes nothing (§3b), and logs them at error level with a stack.
 
-**Do not handle them defensively in application code.** A defensive catch around a programming defect converts a loud, fixable failure into a quiet,
-permanent one — and the code that catches it cannot know what state the half-executed operation left behind.
+**Do not handle them defensively in application code**: a defensive catch turns a loud, fixable failure into a quiet, permanent one, in a state
+the half-executed operation left unknown.
 
 The one throw that _belongs_ in application code is a **contract violation by a caller** — an argument shape the function forbids. That is a bug
 being surfaced, not a condition being handled.

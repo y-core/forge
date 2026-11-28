@@ -48,52 +48,47 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 
 ## 1. Test Runners
 
-**There may be more than one runner, and they answer different questions.** A unit runner proves that a function returns what it should and that the
-server emitted the markup it promised. A browser runner proves that a controller does what it claims **to a keystroke**. Neither substitutes for the
-other, and both are kept.
+**There may be more than one runner, and they answer different questions**: a unit runner proves a function's value and the markup the server
+emitted, a browser runner proves what a controller does **to a keystroke**, and both are kept.
 
 ### 1a. Runner Primitives
 
-**Import all test utilities from the runner itself** — never from a third-party assertion or mocking library layered over a runner that already has
-both. A browser driver is the one legitimate external test dependency, because driving a real browser needs one and there is no in-house equivalent
-to reach for.
+<!-- rule:libs-testing-runner-imports --> The runner already has both. A browser driver is the one legitimate external test dependency, because
+driving a real browser needs one and there is no in-house equivalent to reach for.
 
 **Keep suite nesting to at most two levels.** Deeper nesting costs more readability than the grouping buys.
 
 ### 1b. No Runtime-Specific Type Package
 
-Use a **hand-written declaration stub** for the runner's globals rather than the runtime's published type package. This is a hard requirement, not a
-preference:
+Use a **hand-written declaration stub** for the runner's globals rather than the runtime's published type package. This is a hard requirement:
 
 - Such a package typically overrides a standard global's signature with runtime-specific properties — `fetch` is the usual casualty.
 - That override breaks type-checking of Worker code and of test fakes that implement platform interfaces.
 - The stub declares exactly the lifecycle, assertion and runtime calls in use, as module declarations, and nothing more. It adds no global, so a
   spec imports the runtime's API from its module by name.
 
-**A change that adds the runtime's type package must be rejected**, including as a transitive dependency of a convenience plugin.
+<!-- rule:libs-testing-no-runtime-types --> A change that adds it is rejected, whatever convenience it brings.
 
-**The lint base bans a runtime global in Worker source; the stub cannot.** Runtime source uses Web APIs only, so it reaches for no `process`, no
-`Buffer` and no runtime namespace, even where `nodejs_compat` would supply the first two. A program that declares one elsewhere typechecks the
-reference, so the library's shipped lint base refuses each one outside build-time trees. In a spec only the runtime namespace stays banned. An
-imported name is a local binding the global ban never reaches, so the base refuses the import of the module that supplies it too.
+<!-- rule:libs-testing-runtime-global-ban --> The lint base holds this even where `nodejs_compat` would supply the first two, because a program that
+declares one elsewhere typechecks the reference and the stub cannot stop it. The base refuses each outside build-time trees, and the import too,
+since an imported name is a local binding the global ban never reaches; in a spec only the runtime namespace stays banned.
 
 ### 1c. The Browser Set
 
 **A browser test runs in a real browser under its own verb**, with its own config owning the discovery pattern, project list, and parallelism.
 
 **The set sits outside `unit` because it needs a browser binary or server an install step provides, and at `scheduled` because a step that
-starts a browser is heavy (§6c).** Narrowing it would buy almost nothing, because a spec's reach covers nearly every source file. A broken behaviour
-is therefore found by the next daily cron run or the next tag, not by the epic gate, and a tag still never ships without the set.
+starts a browser is heavy (§6c).** Narrowing it would buy almost nothing, since a spec's reach covers nearly every source file; a broken behaviour
+is found by the next daily cron run or tag, not by the epic gate, and a tag never ships without the set.
 
-**Chromium is the set's engine, and another engine is a `scheduled` row of the same table**, so a tag and the cron run both take it (§6a, §6c).
-A library adds one when its consumers need wider compatibility. Where the environment serves the other engines from their own server, the browser
-config routes those projects there. A run at `scheduled` without that server fails rather than skipping (§6e).
+**Chromium is the set's engine, and another engine is a `scheduled` row of the same table** (§6a, §6c), added when consumers need wider
+compatibility. Where the environment serves the other engines from their own server, the browser config routes those projects there, and a
+`scheduled` run without that server fails rather than skipping (§6e).
 
-**This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
-natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
-one retargeting rule backwards makes the central assertion pass for the wrong reason. A separate process guarantees the isolation by construction
-instead — no global redefined, and the platform's own `Request` / `Response` / `fetch` semantics left exactly as the runtime ships them, which
-matters because those semantics _are_ the product.
+<!-- rule:libs-testing-no-dom-shim --> The two runners never share a process either. A shim defines hundreds of globals, shadows the runtime natives
+the suite exercises, and certifies components against a platform model lacking the features they are built on. A separate process isolates by
+construction, leaving the platform's own `Request` / `Response` / `fetch` semantics exactly as the runtime ships them — those semantics _are_ the
+product.
 
 **What each runner is sufficient evidence for:**
 
@@ -104,9 +99,10 @@ matters because those semantics _are_ the product.
 | a controller moves focus, writes an attribute, consumes a key | **the browser set only** |
 
 Neither subsumes the other: a component can behave correctly while emitting markup no stylesheet matches, so a markup change _updates_ the
-exact-HTML test rather than replacing it with a behaviour test. **A browser case asserts a DOM or focus state, never a call count** — it builds real
-markup, dispatches a real event through the browser's own input path, and reads what resulted. A test that counts calls is testing the test's own
-fixture.
+exact-HTML test rather than replacing it with a behaviour test.
+
+<!-- rule:libs-testing-browser-state --> A browser case builds real markup, dispatches a real event through the browser's own input path, and reads
+what resulted; a test that counts calls is testing the test's own fixture.
 
 ---
 
@@ -119,39 +115,34 @@ fixture.
     src/security/headers.ts   → src/security/headers.test.ts
     src/ui/core/button.tsx    → src/ui/core/button.test.tsx
 
-**Test files never go in a top-level `__tests__/` or `tests/` directory.** Co-location makes coverage visible at a glance and keeps relative imports
-short (§2c).
+<!-- rule:libs-testing-colocated --> Co-location makes coverage visible at a glance and keeps relative imports short (§2c).
 
-**A configuration file gets no test.** A config names values; it has no logic to exercise, so a test over it can only restate the file back to
-itself and fail whenever the config legitimately changes. Where such a test looks like it proves something, the property belongs to the code that
-_reads_ the config, and the fix is to enforce it there.
+**A configuration file gets no test**: a config has no logic, so a test over it can only restate the file and fail when the config legitimately
+changes; a property such a test seems to prove belongs to the code that _reads_ the config.
 
 **The browser set follows the same rule with its own suffix.** A subject may have both, and often should: the exact-HTML test proves what the server
 emitted, the browser test proves what the markup then does.
 
-**The one exception is a spec with no single subject.** A test for a scenario that exists only _between_ two components sits at the root of the tier
-it spans rather than beside an arbitrary participant. Choosing a co-location for it would name one component as the subject when none is.
+**The one exception is a spec with no single subject**: a scenario that exists only _between_ two components sits at the root of the tier it spans,
+since co-locating it would name a subject when none is.
 
-**A cross-cutting sweep enumerates the published surface only.** Deriving subjects from a barrel's own exports means a new symbol is covered the day
-it is exported, and a hand-kept list never rots. Walking further — into sub-components a caller does not address directly — makes the subject set
-something the sweep computes rather than something the barrel declares.
+**A cross-cutting sweep enumerates the published surface only**: deriving subjects from a barrel's own exports covers a new symbol the day it is
+exported, while walking into sub-components a caller does not address makes the subject set something the sweep computes, not the barrel declares.
 
 ### 2b. Excluded From Publish
 
-The published-files list excludes every test file, so tests exist only in the source repository. This keeps the package lean and stops consumers
+<!-- rule:libs-testing-test-only-unpublished --> The published-files list excludes every test file, which keeps the package lean and stops consumers
 importing test helpers.
 
 ### 2c. Import Concrete Files in Tests
 
-**Always import the concrete source file** — never the namespace barrel, and never the package name. A test beside its subject reaches it with a
-relative path one segment long.
+<!-- rule:libs-testing-concrete-import --> A test beside its subject reaches it with a relative path one segment long.
 
 Importing via the barrel couples the test to the export surface rather than the implementation, and masks exactly the re-export bugs the export gate
 exists to catch.
 
-The exceptions are narrow. A **test-fixture namespace** is imported by subpath, because consumer test code sits outside the source tree. And a
-**test whose subject _is_ the export surface** must read the published surface — suppress the lint rule at that import with a reason, and nowhere
-else.
+The exceptions are narrow: a **test-fixture namespace** is imported by subpath, because consumer test code sits outside the source tree, and a
+**test whose subject _is_ the export surface** reads the published surface, with the lint rule suppressed at that one import and a reason.
 
 ---
 
@@ -162,13 +153,13 @@ else.
 A correct renderer escapes **every** string child, static and interpolated alike. **Assert the escaped form, exactly** — the repository's own
 `docs/TEST_RUNNERS.md` §3a publishes the character-to-entity map its renderer produces, and that map is the one to assert against.
 
-**Static text in the source is escaped exactly as an interpolated value is.** Never assert a raw `&`, `<`, `>`, `'` or `"` on the strength of a
-literal having been written that way in the JSX.
+**Static text in the source is escaped exactly as an interpolated value is**: never assert a raw `&`, `<`, `>`, `'` or `"` because the JSX
+literal was written that way.
 
 **The one bypass is an explicitly-trusted HTML value**, which is emitted verbatim. Assert the unescaped form there, and only there.
 
-**URL-bearing attributes are a further exception:** a renderer routes them through a URL sanitizer, so a hostile scheme renders as a safe
-placeholder. Assert the sanitized form.
+**URL-bearing attributes are a further exception**: a renderer routes them through a URL sanitizer, so assert the safe placeholder a hostile scheme
+renders as.
 
 ### 3b. Exact Match — Never Substring Matching
 
@@ -183,47 +174,43 @@ expect(html).toMatch(/O'Brien/);
 expect(html).toBe("<td>O&#39;Brien &amp; Associates</td>");
 ```
 
-**If the assertion string is too long, extract the relevant fragment and assert `toBe` on that.** Never shorten an assertion by switching to a
-substring match. Substring matching is legitimate on non-markup strings — an error message, a log line, a SQL fragment.
+<!-- rule:libs-testing-exact-match --> Substring matching is legitimate on non-markup strings — an error message, a log line, a SQL fragment.
 
 ### 3c. Render Once, Assert Once
 
 **Render through the shared render helper and assert the full markup with one exact assertion.**
 
-**Do not call a private render path, do not render twice to assert two fragments, and do not fall back to substring matching.** A single
-entity-aware exact assertion on the full output is the only accepted shape.
+**Do not call a private render path, render twice to assert two fragments, or fall back to substring matching.**
 
 ### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
 
 **The operational check, applied before a test is counted as written: delete the mechanism the test names; a test that still passes was never
 testing it.**
 
-The failure shape is always the same. The subject is a _mechanism_ — a timer cleared, a list that does not grow, an observer disconnected — and the
-assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual second mechanism: an early return at
-the top of a callback makes "nothing visibly happened" true whether or not the timer that calls it was ever cancelled.
+The failure shape: the subject is a _mechanism_ — a timer cleared, a list that does not grow, an observer disconnected — and the assertion reads an
+_outcome_ a second mechanism also produces, usually a guard clause whose early return makes "nothing visibly happened" true whether or not the
+timer was cancelled.
 
 Shapes worth recognising:
 
 - **A guard downstream of the subject.** Remove a disposal guard and every case stays green except the one counting initialisations, because the
   guard and the mechanism produce the observable state identically.
 - **An assertion that passes when its subject is absent.** A negative assertion over an optional path — `expect(probe?.[0]).not.toBe("x")` — passes
-  when `probe` has been deleted outright, because the expression is then `undefined`. A negative assertion over an optional path asserts nothing.
+  when `probe` has been deleted outright, because the expression is then `undefined`.
 
-**Pin the mechanism, and pin that it was armed.** "The timer never fired" is worth nothing without "a timer was scheduled" — a mechanism never set
-up also never runs. Both halves in one assertion is the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
+**Pin the mechanism, and pin that it was armed**, since a mechanism never set up also never runs; one assertion holds both halves:
+`expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
 
-This does not weaken §1c's rule that a browser case asserts DOM state rather than a call count. What is counted here is the **platform's** own
-invocation, which _is_ the mechanism; §1c bans substituting a count of calls into the test's own fixture for the DOM state a controller was supposed
-to produce.
+This does not weaken §1c: what is counted here is the **platform's** own invocation, which _is_ the mechanism, whereas §1c bans counting calls into
+the test's own fixture in place of the DOM state a controller was supposed to produce.
 
 ### 3e. Assert the Contract, Not the Implementation Restated
 
-**A literal copied from the source under test is not an expected value.** This is the case §3d cannot reach. A transcription goes red the moment the
-source changes, so it is never vacuous by the deletion check's measure — it merely records that two files agree with each other, which is a fact
-about the repository rather than about the software. The rule §2 states for a configuration file is the same rule: a test that can only restate its
-subject back to itself proves nothing, whether the subject is a config or a constant inside a module.
+**A literal copied from the source under test is not an expected value.** This is the case §3d cannot reach: a transcription goes red whenever the
+source changes, so it is never vacuous by the deletion check, yet it only records that two files agree — §2a's configuration-file rule, applied to
+a constant inside a module.
 
-These shapes are all common:
+Common shapes:
 
 - **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
   derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
@@ -236,17 +223,15 @@ These shapes are all common:
 **The operational test: if this test and the source under test were edited together by the same rename, would anything go red?** If no, the test
 pins agreement between two files, not behaviour.
 
-This does not weaken §3a–§3c. An exact assertion on the markup a renderer emitted **is** the contract — the whole string, written out in the test
-where a reader can see the entity encoding. What this section refuses is the derived form: a class constant imported or transcribed from the source
-and recomposed into the expectation, so both sides move together and neither is ever checked against an outcome.
+This does not weaken §3a–§3c: an exact assertion on the markup a renderer emitted, written out whole, **is** the contract. What is refused is a
+class constant imported or transcribed from the source and recomposed into the expectation, so both sides move together.
 
 **An expected value has to come from somewhere other than the source.** In descending order of strength: a published standard's test vectors, which
 make transcription structurally impossible; a table generated from the domain rule rather than from the branches; a real dependency's own answer — a
 query plan from a real database, a DOM state after a real event in a real browser; and the observable outcome of a request, asserted whole.
 
-**Where a constant genuinely is the contract, write it as a literal rather than importing it.** A test that reads the value back out of the module
-under test cannot fail when that value changes, which is the whole point of pinning it. The reverse holds for a value this repository does not own:
-import it, so a dependency's change surfaces as a failure rather than as silent disagreement.
+**Where a constant genuinely is the contract, write it as a literal rather than importing it**, since a value read back out of the module under test
+cannot fail when it changes; a value this repository does not own is imported, so a dependency's change surfaces as a failure.
 
 **Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
 outbound call made — pins what the refusal cost, which no restatement of the guard's own constants can.
@@ -254,19 +239,18 @@ outbound call made — pins what the refusal cost, which no restatement of the g
 ### 3f. A Deleted Claim Lands in a Test
 
 **A claim removed from a comment is not removed from the system until an assertion holds it.** `CODE_RULES.md` §5e is this rule seen from the source
-side: a comment asserting behaviour is prose standing in for a test, and the fix is the test. This section is the receiving end.
+side: a comment asserting behaviour is prose standing in for a test, and the fix is the test.
 
-So a change that deletes such a comment carries work here, and the work is scoped, not incidental:
+So a change that deletes such a comment carries scoped work here:
 
-- **The claim names the assertion.** "Returns the cached value when the entry has not expired" is already a test name and an expectation; it does
-  not need to be redesigned, only written.
-- **Check first whether it is already pinned.** Frequently it is, and the comment was a second, unexecuted copy — §5b's defect, not a missing test.
-  Deleting it then costs nothing and adds nothing.
-- **Where it is not pinned, the test is part of the change.** Not a follow-up, not a ledger task: the claim was load-bearing enough to be written
-  down once, and the change is not done while the system has lost it and gained nothing.
+- **The claim names the assertion.** "Returns the cached value when the entry has not expired" is already a test name and an expectation, only to be
+  written.
+- **Check first whether it is already pinned.** Frequently the comment was a second, unexecuted copy — §5b's defect — and deleting it costs nothing.
+- **Where it is not pinned, the test is part of the change**, not a follow-up or a ledger task: the change is not done while the system has lost the
+  claim and gained nothing.
 
-§3d and §3e both apply to the test that results. A claim rewritten as an assertion that reads an outcome a second mechanism also produces, or as a
-literal copied back out of the source, has not landed — it has been restated in a new syntax.
+§3d and §3e apply to the resulting test: a claim rewritten as an outcome a second mechanism also produces, or as a literal copied out of the source,
+has only been restated in a new syntax.
 
 ---
 
@@ -277,11 +261,10 @@ literal copied back out of the source, has not landed — it has been restated i
 A fake is a minimal in-test implementation of a real interface, written as a plain object literal **annotated with that interface** — every member
 present, each body the least it can be.
 
-**TypeScript enforces that every interface member is present**, so interface drift breaks the test at compile time — which is the whole of the
-argument for fakes.
+**TypeScript enforces that every interface member is present**, so interface drift breaks the test at compile time — the whole argument for fakes.
 
-Ship the recurring fakes from a **test-fixture namespace** rather than re-deriving them per suite: an in-memory store fake, a render helper, a
-request builder, a single-route registrar. A fake that every suite hand-rolls is a fake that drifts per suite.
+Ship the recurring fakes from a **test-fixture namespace** — an in-memory store fake, a render helper, a request builder, a single-route registrar —
+since a fake every suite hand-rolls drifts per suite.
 
 ### 4b. Why Fakes Over Mocks
 
@@ -292,7 +275,7 @@ request builder, a single-route registrar. A fake that every suite hand-rolls is
 | Coupling | To the interface contract | To call order, argument matchers, invocation counts |
 | Dependencies | None | Requires a mock library |
 
-**Mock libraries are not installed and must not be added.** Use argument-capturing fakes (`CODE_RULES.md` §4b) when you need to inspect calls.
+<!-- rule:libs-testing-no-mock-library --> Use argument-capturing fakes (`CODE_RULES.md` §4b) when you need to inspect calls.
 
 ---
 
@@ -301,13 +284,13 @@ request builder, a single-route registrar. A fake that every suite hand-rolls is
 ### 5a. Both Pass and Fail Cases Required
 
 **Security-sensitive code requires both a positive case — the guard allows a valid request — and a negative case — the guard blocks an invalid
-one.** A suite with only the happy path is incomplete and must not be merged.
+one**, and a suite with only the happy path must not be merged.
 
-**Build the application under test the way production does: declaratively.** Routes are declared as a map bound to a controller and installed as a
-unit; path-scoped middleware is registered the same way production registers it; requests are driven through the app's own request entry point so
-the full chain runs and any deferred work is awaited.
+**Build the application under test the way production does: declaratively** — routes declared as a map bound to a controller, path-scoped
+middleware registered as production registers it, and requests driven through the app's own entry point so the full chain runs and deferred work
+is awaited.
 
-A test that wires a handler by hand proves the handler works and proves nothing about the chain, which is where guards actually live.
+A test that wires a handler by hand proves nothing about the chain, which is where guards actually live.
 
 | Feature | Required positive case | Required negative case |
 | --- | --- | --- |
@@ -342,12 +325,12 @@ it("rejects missing CSRF token with 403", async () => {
 });
 ```
 
-**"Body is non-empty" is a code smell.** An assertion that the body is not the empty string asserts nothing. Reserve loose checks for genuinely
-runtime-dependent values — signed tokens, generated ids.
+**"Body is non-empty" is a code smell**: it asserts nothing, so reserve loose checks for genuinely runtime-dependent values — signed tokens,
+generated ids.
 
 ### 5c. No Mocking of Security Primitives
 
-**Do not mock a security primitive to make a test pass.** Test the real implementation against a fake binding.
+**Do not mock a security primitive to make a test pass**; test the real implementation against a fake binding.
 
 If the real implementation is too hard to invoke from a test, that is a **testability signal — refactor to accept injectable dependencies**, not a
 licence to mock. A mocked guard is a test that passes when the guard is deleted.
@@ -358,10 +341,9 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Nested Tiers
 
-**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** Verbs
-sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
-`static ⊆ unit ⊆ runtime ⊆ scheduled`. Each tier above `static` includes the tier below it, as its first entry (§6c). What each tier holds is
-§6c's. **Each moment runs one tier, and `runtime` is what a bare invocation runs:**
+**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands**, because
+verbs sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command. They nest,
+`static ⊆ unit ⊆ runtime ⊆ scheduled`, and §6c owns what each holds. **Each moment runs one tier, and `runtime` is what a bare invocation runs:**
 
 | Moment | Runs |
 | --- | --- |
@@ -371,20 +353,20 @@ sharing every flag and every line of behaviour, differing only in a membership f
 | Tag | `verify:scheduled`, run by the release command before it tags; the remote CI then runs `verify:unit` on the tag |
 | Daily cron | `verify:scheduled`, run by the ledger host |
 
-`unit` is also the run for a machine with no runtime installed. No other moment exists to close on. A browser spec between them is the developing
-agent's call — one spec on one engine where a UI change needs confirming, never the whole set and never routine.
+`unit` is also the run for a machine with no runtime installed, and no other moment exists to close on. A browser spec between them is the
+developing agent's call — one spec on one engine where a UI change needs confirming, never the whole set and never routine.
 
-**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier by itself, never plans it
-into a task, and never reports it as owed: the release command runs it before it tags, on a release the user asked for, the ledger host runs it
-daily, and a break either finds reaches the ledger as a task without anyone being told to look.
+**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them**: an agent never runs it by itself, plans it into a task
+or reports it as owed, because the release command runs it before a tag the user asked for and the ledger host runs it daily, filing a break in the
+ledger as a task without anyone being told to look.
 
-**The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch, never a developer's
-work tree, with `--report`. A failure lands as one open task in the ledger of the project it ran for, rewritten in place by each later failure while
-it stays open. A run that never reached a test is logged and filed as nothing.
+**The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch with `--report`, never
+a developer's work tree; a failure lands as one open task in that project's ledger, rewritten in place by each later failure while it stays open,
+and a run that never reached a test is logged and filed as nothing.
 
 ### 6b. What Each Tool Catches
 
-Keyed by tool rather than by step: which steps exist drifts, and §6e says where that list lives. What a given tool proves does not drift.
+Keyed by tool rather than by step, because which steps exist drifts (§6e) and what a tool proves does not.
 
 | Tool | Catches |
 | --- | --- |
@@ -393,8 +375,7 @@ Keyed by tool rather than by step: which steps exist drifts, and §6e says where
 | The test runner | Functional regressions |
 | The project's own validators | Barrel and export-map drift, governing-doc format, asset coverage |
 
-**Fix type failures first** — they cascade into misleading lint and test failures. The step table encodes this by ordering the type check first, so
-a fail-fast run stops there without being told to.
+**Fix type failures first** — they cascade into misleading lint and test failures, which is why the step table orders the type check first.
 
 ### 6c. The Lines Between the Tiers
 
@@ -407,12 +388,11 @@ a fail-fast run stops there without being told to.
 | `runtime` | needs a Worker runtime or a local database, and runs only when the pending changes reach it |
 | `scheduled` | is heavy, or judges a finished change; every row at this tier runs whole |
 
-**The kind line is what a step does, not what it costs.** Type checking, linting, formatting and every project validator read the source and say
-something about it; a test suite executes what the source builds. A type-aware lint that takes seconds stays in `static`, and a suite that happens
-to be quick is still `unit`, which is what lets a writer trust one run to judge everything they just wrote. **Every step below `runtime` works on
-any machine with the repository's dependencies installed**, which makes those runs the gate anyone may run at any time. A step that declares a
-`requires` probe on an optional dependency runs wherever that dependency happens to be installed, and §6e's tier-decided verdict keeps that from
-weakening the gate an epic closes on.
+**The kind line is what a step does, not what it costs**: type checking, linting, formatting and every project validator read the source, and a test
+suite executes what it builds. So a type-aware lint that takes seconds stays in `static` and a quick suite is still `unit`, which lets a writer
+trust one run to judge everything they just wrote. **Every step below `runtime` works on any machine with the repository's dependencies
+installed**, so anyone may run those tiers at any time; a step with a `requires` probe on an optional dependency runs wherever that dependency is
+installed, and §6e's tier-decided verdict keeps that from weakening the gate an epic closes on.
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
@@ -423,83 +403,63 @@ weakening the gate an epic closes on.
 
 That budget is stated here and nowhere else. **A step that is not heavy stays where what it needs puts it**, however slow it feels, because a tier
 whose membership follows taste is a tier nobody can predict. A step that asks whether the tree is ready to ship — a bundle of what deploys, a gate
-over a derived tree — also starts at `scheduled`, because it judges a finished change rather than one in progress. A changelog's shape is not that
-question: its headings and released sections are judged at `static`, and an empty `[Unreleased]` is refused by the release command when it tags, not
-by a row.
+over a derived tree — also starts at `scheduled`, because it judges a finished change. A changelog's shape is not that question: its headings and
+released sections are judged at `static`, and an empty `[Unreleased]` is refused by the release command when it tags, not by a row.
 
-**A heavy test inside `unit` is split out, never dropped.** It becomes a test set of its own, listed in the `scheduled` tier. It is never deleted,
-skipped or ignored out of every automated run.
+**A heavy test inside `unit` is split out, never dropped**: it becomes a test set of its own in the `scheduled` tier, never deleted, skipped or
+ignored out of every automated run.
 
-**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the epic gate.** A
-step worth proving only before a tag and on the cron run goes in the `scheduled` tier of `config/steps.config.ts`. Another browser engine is that
-kind of step: Chromium proves the behaviour, and another engine proves only that it holds there too.
+**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the epic gate.**
+Another browser engine is such a step: Chromium proves the behaviour, and another engine proves only that it holds there too.
 
-**Every repository declares `verify:scheduled`.** The cron runs it, so a repository without it is outside the cron, and that is a gap rather than a
-choice.
+**Every repository declares `verify:scheduled`**: the cron runs it, so a repository without it is outside the cron, a gap rather than a choice.
 
-**Below `scheduled`, a step that declares what it reads runs only when the pending changes reach it; at `scheduled` it runs whole.** Under
-`runtime` such a step runs whole when a change touches one of the gate's own inputs or a path it reads, and runs nothing otherwise. A step may also
-trace at run time the paths no glob can name ahead of time; a change reaching one of them runs it whole, and so does a trace that fails.
+**Below `scheduled`, a step that declares what it reads runs only when the pending changes reach it; at `scheduled` it runs whole.** `selectSteps`'s
+TSDoc owns how a change selects it. A step may also trace at run time the paths no glob can name ahead of time; a change reaching one of them runs
+it whole, and so does a trace that fails.
 
-**A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — and never from a path
-list kept by hand.** The only hand-kept list names what that graph cannot see: a file a spec reads without importing it, or a module it reaches
-through a specifier resolved at run time. That list is checked against the tree, so a rename that leaves one of its globs matching nothing is
-refused rather than silently dropping the step from a change it reads. **`scheduled` runs every step whole on every tag and every cron run**,
-which is the backstop for a reach the derivation missed.
+**A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — never from a hand-kept
+path list.** The one hand-kept list names what that graph cannot see — a file a spec reads without importing it, a module reached through a
+specifier resolved at run time — and is checked against the tree, so a glob a rename leaves matching nothing is refused. **`scheduled` runs every
+step whole on every tag and every cron run**, the backstop for a reach the derivation missed.
 
-**A table declares each tier as its own list, in run order, and a tier includes a lower one by reference, expanded in place.** Nothing sorts a
-tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
-runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
-check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
-
-**A tier the table does not declare runs as the nearest declared tier below it**, so a table with no `runtime` key closes an epic on its `unit`
-rows. The runner does this, and the verdict names it — `verify (as unit)` — so a table never spells a fallback as a tier that only references the
-one below. A tier with no declared tier at or below it is refused.
-
-**A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
-whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row is left untouched only in the
-tier that declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about which
-changes reach it.
+**A table declares each tier as its own list, in run order**, and `resolveTiers`'s TSDoc owns how a `tier()` reference expands, which tier an
+undeclared one runs as, and what it refuses — refusing the table whole, whichever tier the run asked for. Each tier above `static` leads with the
+reference to the tier below by convention, unrefused when omitted: that reference nests the tiers and makes a fail-fast `scheduled` run fail on
+the sub-second check rather than after minutes of browser. A row moves tier by moving its entry, never by declaring it twice; a table never spells a
+fallback as a tier that only references the one below, since the verdict already names it, as in `verify (as unit)`. A row a tier reaches through a
+reference runs whole, because the tier that declared it made no claim about which changes reach it.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 
-A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can never be read as a green gate. **A selection
-resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+A narrowed selection brands every summary line as scoped, so a scoped green is never read as a green gate. **A selection resolving to zero steps is
+refused outright**: a gate that ran nothing must never be indistinguishable from one that passed.
 
-**Leaving a row untouched at `runtime` is not a scoped selection.** It is the tier's own definition (§6c), fixed by the tree and the commit it sits
-on, so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
-same commit.
+**Leaving a row untouched at `runtime` is not a scoped selection** but the tier's own definition (§6c), so its green is a gate green; what it ran
+depends on the commit, so its receipt records it and answers a reuse only at that commit.
 
-**A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
-and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
-step says so, exits 0 and carries the scoped brand, so it is never a green gate.
+**A run that executes no step is not refused when it cannot pass for a gate that ran**: a reuse run's verdict names the recorded run and the tree
+hash it stands on, carried only to bytes that run covered, and an `--affected` run whose changes touch no step says so, exits 0 and carries the
+scoped brand.
 
 ### 6e. What the Runner Promises
 
-**A config file owns the step table**: every step, how it runs, and the tiers that list it. Read it there rather than trusting any prose copy. A
-step is one of two things: an external command, or a check the runner calls in-process.
+**A config file owns the step table** — every step, how it runs, and the tiers that list it — so read it there rather than in any prose copy; a step
+is an external command or a check the runner calls in-process.
 
-**Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
-warning" — is a failure.
+**Every step the run actually executed must pass with zero errors before a task is declared complete**; a partial pass such as "types pass, lint has
+one warning" is a failure.
 
-**A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
-Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
-same hint, because those tiers promise that a runtime ran, and an epic or a tag may not be closed on a step nobody ran. **A
-run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
+**A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's**: below `runtime` the step is
+**skipped** with the hint that would install its dependency, and from `runtime` up it **fails** with that hint, because those tiers promise a
+runtime ran and an epic or a tag may not close on a step nobody ran. **A run in which every selected step skipped is red**, for the reason a
+zero-step selection is refused (§6d).
 
-The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
-never inferred from raw tool output. The tier is part of the verdict, because the tiers are different assurances, and **a skipped step is part
-of it too** — a green that skipped a step is not the green that ran it.
+The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict**, read off the summary line and
+never inferred from raw tool output; the tier is part of it, because the tiers are different assurances, and so is **a skipped step** — a green
+that skipped a step is not the green that ran it.
 
-| Flag | Effect |
-| --- | --- |
-| `--tier <static\|unit\|runtime\|scheduled>` | Select the tier; omitted, the run is `runtime` |
-| `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
-| `--list` | Print the resolved selection and exit, running nothing |
-| `--fix` | Run each selected step's fixer instead of the step, and name the steps that have none; a plain run then confirms |
-| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
-| `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
-| `--report <dir>` | Write `report.json` — tier, commit, tree, verdict, and each step's status, duration, log and failing tests — and every step's whole log into `<dir>`, whatever the verdict |
+The gate command's own flag table, printed by `--help`, owns what each flag does.
 
 [boundaries]: ./BOUNDARIES.md
 [cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt

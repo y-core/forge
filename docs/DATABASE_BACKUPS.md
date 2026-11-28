@@ -12,7 +12,7 @@ audience: consumer
 >
 > Defers to: [`src/tooling/db/README.md`][db-readme] for the verbs and their flags; [`src/storage/README.md`][storage-readme] for reading dumps
 > from a Worker; [`DATABASE_MANAGEMENT.md`][dm-3] §3 for the undo each place has; [`NAMESPACES.md`][namespaces-5g] §5g for why the pipeline is a
-> `tooling` module and never Worker-reachable.
+> `tooling` module.
 
 ---
 
@@ -46,14 +46,13 @@ over it or refuse it. What the sidecar holds is `D1BackupSidecar` in `src/storag
 zero, or differs from the length the download announced, is deleted from the bucket before the run fails, so it never sits there looking whole.
 md5 is the etag D1's import takes, so a restore never re-reads the dump to compute it.
 
-**The rows per table are counted from the dump, not from the database.** D1's dumper writes each row as one `INSERT` on one line, escaping a
-newline inside a value. It writes every index, trigger and view after the last row. So a line count is exact at the export's bookmark, which a
-`COUNT(*)` taken beside the export would not be while the app keeps writing.
+**The rows per table are counted from the dump, not from the database.** D1's dumper writes each row as one `INSERT` on one line, ahead of
+every index, trigger and view, so a line count is exact at the export's bookmark, where a `COUNT(*)` beside the export drifts while the app writes.
 
 **A dump can leave Cloudflare and come back, checked by sha256 both ways.** `forge db backup pull <key>` streams the dump and its sidecar to disk
 and keeps neither unless the bytes match the sidecar's size and sha256. `forge db backup push <file>` checks the file against its sidecar the same
-way, then uploads both under the dump's own key, refusing a key the bucket already holds. Against a deployed bucket both go through Cloudflare's
-REST object endpoint, which takes at most 300 MiB per upload, so a larger dump goes back through R2's S3 API.
+way, then uploads both under the dump's own key, refusing a key the bucket already holds. A dump over the REST object endpoint's 300 MiB
+upload cap (§3) goes back through R2's S3 API.
 
 ---
 
@@ -92,11 +91,11 @@ target's place picks it, and nothing else does:
 The local bindings are the ones `wrangler`'s `getPlatformProxy` opens over the app's local state, so no dev session has to be running. On
 `--target standby` the bucket is still opened through the app's own config, because the standby's generated one binds no R2 bucket; the database
 is the standby's. Every other
-step (the census, the digests, the row count, the sidecar, the validation, the pruning) runs the same code in both places.
+step runs the same code in both places.
 
-**The pipeline lives in `tooling/db`, never in a namespace a Worker imports** ([`NAMESPACES.md`][namespaces-5g] §5g). A backup or restore needs a
-token holding D1 Edit on the account. Kept in the CLI, that token lives with the operator or the CI secret store, and never becomes a Worker secret
-that a compromised Worker could read. `storage/backup` keeps only what reads a dump: the listing, the sidecar and the types.
+<!-- rule:forge-db-backup-tooling-only --> A backup or restore needs a token holding D1 Edit on the account ([`NAMESPACES.md`][namespaces-5g] §5g).
+Kept in the CLI, that token lives with the operator or the CI secret store, and never becomes a Worker secret that a compromised Worker could read.
+`storage/backup` keeps only what reads a dump: the listing, the sidecar and the types.
 
 **A dump goes into R2 as one put of known length.** Deployed, the download streams straight into the upload under the length its `Content-Length`
 announced. A download that announces no length, or more than the REST object endpoint's 300 MiB cap, is refused before any upload. Locally, the
@@ -185,8 +184,8 @@ is held to the sidecar as a restore is (§4b), and the dump must have been taken
 mount them behind its admin guard ([`AUTH_MOUNTING.md`][am-2] §2). None of them changes anything, so a listing page or a health check that alerts
 on a stale dump is safe to serve.
 
-**Starting a backup or a restore is operator-only.** Each runs from `forge db` on an operator's machine or a CI runner, never from a request,
-because the token each needs stays out of the Worker (§3). A scheduled backup is the CI or cron job of §3a.
+**Starting a backup or a restore is operator-only.** Each runs from `forge db` on an operator's machine or a CI runner, because the token each
+needs stays out of the Worker (§3). A scheduled backup is the CI or cron job of §3a.
 
 These stay on an operator's machine too, where the CLI asks first and prints its undo:
 

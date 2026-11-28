@@ -1,6 +1,6 @@
 import { classExpressionVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, IdentifierNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, IdentifierNode } from "../types.ts";
 
 const HEADING_TAG = /^h[1-6]$/;
 
@@ -16,15 +16,14 @@ function headingTag(position: AstNode): string | undefined {
 }
 
 /** An `<h1>`–`<h6>` whose size comes from the tag, which is what turns a size choice into a skip. */
-export const a11yHeadingSizeByClass: LintRule = {
+export const a11yHeadingSizeByClass = defineLintRule("forge-ui-a11y-heading-size-by-class", {
   meta: {
     type: "problem",
     docs: {
       description: "A heading's size comes from a `text-*` class, so its level can follow the section's position rather than the size wanted.",
     },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-heading-size-by-class");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const tag = headingTag(found.node);
       if (tag === undefined || TEXT_SIZE.test(found.text)) return;
@@ -34,4 +33,4 @@ export const a11yHeadingSizeByClass: LintRule = {
       );
     });
   },
-};
+});

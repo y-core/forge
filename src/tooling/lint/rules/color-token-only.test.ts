@@ -3,9 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { attribute, literal, other, runRule } from "../lint.fixture.ts";
 import { colorTokenOnly } from "./color-token-only.ts";
 
-const CORPUS = "(forge-ui-color-token-only — src/ui/design/floor.md)";
+const PREFIX = "[forge-ui-color-token-only] ";
 
-const raw = (hit: string): string => `raw colour literal \`${hit}\` in a class string — resolve the colour through a semantic token ${CORPUS}`;
+const raw = (hit: string): string => `${PREFIX}raw colour literal \`${hit}\` in a class string — resolve the colour through a semantic token`;
 
 describe("color-token-only", () => {
   it("reports a hex literal in a class string", () => {
@@ -38,7 +38,7 @@ describe("color-token-only", () => {
 
   it("reports a colour utility naming a custom property the theme declares no token for", () => {
     expect(runRule(colorTokenOnly, attribute("class", literal("bg-(--brand-ink)")))).toEqual([
-      `\`bg-(--brand-ink)\` names a property the theme declares no colour token for ${CORPUS}`,
+      `${PREFIX}\`bg-(--brand-ink)\` names a property the theme declares no colour token for`,
     ]);
   });
 
@@ -49,7 +49,7 @@ describe("color-token-only", () => {
   it("reports a bare palette property, which the theme declares in its `--color-` form only", () => {
     for (const property of ["--red-500", "--zinc-500", "--white"]) {
       expect(runRule(colorTokenOnly, attribute("class", literal(`bg-(${property})`)))).toEqual([
-        `\`bg-(${property})\` names a property the theme declares no colour token for ${CORPUS}`,
+        `${PREFIX}\`bg-(${property})\` names a property the theme declares no colour token for`,
       ]);
     }
   });

@@ -22,6 +22,9 @@ export interface StepOptions {
   watches?: readonly string[] | null;
 }
 
+/** A Playwright row's options: no `watches`, because a spec exercises the whole app and no path list bounds what it reaches. @public */
+export type PlaywrightStepOptions = Omit<StepOptions, "watches">;
+
 /** Sources a tool step is pointed at. @public */
 export interface SourceStepOptions extends StepOptions {
   /** Paths passed to the tool, relative to the runner's `cwd`. */
@@ -101,6 +104,8 @@ export interface Finding {
   line?: number;
   /** Evidence lines shown indented beneath `message`. */
   detail?: readonly string[];
+  /** The register id of the rule the finding breaks, printed as `[rule]` before `message`. */
+  rule?: string;
 }
 
 /** What a check returns: its verdict, its findings, and one line naming what it covered. @public */
@@ -259,6 +264,15 @@ export interface StepReport {
   log?: string;
   /** Present only on a step that declares `results` and whose file recorded a test result. */
   failures?: readonly TestFailure[];
+}
+
+/** One failure `verify --json` prints: a finding, a located compiler or linter error, or a step's output tail. @public */
+export interface GateFailure {
+  step: string;
+  rule?: string;
+  file?: string;
+  line?: number;
+  message: string;
 }
 
 /** What `--report <dir>` writes as `report.json`, whatever the verdict. @public */

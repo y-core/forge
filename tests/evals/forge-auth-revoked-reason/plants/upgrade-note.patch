@@ -1,0 +1,30 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 98482b29..46f08f69 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -20,11 +20,6 @@ All notable changes to `@y-core/forge` are documented here. The format follows
+ 
+ ### Breaking Changes
+ 
+-- **An access token's revoke records why: `revoke(id, userId, at, reason)` on `AccessTokenService` and `AccessTokenStore`.** `reason` is a
+-  string of at most 200 characters, or `null`, stored in the new nullable `auth_access_tokens.revoked_reason` column and read back as
+-  `AuthAccessToken.revokedReason`. **Migration:** run `forge db migrate compose` after upgrading — it adds `revoked_reason` in place, with no
+-  backfill — and apply it before you deploy. Pass a reason, or `null`, at every `revoke` call; a store of your own writes the column and reads
+-  it back. Regenerate the row types with `forge db types`.
+ - **Every forge lint message opens with its rule id as `[rule-id] `, and names no corpus file.** A message read
+   `<detail> (<id> — <corpus path>)`; it now reads `[<id>] <detail>`, and the 9 rules that reported without an id carry one too, among them
+   `[forge-sql-in-loop]` and `[forge-type-import-separation]`. No lint message cites a document section (`DOC.md §N`) any more. Internally each
+diff --git a/docs/UPGRADING.md b/docs/UPGRADING.md
+index e6da2ab0..b9c77ac2 100644
+--- a/docs/UPGRADING.md
++++ b/docs/UPGRADING.md
+@@ -86,6 +86,9 @@ the top-level one, and only the `period` is read at runtime, as the `Retry-After
+ **Run `forge db types` again.** For a schema that declares no tables it writes `export interface Tables extends Record<never, never> {}`, which
+ the preset's `typescript/no-empty-object-type` accepts; a copy curated down to no tables fails `lint` until it does.
+ 
++**`auth_access_tokens` gains a nullable `revoked_reason`.** Compose a migration for it with `forge db migrate compose` and apply it before you
++deploy, then pass a reason, or `null`, as the fourth argument of every access token `revoke`.
++
+ ---
+ 
+ ## 3. Resolvers Take the Bindings

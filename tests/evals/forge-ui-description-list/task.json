@@ -1,0 +1,39 @@
+{
+  "id": "forge-ui-description-list",
+  "tree": "forge",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "bait": [],
+  "accept": ["src/ui/core/description-list.accept.tsx"],
+  "traps": [
+    {
+      "id": "safe-url",
+      "rules": ["project:docs/UI_SSR_COMPONENTS.md#1a", "project:docs/SECURITY_HARDENING.md#2d"],
+      "detector": { "kind": "rg", "pattern": "\\bsafeUrl\\b", "paths": ["src/ui"] }
+    },
+    {
+      "id": "substring-markup-assertion",
+      "rules": ["project:docs/TEST_RUNNERS.md#3c", "project:docs/TEST_RUNNERS.md#3b"],
+      "detector": { "kind": "rg", "pattern": "toContain\\(|toMatch\\(|\\.includes\\(", "paths": ["src/ui"] }
+    },
+    {
+      "id": "focus-ring",
+      "rules": ["project:docs/UI_CLASS_COMPOSITION.md#1e", "project:docs/FORGE_REVIEW.md#3b"],
+      "detector": {
+        "kind": "rg",
+        "pattern": "focus-visible:ring-2|has-\\[:focus-visible\\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\\[:disabled\\]:opacity|has-\\[select:disabled\\]:opacity",
+        "paths": ["src/ui/core"]
+      }
+    },
+    {
+      "id": "class-tokens",
+      "rules": ["project:src/ui/design/floor.md#2a", "project:docs/UI_CLASS_COMPOSITION.md#1b"],
+      "detector": { "kind": "step", "label": "validate-class-tokens" }
+    },
+    {
+      "id": "barrel-export",
+      "rules": ["canon:NAMESPACE_DESIGN.md#1a", "project:docs/NAMESPACES.md#5b"],
+      "detector": { "kind": "step", "label": "validate-exports" }
+    }
+  ]
+}

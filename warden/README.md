@@ -100,20 +100,22 @@ warden related <id>          # what a section defers to, cites, is cited by, and
 
 warden impact <ref>          # which sections a ref changed, what depends on them, what they govern
 
+warden rules                 # print every registered rule with its statement
+  --stats                    # count rules by detector class, and the corpus's words per document
+
+warden check                 # the register's rg patterns over the tree: each hit with its rule, rationale and triage
+  --files a.ts,b.ts | --diff <ref>   --rules <id,…>   --json
+
 warden catalogue             # print the canon catalogue
 warden catalogue --write     # write it to <root>/warden/CATALOGUE.md instead
 
 warden serve                 # serve the corpus over MCP on stdio
 ```
 
-**Only the canon's home repository commits a catalogue.** `warden catalogue` renders the fleet canon and nothing repository-specific, so the file is
-byte-identical wherever it is written — forge owns it, and `wardenStep` asserts it only where `catalogue` is configured. Elsewhere the live
-`knowledge://catalogue` resource is the copy, rendered per repository and stored nowhere. `--write` writes under the root it was given and refuses a
-target inside `node_modules`.
+**Only the canon's home repository commits a catalogue**, which `wardenStep` asserts where `catalogue` is configured; elsewhere the live
+`knowledge://catalogue` resource is the copy. `--write` refuses a target inside `node_modules`.
 
-**`--write` reads the canon off disk; printing reads the index.** An index holds `shared` plus its repository's own kind by design, so a catalogue
-rendered from one could never carry the other tree — and the committed file's claim to cover the fleet canon would be false. The written file walks
-every tree instead.
+**`--write` reads every canon tree off disk; printing reads the index**, which holds only `shared` and the repository's own kind.
 
 Search, read, outline and related also take `--gate`, which reads the gate's own index rather than the working one.
 
@@ -140,6 +142,10 @@ what makes an empty result an answer rather than a failure to match.
 
 **`@y-core/forge/warden/mcp`** is the server: the tool and resource surface, the JSON-RPC framing, and the stdio transport. Its request handler is
 separate from its transport, so the protocol is testable without one.
+
+**`@y-core/forge/warden/sdk`** is the Code Mode surface — `rules`, `corpus`, `check` and `steps` — for a script or a REPL that would otherwise page
+through tool calls. `warden_query` runs the same data in a sandbox over MCP, and `warden_check` is `check`; `warden check` exits 1 on a `fail` hit,
+which is what the `warden:check` row of `wardenAppSteps` holds.
 
 **Take `steps` unless you have a reason not to.** It is the whole of what a consuming repository needs: `wardenAppSteps` declares the rows every
 application merges onto its table, and `cloudflareWorkerSteps()` cannot emit them because it lives under `src/`, where nothing may import warden.

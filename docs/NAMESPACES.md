@@ -86,7 +86,7 @@ runtime namespace, so the README rule above reads `src/` namespaces only. `packa
 **`crypto/primitives` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.config.ts`. The
 allowlist is what lets a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
 
-**Never import `crypto/primitives` from outside forge.** There is no `@y-core/forge/crypto/primitives` subpath, and its parent `crypto` is a
+<!-- rule:forge-crypto-primitives-sealed --> There is no `@y-core/forge/crypto/primitives` subpath to reach it by, and its parent `crypto` is a
 container with no barrel of its own (§5k).
 
 ### 3c. A Surface Node Loads Is Published Prebuilt
@@ -109,9 +109,9 @@ workerd spec, loads forge through committed bundles too. A bundle carries only w
 on its barrel as well. `tests/workerd/harness-consumer.workerd.ts` installs the tarball `bun pm pack` makes and loads every `forge.node` subpath
 under node, so a surface a spec needs and forge never bundled fails in forge first.
 
-**A published module may not import a build-time package, so oxlint's types are restated in `types.ts` rather than imported from it.** oxlint is a
-devDependency, and an import of its types would make every consumer of forge depend on it. The same constraint reaches anything the plugin loads at
-runtime.
+<!-- rule:forge-published-no-oxlint-import --> **A published module may not import a build-time package, so oxlint's types are restated in
+`types.ts`.** oxlint is a devDependency, and an import of its types would make every consumer of forge depend on it. The same constraint reaches
+anything the plugin loads at runtime.
 
 **A bundle keeps its package dependencies as imports instead of inlining them**, so the wrangler bundle imports `valibot` from the consumer's
 install. A bundle may therefore import only `node:` builtins and the packages forge lists under `dependencies` or `peerDependencies` — the
@@ -119,10 +119,8 @@ harness bundle imports `wrangler`, the optional peer a consumer installs to use 
 
 ### 3d. A Non-Module File or an Asset Family Is Published by Subpath
 
-**A non-module file a consumer must name by path is published too, or the facade has a hole in it.** `@y-core/forge/auth/schema.sql` is the standing
-case: a consumer composing its database names forge's identity tables in its own load order, ahead of its own DDL, and the only alternative to a
-subpath is a literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to make unnecessary, and which no rename
-inside forge would then survive.
+**A non-module file a consumer must name by path is published too, or the facade has a hole in it**: `@y-core/forge/auth/schema.sql` is the standing
+case, and the alternative is a reach into `node_modules/@y-core/forge/src/` that no rename inside forge would survive.
 
 **Its `exports` value is a plain string, not a `{types, import}` object.** Tailwind's CSS resolver runs `conditionNames: ["style"]`, so neither
 `types` nor `import` matches and an object entry is unreachable from `@import` however correct it looks.
@@ -162,8 +160,8 @@ reachability computed over forge's own tree turns out to be exactly the set a pe
 is erased before anything is bundled; the layering it still represents is `validate-namespace-graph`'s to judge against a declared edge. Without
 this step the boundary was re-litigable one declared edge at a time.
 
-**A type-only import still counts as an edge.** It is erased at emit and so cannot create a runtime cycle (§2), but it is a coupling that a rename
-breaks, so it is declared with its kind rather than left out. A namespace whose every edge is type-only is integration all the same.
+<!-- rule:forge-type-edge-declared --> It is erased at emit and so cannot create a runtime cycle (§2), but it is a coupling that a rename breaks. A
+namespace whose every edge is type-only is integration all the same.
 
 **Duplicated markup across a leaf boundary is the accepted cost, not an oversight.** `src/render/htmx/fragment.ts` restates the banner classes
 `src/ui/core/alert.tsx` renders because sharing them would add a `render/htmx → ui/core` edge that `validate-namespace-graph` rejects — and it
@@ -241,11 +239,9 @@ component count as a trigger for sub-barrels, because past it a barrel stops bei
 is one export line per component file, with that component's types beside it, so a reader finds a component by searching for its name at any
 count, and splitting it would add a level to scan without changing what a consumer imports.
 
-**`ui/controls` intentionally shadows the `ui/core` control names** — `Input` and its siblings are exported from both, unbound from `ui/core` and
-bound from `ui/controls`. **The collision is by design; do not rename either side.**
-
-**Rule: a module must import a given control name from exactly one of those barrels, never both.** The mechanism is in
-[`UI_SSR_COMPONENTS.md`][usc].
+**`ui/controls` intentionally shadows the `ui/core` control names** — `Input` and its siblings, unbound from `ui/core` and bound from `ui/controls`
+— and neither side is renamed. **Rule: a module imports a given control name from exactly one of those barrels, never both**; the bound variants are
+[`UI_SSR_COMPONENTS.md`][usc] §2c's.
 
 **Growth rulings on the second-tier primitives** (the daisyUI set) — the candidates declined, and the one absorbed into an existing export:
 
@@ -288,10 +284,9 @@ configs `definePage`, `defineAction`; `*Config` `AssetsConfig`, `SiteConfig`; `*
 `*Definition` `PageDefinition`, `NavDefinition`; `*Descriptor` / `*Def` `FieldDescriptor`, `FlagDef`. `ok` / `err` are the documented exception
 ([`FORGE_ERRORS.md`][eh-1a] §1a).
 
-**An adapter is named by the contract it fulfils; the backing is the argument's type.** `createUserStore(db: D1Client)` is the spelling, never
-`createD1UserStore`. `createD1Client` is product-named because it wraps D1's own API; an adapter wraps a forge contract, and the product beneath it
-is a detail of the argument that a later adapter may change. A second adapter for the same contract takes the name of what distinguishes it
-(`createDurableChallengeStore`), never the product.
+**An adapter is named by the contract it fulfils; the backing is the argument's type**: `createUserStore(db: D1Client)`, never `createD1UserStore`,
+because the product beneath an adapter is a detail a later adapter may change (`createD1Client` is product-named only because it wraps D1's own
+API). A second adapter for the same contract takes the name of what distinguishes it (`createDurableChallengeStore`).
 
 ### 5f. ui/client — Where a Browser Controller Belongs
 
@@ -299,10 +294,10 @@ is a detail of the argument that a later adapter may change. A second adapter fo
 mount controller that binds behaviour to an element, a signal other code subscribes to, a module fetched on demand. None of them has a home in
 `ui/core`, which renders markup on the server and stops there (§5b).
 
-The line is what executes the code, not what it is about. A module under `ui/client` is never imported from a Worker-executed file — the import
-alone pulls browser globals into the server bundle ([`BOUNDARIES.md`][boundaries-1] §1). A component that needs behaviour is therefore built as two
-pieces: the markup in `ui/core`, and the controller in `ui/client` that finds it by its `data-*` hooks. The mechanism — the mount contract, the
-signal API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
+<!-- rule:forge-client-not-worker-reachable --> The line is what executes the code, not what it is about: an import alone pulls browser globals into
+the server bundle ([`BOUNDARIES.md`][boundaries-1] §1). A component that needs behaviour is therefore built as two pieces: the markup in `ui/core`,
+and the controller in `ui/client` that finds it by its `data-*` hooks. The mechanism — the mount contract, the signal API, the lazy-loading seam —
+is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
 
 ### 5g. tooling — Where a Developer-Facing Tool Belongs
 
@@ -313,10 +308,10 @@ working tree to its skeleton is `tooling/curate`, a Cloudflare API call is `tool
 `tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), the pieces every app's `playwright.config.ts` shares are `tooling/playwright`, and driving an
 external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
 
-**None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
-is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node
-APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a request handler
-runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/snapshot` reads
+<!-- rule:forge-build-time-not-worker-reachable --> Unreachability is what earns every module here the build-time exemption from the Web-APIs-only
+rule — the exemption is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed
+here may use Node APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a
+request handler runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/snapshot` reads
 `node:fs` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
 
 **`TOOLING_CROSSINGS` in `config/exemptions.ts` lists the only sources outside `tooling` that import it at value**: `testing/d1/migrations.ts`
@@ -328,35 +323,35 @@ and `testing/d1/bun.ts`, which load the host config through `tooling/db`'s loade
 
 **`auth` owns identity: who a user is, which credentials prove it, and what a session may then do.** It provides sign-in by an emailed code,
 WebAuthn passkeys, an authenticator app (TOTP) and recovery codes as second factors, the administrator role, and personal access tokens from issue
-to revocation. Any further credential, role or permission belongs here too — §5a routes each of them out of `security`, which is transport-layer
-and stops at the request.
+to revocation. Any further credential, role or permission belongs here too — §5a routes each out of `security`, which
+stops at the request.
 
 **The namespace produces no `Response`, renders no markup and touches no `Session`.** A route that mounts a sign-in page, a view that renders one,
-and a middleware that guards one are the web layer's, published under its own subpath. That split is the same one `logging` and `logging/viewer`
-already carry, and it is what keeps `auth` testable with no authenticated world to build first ([`BOUNDARIES.md`][boundaries-2c] §2c).
+and a middleware that guards one are the web layer's, published under its own subpath. That split, which `logging` and `logging/viewer`
+already carry, keeps `auth` testable with no authenticated world to build first ([`BOUNDARIES.md`][boundaries-2c] §2c).
 
 **`@y-core/forge/auth/web` is that web layer, and it owns everything a request touches.** **Anything that builds a `Response`, reads or writes a
 `Session`, parses a form body or emits markup belongs here** — and nowhere else in the capability.
 
-**The edge is one-way: `auth/web` imports `auth`, and `auth` never names `auth/web`.** A domain rule that wants to redirect, or a store that wants
-to 404, is reaching across the split: the rule returns a reason, and the web layer alone decides what `Response` that reason becomes. The mechanism
-is `validateNoValueCycles` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any namespaces that name each other at value — so
-the first domain module to import the web layer fails the graph rather than waiting for a reviewer to notice. That is also why `authReturnPath`, the
-helper that reduces a `?next=` value with `safeRedirectPath`, sits in `auth/web`: in `auth` it would have created an `auth → http` edge the domain
-does not have.
+<!-- rule:forge-auth-no-web-import --> **The edge is one-way.** A domain rule that wants to redirect, or a store that wants to 404, is reaching
+across the split: the rule returns a reason, and the web layer alone decides what `Response` that reason becomes. The mechanism is
+`validateNoValueCycles` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any namespaces that name each other at value — so the first
+domain module to import the web layer fails the graph. That is also why `authReturnPath`, the helper
+that reduces a `?next=` value with `safeRedirectPath`, sits in `auth/web`: in `auth` it would create an `auth → http`
+edge.
 
 **`auth-federation`'s `auth/oidc` and `auth/provider` inherit the rule unchanged.** Each is a domain namespace publishing its own subpath: it may
 name `auth`, `auth` may name none of them, and the routes and callback pages that mount either are `auth/web`'s.
 
-**The browser half lives with the namespace whose server half stamps its contract.** The passkey controller is `src/auth/client/passkey.ts`,
-published through `./auth/client`, and reads the `PASSKEY_*` contract from `auth` — pure data with no imports, so the domain namespace stays
-Worker-safe and the browser bundle takes only the constants. `ui/client` keeps the runtime it lends (`registerScope`, `ownerWindow`), and
-`ssrBoundaryStep` names both client directories. Nothing auth-specific goes in `ui/contracts` or `ui/client`.
+<!-- rule:forge-auth-passkey-attrs-from-contract --> **The browser half lives with the namespace whose server half stamps its contract.** The
+passkey controller is `src/auth/client/passkey.ts`, published through `./auth/client`, and reads the `PASSKEY_*` contract from `auth` — pure data
+with no imports, so the domain namespace stays Worker-safe and the browser bundle takes only the constants. A hand-rendered root's literal drifts at
+the first rename. `ui/client` keeps the runtime it lends (`registerScope`, `ownerWindow`), and `ssrBoundaryStep` names both client directories.
+Nothing auth-specific goes in `ui/contracts` or `ui/client`.
 
 ### 5i. Dev-Only Relaxations — a `#relax` Module, Never a Boolean on a Production Option
 
-**A relaxation that must not reach production lives in a `*.dev.ts` module a build condition selects, never on the production option as a
-boolean.** `rateLimit`'s absent binding is the standing case: only a Worker built by `forge cf dev` admits it.
+<!-- rule:forge-relax-dev-module --> `rateLimit`'s absent binding is the standing case: only a Worker built by `forge cf dev` admits it.
 
 **The reason is where the boolean could be set from.** `rateLimit({ required: false })` sat on a production option, so a shared middleware module
 both entries import could set it, and a missing `RATE_LIMITER` binding in production then disabled rate limiting in silence. A `#relax` module is
@@ -379,48 +374,40 @@ run there, and nothing defines `__FORGE_DEV__` in a test run, so it answers stri
 production module import the helper and deploy the relaxed function beside it. `forge.devOnly` lists `./relax`, so rule C below holds an app's
 import of it.
 
-**A hook keeps its public signature and takes no relaxation.** The relaxation enters through an `@internal` function that takes it as its last
-parameter, and it is bound where the `#relax` import is read: either the hook passes it in, as `rateLimit` does to `limitRequests`, or the function
-binds it as its own default, as `withExtraOrigins` does behind `originGuard` and `originProtection`. A public function never takes it as a default
-parameter, because that would be a relaxation path a consumer could reach. The `@internal` function need not share the hook's file: `Forge` reads
-`#relax/error-page` and passes it to `fallbackErrorDocument` in `error-page.ts`. No barrel exports the function, so no consumer can pass it a
-relaxation. Inside forge, `originProtection` passes `crossOriginVerdict` a fixed `true`, because the Origin allowlist after it is what judges a
-request without Fetch Metadata.
+**A hook keeps its public signature and takes no relaxation.** The relaxation enters through an `@internal` function taking it as its last
+parameter, bound where the `#relax` import is read — passed in by the hook, as `rateLimit` does to `limitRequests`, or bound as the function's own
+default, as `withExtraOrigins` does — and never as a public function's default parameter, which a consumer could reach. No barrel exports that
+function.
 
-**The check holds it in two places.** Rule B of `validate-dev-boundary` fails a production module importing a `*.dev.ts`, a type import included;
-a `*.dev.ts` may import another. Rule C fails a value import of a dev-only subpath outside a `*.dev.ts` module. Both follow a `#` specifier to its
-deploy target, and rule B fails each `imports` entry whose deploy target is a `*.dev.ts`, and every importer that reaches it. The built bundle is
-still `validate-dev-bundle`'s to prove: on the `scheduled` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a
-dev-only directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would
-bundle every dev module.
+**The check holds it in two places**: `validate-dev-boundary` fails a production module importing a `*.dev.ts` (rule B) and a value import of a
+dev-only subpath outside one (rule C), following `#` specifiers to their deploy target, and `validate-dev-bundle` proves the built bundle on the
+`scheduled` tier.
 
-**An app has one relaxation alias, `#app/relax`, and a new relaxation is an export on its pair.** The app's `imports` map sends `forge-dev` to
-`./src/app/relax.dev.ts` and `default` to `./src/app/relax.strict.ts`. A route, a banner or a CSP source only development should see is one more
-export on that pair, never a new alias or a new pair. What a development build loosens is then auditable in one file pair, as forge's own `imports`
-map is the list of its relaxations. `validate-dev-boundary` holds the rule for an app: it fails any other `imports` entry that carries `forge-dev`.
-A fake binding is still `testing`'s rather than a relaxation's. The recipe is [`src/relax/README.md`][relax-readme].
+**An app has one relaxation alias, `#app/relax`, and a new relaxation is an export on its pair** — `./src/app/relax.dev.ts` under `forge-dev`,
+`./src/app/relax.strict.ts` under `default` — never a new alias or pair, so what a development build loosens is auditable in one file pair;
+`validate-dev-boundary` fails any other app `imports` entry carrying `forge-dev`. A fake binding is still `testing`'s. The recipe is
+[`src/relax/README.md`][relax-readme].
 
-**Where a relaxation is legitimate in production, it stays an explicit literal.** `csrf: { subject: false, … }` is the idiom — a grep finds
-every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). A `#relax` module is for the ones that are not legitimate, and the difference
-must stay visible at the call site.
+**Where a relaxation is legitimate in production, it stays an explicit literal** — `csrf: { subject: false, … }`, which a grep finds
+([`INPUT_VALIDATION.md`][iv-3a] §3a); a `#relax` module is for the ones that are not.
 
 ### 5j. `render` — One Namespace per Renderer
 
 **`render/` is a container, not a namespace.** It holds one child per renderer — `render/jsx` the SSR runtime, `render/htmx` the htmx response
 helpers, `render/markdown` the markdown engine and `render/pdf` the document engine — and owns no code of its own. The shape is precedented by
-`tooling/`: the parent directory names a concern, and every namespace under it is classified, documented and gated separately. A renderer's own
-children are namespaces too, matched by the same longest-prefix rule — so a parent reaching into `@y-core/forge/render/pdf/fonts` is a declared
-edge, never an internal import, and the pair never points both ways at value.
+`tooling/`: the parent directory names a concern, and every namespace under it is classified, documented and gated separately.
 
-**A renderer goes in its own child, never in `http`.** `http` owns the _response_ — `htmlResponse` and `pdfResponse` are its, because handing a
-body to a client is an HTTP output concern (§5d) — and takes the body without knowing how it was made. That is what keeps the dependency one-way and
-lets a renderer carry a large engine without any of it reaching the response path. `render/jsx` and `render/htmx` escape through `html`;
-`render/markdown` is the exception §5m names.
+<!-- rule:forge-child-namespace-edge --> A renderer's own children are namespaces too, matched by the same longest-prefix rule, so
+`@y-core/forge/render/pdf/fonts` is a namespace `render/pdf` reaches like any other.
 
-**A component takes one props object, with `children` inside it** — or, for content laid out in a grid, in named props such as `render/pdf`'s
-`Table` `header` and `rows`, each cell lowered as `children` is. Never `Component(options, children)` — the single-argument shape is what forge's
-JSX runtime calls (`src/render/jsx/jsx-runtime.ts`, `FC<P>` in `src/render/jsx/types.ts`), so the same component is callable by hand and as JSX,
-and a second call convention never has to be kept in step with the first.
+<!-- rule:forge-http-no-renderer-import --> **A renderer goes in its own child, never in `http`.** `http` owns the _response_ — `htmlResponse` and
+`pdfResponse` — and takes the body without knowing how it was made, which keeps the dependency one-way and a renderer's engine off the response
+path. `render/jsx` and `render/htmx` escape through `html`; `render/markdown` is the exception §5m names.
+
+<!-- rule:forge-component-one-props --> `children` travels inside the props — or, for content laid out in a grid, in named props such as
+`render/pdf`'s `Table` `header` and `rows`, each cell lowered as `children` is. The single-argument shape is what forge's JSX runtime calls
+(`src/render/jsx/jsx-runtime.ts`, `FC<P>` in `src/render/jsx/types.ts`), so the same component is callable by hand and as JSX, and a second call
+convention never has to be kept in step with the first.
 
 **A renderer that takes markup depends on `render/jsx` at value and publishes its own `jsx-runtime`.** `jsx()` builds a descriptor rather than
 calling the component, so the renderer lowers the tree itself, and recognising a fragment means holding the `Fragment` marker — a value import,
@@ -445,18 +432,14 @@ default handlers emit is forge's**, because it describes forge's output rather t
 spreads it into a schema that still carries the caller's own `url` policy. Every node type a construct produces is declared in the namespace's own
 types, so no consumer augments forge's tree across the package boundary.
 
-**`@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport for the same markdown, and it sits under `render/markdown`, not `ui`.**
-Under `ui` it would belong in `ui/client` (§5f), and every `ui/client` consumer would then have to install CodeMirror. The editor is browser-only by
-its `client` segment ([`BOUNDARIES.md`][boundaries-1] §1), and takes the dialect it decorates as an injected option, so an app's constructs reach it
-without forge knowing them. CodeMirror is its optional peer dependency. **The editor imports exactly two modules from `render/markdown`: the pure
-editing core, `src/render/markdown/editing.ts`, and the Trusted Types policy name, `src/render/markdown/trusted-types.ts`.** That core continues
-lists, wraps a selection and toggles a task, and it finds them with forge's own parser over the one block unit being edited. It holds no DOM and no
-CodeMirror, so a Worker can import it as well. Sharing it means the viewport and a textarea adapter edit with the parser the renderer uses, never
-with line regexes that can disagree with it. The policy name is a constant with no imports, so an app's Worker reads it for its CSP without loading
-CodeMirror. **The viewport's `html` rendering takes its HTML from the dialect's `html` option, never from the renderer**, so an app decides where
-the renderer loads and a page that never shows `html` never pays for it. Every other module in `render/markdown`, its barrel included, stays out
-of the editor's imports, and an `import type` counts as an import. `EDGE_MODULES` in `config/namespaces.ts` narrows the edge to those two files, so
-`validate-namespace-graph` holds the limit (§4b).
+**`@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport for the same markdown, and it sits under `render/markdown`, not `ui`**,
+because under `ui/client` (§5f) every consumer would have to install CodeMirror, its optional peer. It is browser-only by its `client` segment
+([`BOUNDARIES.md`][boundaries-1] §1) and takes the dialect it decorates as an injected option. **The editor imports exactly two modules from
+`render/markdown`: the pure editing core, `src/render/markdown/editing.ts`, and the Trusted Types policy name,
+`src/render/markdown/trusted-types.ts`** — neither touches the DOM or CodeMirror, so a Worker imports them too, and the viewport and a textarea
+adapter edit with the renderer's own parser. **The viewport's `html` rendering takes its HTML from the dialect's `html` option, never from the
+renderer**, so a page that never shows `html` never loads it. `EDGE_MODULES` in `config/namespaces.ts` narrows the edge to those two files, type
+imports included, so `validate-namespace-graph` holds the limit (§4b).
 
 **`@y-core/forge/render/markdown/editor/textarea/client` binds the same core to a plain `<textarea>`, and sits beside the viewport rather than in
 `ui/client`.** It is a browser controller, which §5f sends to `ui/client`, but there it would give that namespace an edge into the markdown
@@ -469,9 +452,9 @@ engine. Here it shares the viewport's one core and loads no CodeMirror, so an ap
 third-party token, any credential a row carries: the consumer names the purpose and binds the row as context, and the namespace owns the ring, the
 subkey derivation and the frame. It does not route to `auth`, because none of it is identity (§5h).
 
-**`crypto` is a container, like `storage` and `render`: it has no barrel and no export entry, and holds a published child and a sealed one.**
-`crypto/keyring` is the published child; `crypto/primitives` is the sealed one (§3b). Code that serves one other namespace's concern lives in that
-namespace instead — the UUIDv7 set in `storage/db`, the WebAuthn wire formats in `auth/passkey`.
+<!-- rule:forge-container-no-export --> **`crypto` is a container, like `storage` and `render`: it has no barrel and no export entry, and holds a
+published child and a sealed one.** `crypto/keyring` is the published child; `crypto/primitives` is the sealed one (§3b). Code that serves one other
+namespace's concern lives in that namespace instead — the UUIDv7 set in `storage/db`, the WebAuthn wire formats in `auth/passkey`.
 
 **A keyed stand-in for an id routes here too.** An app that needs an id it can look up but nobody can reverse calls `derivePseudonym` under the
 same ring, rather than hand-rolling an HMAC over Web Crypto. A value the app signs and later checks calls `signKeyRingValue` and
@@ -484,7 +467,7 @@ ring's key id on the wire, and refuses the auth key ring.
 `config/namespaces.ts` (`EDGES`), not here. `auth` seals its TOTP secrets through the same functions; `crypto/keyring` imports only the
 `crypto/primitives` and `result` primitives (§4c).
 
-**Webhook secrets stay `whsec_` strings in `security`, the one HMAC consumer keeping its own key.** The format is shared with a third party that
+**Webhook secrets stay `whsec_` strings in `security`, the one HMAC consumer keeping its own key.** A third party
 signs with the same secret, so its bytes and encoding are not forge's to choose.
 
 What it shares with `crypto/keyring` is the strength rule, which is [`SECURITY_HARDENING.md`][sh-8] §8's.
@@ -495,6 +478,9 @@ What it shares with `crypto/keyring` is the strength rule, which is [`SECURITY_H
 it.** A webhook signature authenticates the whole message and is a transport artefact; [`BOUNDARIES.md`][boundaries-2c] §2c sends CSRF to
 `form` because it reads one form field. No other home holds: a `webhook` namespace would be one file and fails
 [`NAMESPACE_DESIGN.md`][nd-5a] §5a, `form` parses forms, `auth` is user identity, and `http` owns output.
+
+<!-- rule:forge-webhook-signer-per-env --> A signer imports each secret's key once and keeps it, so one built per request re-imports every key
+each request.
 
 ### 5m. `html` — Safe-Markup Primitives
 
@@ -534,9 +520,9 @@ prose: `./ui/client` is bound by §5f, `./http` by §5d, `./tooling/*` by §5g. 
 whether the rule is any good. Adequacy is a judgement a check cannot make, and a check that pretended to make it would be trusted for a guarantee it
 never gave ([`AGENT_GUIDE.md`][ag-5c] §5c).
 
-**Never a hand-maintained register.** There is no subpath → rule table anywhere, here or elsewhere. The binding is derived from the citations
-already in the prose and the `exports` map, which is why it cannot fall out of date with either — the same reason `AGENT_GUIDE.md` §5c refuses to
-register the documents it governs at all: a list disagrees with the directory it describes, and then a reader has two answers and no way to pick.
+**Never a hand-maintained register.** The binding is derived from the citations in the prose and the `exports` map, so it cannot fall out of date
+with either — the reason [`AGENT_GUIDE.md`][ag-5c] §5c registers no documents. The rule register maps no subpath to a rule; it holds each rule's
+statement and detectors, reconciled with the prose ([`SOURCE_OF_TRUTH.md`][sot-5] §5).
 
 `validate-docs` **fails** on an unbound subpath. A new subpath is bound before it ships, or it does not ship.
 
@@ -575,6 +561,7 @@ second repository needs it.
 [relax-readme]: ../src/relax/README.md
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
+[sot-5]: ./SOURCE_OF_TRUTH.md#5-the-rule-register
 [testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers
 [usc]: ./UI_SSR_COMPONENTS.md

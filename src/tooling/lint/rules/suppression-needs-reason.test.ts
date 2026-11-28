@@ -29,7 +29,7 @@ function run(...directives: DisableDirective[]): Report[] {
 const messages = (...directives: DisableDirective[]): string[] => run(...directives).map((r) => r.message);
 
 const detail = (type: string, named: string): string =>
-  `\`oxlint-${type}\` for ${named} with no reason — append \` -- <why>\`, so the next reader can judge the suppression rather than only count it.`;
+  `[forge-suppression-needs-reason] \`oxlint-${type}\` for ${named} with no reason — append \` -- <why>\`, so the next reader can judge the suppression rather than only count it.`;
 
 describe("suppression-needs-reason — meta", () => {
   it("is a problem, and says what the rule is for", () => {

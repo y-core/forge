@@ -55,7 +55,7 @@ audience: consumer
 
 **Forge's runners answer different questions.** `bun test` proves that a function returns what it should and that the server emitted the markup it
 promised. The browser set (§1c) proves that a controller does what it claims **to a keystroke**. The workerd set (§1f) proves that a request is
-decoded the way a deployed Worker decodes it. None substitutes for another, and none is dropped.
+decoded the way a deployed Worker decodes it. None substitutes for another.
 
 ### 1a. bun:test Primitives
 
@@ -64,12 +64,12 @@ is the browser set's driver, `@playwright/test` (§1c). Runner commands and life
 
 ### 1b. Custom bun:test Stub — No bun-types
 
-See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is `src/testing/bun.d.ts`, published types-only as
-`@y-core/forge/testing/bun`, and it replaces `bun-types` and `@types/bun`: **never install either, or reference one from `tsconfig.json` or
-`package.json`.** The stub is the list of what a suite may import from `bun:test`, `bun:sqlite` and `bun`, in forge and in every app that
-references it. Its `"bun"` module declares functions and methods only, so it merges with `bun-types` in an app that still installs it.
+<!-- rule:forge-no-bun-types --> See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is `src/testing/bun.d.ts`, published
+types-only as `@y-core/forge/testing/bun`, and it replaces `bun-types` and `@types/bun`. The stub is the list of what a suite may import from
+`bun:test`, `bun:sqlite` and `bun`, in forge and in every app that references it. Its `"bun"` module declares functions and methods only, so it
+merges with `bun-types` in an app that still installs it.
 
-**No global `Bun`, `Buffer` or `process` in Worker source.** `src/tooling/config/oxlint.base.json` refuses all three through
+<!-- rule:forge-worker-no-node-globals --> `src/tooling/config/oxlint.base.json` refuses `Bun`, `Buffer` and `process` in Worker source through
 `eslint/no-restricted-globals`, global-object access included. It is off for `config/`, `scripts/`, `tests/`, `playwright.config.ts`, `*.workerd.ts`
 and `*.browser.ts`; a `*.test.ts` keeps only the `Bun` ban, so a spec writes `import { file } from "bun"`. An import is a local binding, so
 `import process from "node:process"` passes. forge's `.oxlintrc.json` holds `src/` to the same ban and every other tree to the `Bun` ban;
@@ -101,12 +101,12 @@ rows select (`src/tooling/playwright/README.md`).
 
 **A consequence accepted with it:** `validate-co-location` (`src/tooling/gate/checks/co-location.ts`) counts a `.browser.ts` as satisfying
 co-location, so `bun run verify:unit`, which runs no browser, can certify as tested a module whose only test it did not run. Demanding a second
-unit file would buy a fake one, which is worse.
+unit file would buy a fake one.
 
-**`bun test` and the browser set never share a process, and forge registers no DOM shim**, for the reasons [`TESTING.md`][testing-1c] §1c gives.
-Discovery cannot collide: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is neither. That section's table says what each runner is
-sufficient evidence for, and forge adds a row: a request decoded the way a deployed Worker decodes it is proven by **the workerd set only** (§1f).
-A browser case renders its markup with the real SSR components wherever possible.
+<!-- rule:forge-no-dom-shim --> The reasons are [`TESTING.md`][testing-1c] §1c's. Discovery cannot collide: `bun test` matches `*.test.*` /
+`*.spec.*`, and `*.browser.ts` is neither. That section's table says what each runner is sufficient evidence for, and forge adds a row: a request
+decoded the way a deployed Worker decodes it is proven by **the workerd set only** (§1f). A browser case renders its markup with the real SSR
+components wherever possible.
 
 **`mount`'s `css` option cannot prove an `@utility`, and a spec that seems to is passing for another reason.** It serves the stylesheets **raw,
 with no Tailwind build**, so a `state-busy` or `focus-ring` in the mounted markup resolves to nothing, and a computed-style assertion reads the
@@ -114,26 +114,23 @@ browser's initial value. **A claim that depends on a utility or on preflight mou
 build of the markup's own classes, preflight included. A claim about a recipe's own selector belongs in a `bun test` that compiles the design
 system and reads the compiled selector — `src/tooling/gate/checks/state-recipes.test.ts` is the pattern.
 
-**A UA pseudo-element is asserted from rendered pixels, never from `getComputedStyle`.** Chromium answers
-`getComputedStyle(el, "::-webkit-slider-runnable-track")` with the _host_ element's style, so a computed-style spec passes whatever the track did.
-`slider.browser.ts` samples a screenshot instead.
+<!-- rule:forge-ua-pseudo-from-pixels --> Chromium answers `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the _host_ element's
+style, so a computed-style spec passes whatever the track did. `slider.browser.ts` samples a screenshot instead.
 
 ### 1d. Waiting on an htmx Swap
 
 **A case that interacts with the page after an htmx swap waits on `htmx:after:swap`, listened for on `document`, never on the state the swap
-wrote.** htmx inserts the fragment, settles it, and binds the new markup's `hx-*` listeners before it fires `htmx:after:swap`, so the event marks
-the moment the new markup is live. Before it there is a window in which the markup is fully readable and completely inert. A poll on the swapped-in
-attributes returns _inside_ that window, and the next interaction fires no request at all.
+wrote**, because htmx fires it only once the new markup's `hx-*` listeners are bound: a poll on the swapped-in attributes returns while the markup
+is readable but inert, and the next interaction fires no request.
 
-**Listen on `document`, not on an element.** htmx dispatches the event on the element that issued the request, and when the swap removed that
-element it dispatches on the swap target or on `document` instead. The event bubbles, so `document` is the one listener that hears every swap.
+**Listen on `document`, not on an element**: when the swap removed the issuing element htmx dispatches elsewhere, and the bubbling event always
+reaches `document`.
 
 **The nearest-sounding event is the wrong wait.** htmx 4 has no `htmx:afterSettle`, and its `htmx:after:settle` fires _before_ the new content is
 processed, so waiting on it reopens the same window.
 
-Whether a poll's tick lands before or after that processing is a coin flip that CPU contention biases, which is what makes the resulting failure
-load-dependent rather than reproducible. `resume.browser.ts` awaits `htmx:after:swap` on `document` before it interacts. Raising
-`defaultSettleDelay` is how such a race is made deterministic while it is being diagnosed; production settle timing is never changed to suit a spec.
+The race is load-dependent rather than reproducible; `resume.browser.ts` is the pattern. Raise `defaultSettleDelay` to make it deterministic while
+diagnosing, and never change production settle timing to suit a spec.
 
 ### 1e. Media Options and the Harness `test`
 
@@ -181,9 +178,9 @@ not reach `tests/workerd/`**, because a spec here needs a runtime start and `uni
 
 **The set and its fixtures are typechecked at `static`, by `typecheck:tests` over `tests/tsconfig.json`**, so a change to forge's API that breaks a
 spec fails on every run, not only on the scheduled one. The program takes the root config's flags and stubs, and resolves `@y-core/forge/*` to
-`src/` for a fixture that imports forge by name. A Workers binding is typed with forge's structural `D1Database` or `R2Bucket`, never a Workers
-global, and `tests/workerd/d1.ts`'s `WorkerdD1` adds the `raw()` read only a spec makes. The two consumer fixtures with their own programs (§7f) are
-left out of it.
+`src/` for a fixture that imports forge by name. The two consumer fixtures with their own programs (§7f) are left out of it.
+
+<!-- rule:forge-workerd-binding-structural --> `tests/workerd/d1.ts`'s `WorkerdD1` adds the `raw()` read only a spec makes.
 
 ### 1g. The Cross-Engine Subset
 
@@ -199,19 +196,17 @@ heuristics. Engines disagree there, and a Chromium-only run is green wherever th
 **A spec stays Chromium-only when a second engine could not tell it anything, or could not run it:** forge's own DOM logic — signals, binding,
 htmx glue, resume — and a spec needing a Chromium-only Playwright capability, CDP's virtual WebAuthn authenticator or the accessibility tree.
 
-**The tag is `{ tag: "@cross-engine" }` on a top-level `describe` or bare top-level `test`, and that block is the unit.** A block is judged by
-what its own assertions read, so one file may hold tagged and untagged blocks side by side, and a `describe` or `test` inside a top-level `for` is a
-block of its own. The `firefox` and `webkit` projects select the tag by `grep`; the `chromium` project has no `grep` and runs everything.
-**`validate-cross-engine-tags` holds the unit:** it fails an untagged block that makes one of the engine reads
-`src/tooling/gate/checks/cross-engine-tags.ts` names, directly or through a helper in its file or a `*.fixture.ts` it imports, and fails
-`@cross-engine` written anywhere else, in a title or on a nested case. **A block it flags wrongly is tagged, never excused** — an extra engine run
-costs time, and a missed one hides a defect. It cannot tell an engine's focus heuristic from forge moving focus itself, so a block that reads
-`document.activeElement` is tagged by the test above, not by the check.
+<!-- rule:forge-test-cross-engine-tag --> A `describe` or bare `test` at the top level is the unit, and a block is judged by what its own assertions
+read, so one file may hold tagged and untagged blocks side by side, and a `describe` or `test` inside a top-level `for` is a block of its own. The
+`firefox` and `webkit` projects select the tag by `grep`; the `chromium` project has no `grep` and runs everything. **`validate-cross-engine-tags`
+holds the unit:** it fails an untagged block that makes one of the engine reads `src/tooling/gate/checks/cross-engine-tags.ts` names, directly or
+through a helper in its file or a `*.fixture.ts` it imports, and fails `@cross-engine` written anywhere else, in a title or on a nested case. **A
+block it flags wrongly is tagged, never excused** — an extra engine run costs time, and a missed one hides a defect. It cannot tell an engine's
+focus heuristic from forge moving focus itself, so a block that reads `document.activeElement` is tagged by the test above, not by the check.
 
-**A skip on one engine is either a forge defect or a missing platform behaviour, and its reason says which.** A forge defect is filed as a `bug`
-task before the skip is written, and the reason reads `"<task-id>: <symptom on this engine>"`, so the task that fixes it is the one that removes it.
-A behaviour the engine does not implement is not forge's to file, and the reason names the missing behaviour, such as WebKit's absent forced-colors
-palette. Either way the skip is the first line of the case, `test.skip(browserName === "…", reason)`, never a tag taken off.
+**A skip on one engine is either a forge defect or a missing platform behaviour, and its reason says which**: a forge defect is filed as a `bug`
+task first and the reason reads `"<task-id>: <symptom on this engine>"`, so the fix removes it; a missing behaviour is named, such as WebKit's
+absent forced-colors palette. The skip is the first line of the case, `test.skip(browserName === "…", reason)`, never a tag taken off.
 
 ---
 
@@ -258,11 +253,11 @@ See [`TESTING.md`][testing-3b] §3b for the exact-match rule and why a substring
 See [`TESTING.md`][testing-3c] §3c for the rule. In forge the shared helper is `render()` from `@y-core/forge/testing` (§7c), and the one exact
 assertion is a `toBe`:
 
-```ts
+```tsx
 import { render } from "@y-core/forge/testing"
 
-it("renders the exact button markup", async () => {
-  expect(await render(<Button label="Save & Exit" />)).toBe(
+it("renders the exact markup, children escaped", async () => {
+  expect(await render(<button type="button">{"Save & Exit"}</button>)).toBe(
     '<button type="button">Save &amp; Exit</button>',
   )
 })
@@ -387,7 +382,10 @@ whole `unit` run.
 the `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
 change any row's verdict — so under `--affected` a change to one runs every step. **A row stays undeclared and runs on every change when no path
 list bounds what it reads** — the whole type program, an unbounded import graph, every path a document names, or the whole surface the exports map
-declares. `config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
+declares.
+
+<!-- rule:forge-gate-playwright-no-watches --> A spec reaches the app through the server it starts, not an import, so a hand-kept list can only drop
+a run `--affected` should make.
 
 **Each spawned step runs under its own `TMPDIR`, which the gate removes with whatever the step left in it**; a failed step's full log is all a
 run keeps. **`test` and `test:workerd` also fail when their suite leaves anything there**, naming each entry, because both are built with
@@ -410,20 +408,17 @@ depend on the private `render/jsx` render helper**, re-exported as `render()` (�
 
 ### 7b. In-Memory Fakes — Each Refuses What the Platform Refuses
 
-`Map`-backed fakes implement the real structural contracts — the `storage/*` bindings, `ASSETS`, and the `CacheStorage` that `attachPrecache` in
-`@y-core/forge/assets/client` fills — so interface drift breaks tests at compile time ([`TESTING.md`][testing-4a] §4a). **Never mock these.** Each
-fake, its seed and its recording surface are taught in `src/testing/README.md`; this section holds the behaviour a fake must keep.
+<!-- rule:forge-testing-fake-not-mocked --> `Map`-backed fakes implement the real structural contracts — the `storage/*` bindings, `ASSETS`, and the
+`CacheStorage` that `attachPrecache` in `@y-core/forge/assets/client` fills — so interface drift breaks tests at compile time
+([`TESTING.md`][testing-4a] §4a). Each fake, its seed and its recording surface are taught in `src/testing/README.md`; this section holds the
+behaviour a fake must keep.
 
-**The fakes refuse what the platform refuses.** A fake that is green where the real binding throws certifies code that fails on deploy, which is
-worse than no fake. So `fakeKV.put` throws below the 60-second `expirationTtl` floor ([`STORAGE_BINDINGS.md`][sb-2c] §2c); `fakeR2.get` throws
-`UnsatisfiableRangeError` for a range lying **wholly** outside the object while still clamping an overrun, exactly as R2 does;
-`fakeD1.first(column)` rejects a column the row does not carry rather than returning `undefined` against a declared `T | null`; and
-`fakeCacheStorage`'s `addAll` stores nothing unless every response is ok, and rejects outright when no `fetch` was given, as a real `Cache` does
-offline. **Do not "fix" a fake back to permissiveness** when a test fails against one of these; the test is telling you what production would do.
+**The fakes refuse what the platform refuses**, because a fake that is green where the real binding throws certifies code that fails on deploy;
+`src/testing/fakes.test.ts` pins each refusal. **Do not "fix" a fake back to permissiveness** when a test fails against one — the test is telling
+you what production would do.
 
-**An expiry is enforced against the clock the caller injects** — `fakeKV(seed, { now })` — and an expired key is absent from `get`,
-`getWithMetadata` and `list` alike. The default clock is `Date.now`, so **a test never depends on wall-clock expiry**: it advances an injected
-clock, because a suite that waited for a real TTL would fail by being slow.
+<!-- rule:forge-testing-clock-not-sleep --> **An expiry is enforced against the clock the caller injects** (`fakeKV(seed, { now })`), so a TTL test
+costs no wall-clock time.
 
 **`fakeD1.batch` evaluates a `requireRowsWritten()` guard** rather than succeeding for every statement. A guard behind a write that reported no row
 rolls the batch back with the error a real D1 raises, so the client's own rewording is what a test sees ([`STORAGE_BINDINGS.md`][sb-1g] §1g). The
@@ -445,9 +440,8 @@ given, and hold under Bun alone** — a browser's `Request` refuses `mode: "navi
 
 ### 7e. mapHandler() and TestAction — Single-Route Registrar
 
-`mapHandler`'s `action` is a `TestAction` — the bare-handler or `{ middleware, handler }` shape a real controller accepts, so a test never
-exercises a registration shape production cannot express. **Use `mapHandler` for a namespace's own unit tests, and a full `route()` /
-`createController` map (§5a) when the test must exercise the production registration path itself.**
+`mapHandler`'s `action` is a `TestAction`, the shape a real controller accepts. **Use `mapHandler` for a namespace's own unit tests, and a full
+`route()` / `createController` map (§5a) when the test must exercise the production registration path itself.**
 
 ### 7f. Subpaths That Are Not on the Barrel
 
@@ -464,16 +458,16 @@ is a shape the gate holds rather than tolerates.
 `@y-core/forge/testing/node` is a types-only subpath declaring the node surface those three reach, and the node calls the fleet's tests make
 (§1b). One line at the top of the file that imports one:
 
-```ts
+```ts nocheck
 /// <reference types="@y-core/forge/testing/node" />
 ```
 
-**The reference reaches the whole program, not the one file.** The shim declares no globals, but its `node:*` modules resolve for every file the
-program includes, so a Worker file compiled beside a referencing suite can import `node:os` and typecheck. Keep Worker code in a program no
-referencing file joins; dropping the file from `include`, or adding `node` to `types`, is not the supported way. A consumer's `tests/` is the node
-program, Playwright specs included ([`CONFIG_BASELINE.md`][cb-1] §1). Forge holds both halves in `tests/fixtures/workers-consumer/`, both under
-`"types": []`: `tsconfig.json` compiles the Worker files with no shim (`typecheck:workers-consumer`), and `tsconfig.node.json` the snapshot, d1
-and harness suites against it (`typecheck:workers-consumer-node`).
+<!-- rule:forge-node-shim-own-program --> **The reference reaches the whole program, not the one file.** The shim declares no globals, but its
+`node:*` modules resolve for every file the program includes, so a Worker file compiled beside a referencing suite can import `node:os` and
+typecheck. Keep Worker code in a program no referencing file joins; dropping the file from `include`, or adding `node` to `types`, is not the
+supported way. A consumer's `tests/` is the node program, Playwright specs included ([`CONFIG_BASELINE.md`][cb-1] §1). Forge holds both halves in
+`tests/fixtures/workers-consumer/`, both under `"types": []`: `tsconfig.json` compiles the Worker files with no shim (`typecheck:workers-consumer`),
+and `tsconfig.node.json` the snapshot, d1 and harness suites against it (`typecheck:workers-consumer-node`).
 
 **`@y-core/forge/testing/harness` is off the barrel for the same reason.** `src/testing/harness.ts` imports `wrangler` and `node:path`, and
 `serveWorker` (§1f) runs only under node.
@@ -488,25 +482,26 @@ through `openPlatformD1` (`tests/workerd/d1.ts`). The host config its default pa
 **`@y-core/forge/storage/db` loads under node as well.** Its export sends node to the bundle `mod.node.mjs` and Workers and Bun to the source, so an
 app service built on it runs in a node spec against `openTestD1().binding`; `tests/fixtures/node-db-consumer/`, run from the packed tarball by
 `tests/workerd/harness-consumer.workerd.ts`, is that consumer. `testing/d1` exports no `sql`, and `explainPlan` takes the query's text and
-parameters, so a fragment is only ever read by the copy of `storage/db` that minted it. **The limit: a module a node spec imports may import
-only the forge subpaths `forge.node` lists**, because every other subpath ships as TypeScript and node will not strip types under `node_modules`.
+parameters, so a fragment is only ever read by the copy of `storage/db` that minted it.
+
+<!-- rule:forge-playwright-config-node-subpaths --> Every subpath `forge.node` does not list ships as TypeScript, which node will not strip under
+`node_modules`, so a node spec's imports keep to the list.
 
 **A node bundle is request-free: it serves no request, and refuses one by name.** Each `.node.mjs` carries its own copy of forge's request keys,
 so a middleware or client built from it against a request the source chain set up would read none of that request's state. Instead
 `gen:bundles` builds under the `forge-node-bundle` condition, which resolves `#request-scope` to a module that throws `RequestFreeBundleError` on
-every read or write of a request's context. `createD1Client` and `createRowLoader` with no request, `sql`, `explainPlan` and `openTestD1` work as
-the source's do, and so does `schemaHealthCheck`, which reads `c.env` and no request key. `defineD1Binding`'s monitor and `client`,
-`validateD1Binding`, `d1Sessions` and `resolveD1Client` throw. A node spec that serves a request imports the source chain and the source
+every read or write of a request's context: an entry point that reads no request key works as the source's does, and one that does throws.
 `storage/db` together, which Bun and Workers resolve.
 
 **One split remains, and it fails closed: `validation`'s `safeCheck` registry.** A schema built with the bundle's `safeCheck` and refused
 through the source loses its stated message, and the refusal reports the generic one. No unvouched message is ever shown.
 
 **`@y-core/forge/testing/d1/bun` is the same `TestD1` for `bun test`**, opened by `openBunD1` over an in-memory `bun:sqlite` database with no
-workerd process. It is off the barrel and is not a node subpath, because `bun:sqlite` exists only under Bun. The engine is SQLite rather than D1,
-so a limit D1 enforces belongs to the workerd set. **It typechecks in an app without `wrangler`**, an optional peer: `d1/bun.ts` and
-`d1/migrations.ts` take the shared types from `d1/types.ts`, never from `d1/mod.ts`, and `tooling/db` types its proxy opener structurally.
-`d1/bun.test.ts` pins this by typechecking the subpath in a consumer install that has no `wrangler`.
+workerd process. It is off the barrel and is not a node subpath, because `bun:sqlite` exists only under Bun. The engine is SQLite rather than D1, so
+a limit D1 enforces belongs to the workerd set.
+
+<!-- rule:forge-testing-d1-shared-types --> **It typechecks in an app without `wrangler`**, an optional peer, and `tooling/db` types its proxy
+opener structurally. `d1/bun.test.ts` pins this by typechecking the subpath in a consumer install that has no `wrangler`.
 
 **What makes any of these files legal is that no deployed code can reach it, not an exemption from "Web APIs only".** No gate step checks for a
 non-Web API — the rule is prose in `CLAUDE.md`, enforced only by a runtime source file typechecking under the Workers lib set, where `node:fs`
@@ -528,33 +523,25 @@ the page never rendered, so the `toBe` is what makes an absent element fail. Usa
 **It is format-agnostic, and depends on no other namespace.** It takes a string. `formatPdfLayout` ([`README.md`][pdf-readme]) was what it was
 built to feed, but it knows nothing about PDF, layout or forge's own output, so markup, a generated schema or a CLI transcript use it alike.
 
-**An absent fixture is written and the call passes — except under `ci`.** The first run of a new suite should not fail on a file nobody could have
-committed; a CI run must not regenerate one silently, so `ci: true` turns the absence into `reason: "missing"` and writes nothing.
+**An absent fixture is written and the call passes, but never under `ci`**: the first run of a new suite should not fail on a file nobody could have
+committed, and a CI run must not regenerate one silently. The `ci` and `update` options, the reason codes and the `Result` it returns
+([`FORGE_ERRORS.md`][errors-1a] §1a) are its TSDoc's.
 
-**`update` is an argument, and no environment variable is ever read**, so whether fixtures are rewritten is visible at the call site. **`ci`
-overrides `update`**: a CI run carrying `update` from a stale script rewrites nothing.
-
-**It returns a `Result` and never throws** ([`FORGE_ERRORS.md`][errors-1a] §1a). An unreadable or unwritable path is a `reason` with the original
-`Error` as `cause`, and rethrowing is the caller's decision.
-
-**The diff is anchored-positional, not an LCS.** The identical run at each end is trimmed and the remaining band paired positionally, the shorter
-side padded with `null`. That is O(n), and it reads an insertion correctly where a raw positional compare would report every following line as
-changed. The residual case — an insertion adjacent to a change, which reads as a rewrite — is disclosed by the report's header carrying both line
-counts. Every rendered line is quoted, because a trailing space, a tab and a stray `\r` are what "files differ" is most useless about; the
-comparison itself is byte-exact. `diff` carries every differing line and only `report` is capped at `limit`, so data never fights the renderer.
+**The diff is anchored-positional, not an LCS**: the identical run at each end is trimmed and the band between paired positionally, which is O(n)
+and still reads an insertion correctly; an insertion adjacent to a change reads as a rewrite, which the report's header discloses by carrying both
+line counts. Every rendered line is quoted, because a trailing space, a tab or a stray `\r` is what "files differ" is most useless about.
 
 ### 7i. The Expected Coverage Set — `@y-core/forge/testing/coverage`
 
-`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`, every component the UI component barrels export
-(`src/testing/coverage/components.ts` names them). A consumer's catalog test compares its own coverage manifest against it, so a component forge
-adds fails that test until it is demonstrated, rather than passing because nobody listed it.
+`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`, every component the UI component barrels export. A consumer's catalog test
+compares its own coverage manifest against it, so a component forge adds fails that test until it is demonstrated, rather than passing because
+nobody listed it.
 
 **It is off the `./testing` barrel because of what it loads.** Reading the set means importing each of those barrels, and a suite that wants only
 a fake store should not pay for the whole component library. It needs no node module, so a Worker-typed suite imports it directly.
 
-**The set is read off the barrels, never listed.** A component is a capitalised function a barrel exports; constants and helpers beside it are
-not. `key` is `barrel/component`, the spelling a coverage manifest's own keys use, because `Input` names a component in both `core` and
-`controls`. The array and each entry are frozen and ordered by `key`, so a failure names the same component first on every run.
+**The set is read off the barrels, never listed**; `src/testing/coverage/components.ts` holds what counts as a component and the entry shape, keyed
+`barrel/component` because `Input` names a component in both `core` and `controls`.
 
 [cb-1]: ../warden/canon/apps/CONFIG_BASELINE.md#1-the-tsconfig-base
 [cr-1a]: ../warden/canon/libs/CODE_REVIEW.md#1a-pre-review-preparation
@@ -566,7 +553,6 @@ not. `key` is `barrel/component`, the spelling a coverage manifest's own keys us
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
 [pdf-readme]: ../src/render/pdf/README.md
 [sb-1g]: ./STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
-[sb-2c]: ./STORAGE_BINDINGS.md#2c-kvstore-operations
 [sot-2a]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
 [testing-1a]: ../warden/canon/libs/TESTING.md#1a-runner-primitives

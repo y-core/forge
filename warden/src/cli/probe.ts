@@ -15,6 +15,7 @@ import { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf, type WardenQueries } from "..
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import { packageNameOf, resolveRepoRoot } from "../paths";
+import { ruleStatements } from "../rules/render";
 import { aliasesFor } from "../search/aliases";
 import { bridgeFrequency, documentFrequency } from "../search/coverage";
 import { terms } from "../search/query";
@@ -61,7 +62,8 @@ export function probe(options: ProbeOptions): string {
   const db = openDatabase(resolve(scratch, "probe.sqlite"));
   const lines: string[] = [];
   try {
-    const report = build(db, sources, canonVersion(), packageNameOf(options.root));
+    const statements = ruleStatements({ root: options.root, kind: options.kind, ...(dependencyRoot === undefined ? {} : { dependencyRoot }) });
+    const report = build(db, sources, canonVersion(), packageNameOf(options.root), statements);
 
     lines.push(`# probe ${options.root} (${options.kind})`, "");
     lines.push("## corpora");

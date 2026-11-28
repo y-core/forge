@@ -1,5 +1,6 @@
 import { childrenOf } from "../ast.ts";
-import type { AstNode, CallNode, IdentifierNode, LintRule, LiteralNode, RuleContext, VariableDeclaratorNode } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, CallNode, IdentifierNode, LiteralNode, RuleContext, VariableDeclaratorNode } from "../types.ts";
 
 /** The SSR helpers markup comes out of, before any local wrapper is traced back to them, called or passed by name to `.then`, `.map` or `.flatMap`; a `.text()` awaited or returned is the other seed. */
 const SEED_RENDERER = /^render(?:[A-Z]\w*)?$/;
@@ -285,14 +286,14 @@ interface Candidate {
 }
 
 /** A substring assertion on rendered markup, which passes on markup that moved. */
-export const exactMarkupAssertion: LintRule = {
+export const exactMarkupAssertion = defineLintRule("libs-testing-exact-match", {
   meta: {
     type: "problem",
     docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." },
     // `responseText: false` is for a tree whose responses are not all markup, where a 429's plain-text body is not.
     schema: [{ type: "object", properties: { responseText: { type: "boolean" } }, additionalProperties: false }],
   },
-  create(context) {
+  create(context, report) {
     const responseText = (context.options?.[0] as { responseText?: boolean } | undefined)?.responseText ?? true;
     const markup: MarkupBindings = { functions: new Set(), values: new Set(), responseText };
     const lists = new Set<AstNode>();
@@ -364,12 +365,12 @@ export const exactMarkupAssertion: LintRule = {
 
         for (const { subject, matcher, loc } of candidates) {
           if (producesList(subject, isList) || !reachesMarkup(subject, markup, resolve)) continue;
-          context.report({
-            message: `\`${matcher}\` on rendered markup — assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that (TESTING.md §3b)`,
+          report(
+            `\`${matcher}\` on rendered markup — assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that`,
             loc,
-          });
+          );
         }
       },
     };
   },
-};
+});

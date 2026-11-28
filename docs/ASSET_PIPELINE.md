@@ -156,19 +156,16 @@ nothing. The caller then runs the row whole, which is the safe direction for a r
 
 ### 3a. createManifest — Content-Hashed Paths
 
-**`createManifest(data, prefix)` reads nothing.** It takes the logical-to-emitted mapping as a plain record plus a URL prefix, and returns a
-`Manifest` that looks keys up. No filesystem, no directory listing — which is what makes it legal in a Worker at all: the
-mapping is baked into the generated module at build time (§4) and the runtime only looks up. That module exports one `assets` instance, so views
-import it rather than constructing a manifest of their own.
+**`createManifest` reads nothing** — no filesystem, no directory listing — which is what makes it legal in a Worker: the mapping is baked into the
+generated module at build time (§4), and views import that module's `assets` instance rather than construct a manifest.
 
-An unmapped key resolves to itself under the prefix rather than throwing. An unhashed dev build has no mapping to speak of, and a missing entry must
-degrade to the logical URL — a 404 a developer can read — rather than a 500 on a page that merely referenced a new file.
+An unmapped key resolves to itself under the prefix rather than throwing, so a missing entry degrades to a 404 a developer can read
+rather than a 500.
 
 ### 3b. createSpriteRegistry — Sprite Sheet URL Lookup
 
-**`createSpriteRegistry(sprites, manifest)` resolves a sprite _group name_ to that sheet's public URL** — `get(name) => string`, delegating to
-`manifest.path`. It parses no SVG and knows nothing about symbols; an unknown group name **throws**, because a sprite URL that silently resolves to
-nothing renders every glyph on the page as an empty `<use>`.
+**`createSpriteRegistry` resolves a sprite _group name_ to that sheet's public URL** and parses no SVG; an unknown group name **throws**, because a
+sprite URL that silently resolves to nothing renders every glyph on the page as an empty `<use>`.
 
 Symbol-level data lives elsewhere: the per-symbol `viewBox` is generated into the `*_META` const at build time (§4), and a glyph's inner markup at
 runtime is `@y-core/forge/ui/assets/glyphs` (`src/ui/README.md`).
@@ -194,14 +191,11 @@ incidents:
 - **Codegen runs twice, before and after `buildJS`.** esbuild resolves the `@assets` alias while bundling, so a bundle importing the manifest needs
   the module to _already exist_ — the first pass exists solely to make the second pass's inputs bundleable. The second pass then rewrites it with
   the JS bundle keys the first pass could not know.
-- **The service worker runs last, after the second pass.** Its precache list is the app shell: every CSS output and sprite sheet, plus each
-  `js.bundles` entry not marked `precache: false` and every output it statically imports. Chunks reached only by a dynamic import are left to
-  runtime caching. Its version is a digest of every file under `publicDir`, so a change to a runtime-cached file rotates the cache as well. Neither
-  is known until `buildJS` returns and the tree is complete. Both are injected as the module the worker imports from
-  `@y-core/forge/assets/precache`, never patched into the output, and never into another bundle: a client bundle carrying them would change the
-  hashes the list names. It is written unhashed to `sw.js` at the deploy root, because a worker's URL is its identity and its directory is its
-  scope; the `sw.js` and `_headers` the pipeline writes there are left out of the digest. With no `js.serviceWorker`, the build deletes a `sw.js`
-  only when it opens with the banner the build writes, so a hand-written worker survives.
+- **The service worker runs last, after the second pass**, because its precache list — the app shell — and its version, a digest of every file under
+  `publicDir`, are known only once `buildJS` returns and the tree is complete. Both are injected as the module the worker imports from
+  `@y-core/forge/assets/precache`, never patched into the output and never into another bundle: a client bundle carrying them would change the
+  hashes the list names. It is written unhashed to `sw.js` at the deploy root, because a worker's URL is its identity and its directory its scope,
+  and a `sw.js` without the build's banner is never deleted.
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the custom properties it resolved, so the CSS stage must
   have produced a file the manifest can name.
 
@@ -210,32 +204,30 @@ The first pass is why a _clean_ checkout still typechecks: `forge assets gen typ
 
 ### 4b. Build and Types Artifacts Are Shape-Identical
 
-`generateAssetsModule` is one template with a swappable header, and both entry points go through it: `buildAll` passes `BUILD_HEADER`,
-`generateAssetsTypes` passes `TYPES_HEADER` and a manifest synthesised from the config with every value a placeholder — each logical name mapped to
-itself and every `viewBox` the empty string.
+`generateAssetsModule` is the one template both entry points go through: `buildAll` with `BUILD_HEADER`, `generateAssetsTypes` with `TYPES_HEADER`
+and a placeholder manifest synthesised from the config.
 
-**The invariant is that the two artifacts differ only in values, never in shape** — same exports, same group consts, same `createIcon` calls, same
-union members. It has to hold, because a typecheck run against the types-only artifact is asserting about the build artifact, and a shape difference
-would let a green typecheck ship against a module the build emits differently. The headers keep a human from mistaking one for the other: the
-types-only header says in plain words that every path is unhashed and every `viewBox` empty.
+<!-- rule:forge-types-artifact-same-shape --> The invariant has to hold, because a typecheck run against the types-only artifact is asserting about
+the build artifact, and a shape difference would let a green typecheck ship against a module the build emits differently. The headers keep a human
+from mistaking one for the other: the types-only header says in plain words that every path is unhashed and every `viewBox` empty.
 
 **The write is skipped when the content is byte-identical.** Codegen compares against the file on disk and returns without writing, so an unchanged
-build does not touch the mtime — which is what keeps the twice-per-build codegen from retriggering every watcher, typechecker, and dev server
-downstream of it.
+build does not touch the mtime — which keeps the twice-per-build codegen from retriggering every watcher, typechecker and dev server
+downstream.
 
-**`gen types` is non-destructive, and the shape identity is what makes it so.** Both commands write the same path, and the gate runs `gen types` on
-every verify — so without a guard the cheap artifact replaces a real build and every hashed URL 404s. Because the two artifacts differ only in
-values, "does this build artifact still fit the config?" is answerable: blank every emitted value in each (`structuralSignature`) and compare. Equal
-means the build artifact is current, and `gen types` keeps it. Unequal — an added bundle, a renamed sprite target, a new glyph, a changed prefix —
-means the module on disk describes a config that has moved on, and rewriting it as a types artifact is the correct outcome: a stale build must not
-be pinned in place of one the config can still be typechecked against. `buildAll` is unaffected; a build always writes.
+**`gen types` is non-destructive, and the shape identity is what makes it so.** The gate runs it on every verify against the path a build writes, so
+it compares the two artifacts' `structuralSignature` and keeps a build artifact that still fits the config; one describing a config that has moved
+on is rewritten, since a stale build must not be pinned. `buildAll` always writes.
+
+<!-- rule:forge-assets-test-logical-name --> A test asserting a digest or a rendered `viewBox` passes after a build and
+fails after `gen types`.
 
 **The emitted faces module is the exception, and deliberately carries no types-only variant.** A `fonts.emit` block writes the built subsets —
 bytes, glyph ids, advances and kerning inlined — as a TypeScript module a Worker can import, because a Worker cannot read from the asset tree and
 fetching a face at request time would put a font parser or a round trip on the render path. Unlike a CSS or JS entry, a face is derivable from the
 config and `node_modules` alone: it has no dependency on the built output tree and no content hash to blank, so there is nothing a placeholder
-version could stand in for. Both `buildAll` and `generateAssetsTypes` therefore emit the _real_ module, and byte-identically — which is what lets a
-clean checkout typecheck and test against embedded faces with no asset build in the gate.
+version could stand in for. Both `buildAll` and `generateAssetsTypes` therefore emit the _real_ module, byte-identically, so a
+clean checkout typechecks and tests against embedded faces with no asset build in the gate.
 
 **A face the config names but the build did not produce is a refusal, not a gap in the module** — a family with no subset, a weight the family was
 not built at, and a `defaults` entry naming a face nothing is called each fail the build where the config is wrong rather than at the render that
@@ -244,8 +236,8 @@ forge's default.
 
 **The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it being ahead of the tree for any other reason** — a
 `public/` nobody rebuilt, a pruned hashed output, a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under
-`publicDir`. A types-only artifact passes a `static` run, because its identity paths deliberately do not exist — that is what lets `bun check`
-run on a clean checkout — and fails every tier above it, where a green on an artifact nobody built is the 404 it exists to prevent.
+`publicDir`. A types-only artifact passes a `static` run, because its identity paths deliberately do not exist, and fails every tier above it, where
+a green on an artifact nobody built is the 404 it exists to prevent.
 
 ### 4c. The Emitted Glyph Union — the ForgeIcon Seam
 
@@ -258,8 +250,8 @@ props interface — `icon: ForgeIcon<G>` — needs the union as a name it can sp
 config, a second copy of the glyph list that drifts the first time a glyph is added. `ForgeIcon` declares no default for its parameter, so the
 widening a missing union invites does not compile ([`FORGE_REVIEW.md`][cr-3b] §3b).
 
-Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/glyphs.ts` enumerates it as `ForgeUiIconName`, because forge's
-components must name the glyphs they require without depending on any consumer's generated module.
+<!-- rule:forge-no-generated-assets-import --> Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/glyphs.ts` enumerates it
+as `ForgeUiIconName`, so a component names the glyphs it requires itself.
 
 ### 4d. The Service Worker's Input Record
 
@@ -276,8 +268,8 @@ components must name the glyphs they require without depending on any consumer's
 
 A build with no `js.serviceWorker` deletes the record along with the worker. Only the worker is recorded: the client bundles carry no record.
 
-**The record sits beside the module, not inside it.** The module must keep the same shape as its types-only twin (§4b), and that twin has no input
-list to mirror. And a worker that imports `@assets` reads the module, so a digest stored inside it would be one of its own inputs.
+<!-- rule:forge-sw-record-beside-module --> The module must keep the same shape as its types-only twin (§4b), and that twin has no input list to
+mirror. And a worker that imports `@assets` reads the module, so a digest stored inside it would be one of its own inputs.
 
 **`validate-service-worker` holds the built worker to the record without building anything.** It runs on `static`, after
 `validate-asset-manifest`, and so before any test that imports the built `sw.js`. It rehashes the recorded files. Each of these fails every
@@ -299,7 +291,7 @@ becomes an input only through an edit to a file already recorded, which is why t
 [bt]: ./BUILD_TOOLING.md
 [bt-2h]: ./BUILD_TOOLING.md#2h-roots-are-stated-or-derived-never-discovered
 [cb-6]: ../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
-[cr-3b]: ./FORGE_REVIEW.md#3b-tier-2--ripgrep-with-triage
+[cr-3b]: ./FORGE_REVIEW.md#3b-tier-2--pattern-sweep-with-triage
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-3c]: ./FORGE_STRUCTURE.md#3c-peer-dependencies-for-build-tools

@@ -5,6 +5,7 @@ import { linkDefinitions, stripFences } from "../checks/docs";
 import { chunkDocument, frontmatter } from "../corpus/chunk";
 import { fnv1a } from "../corpus/hash";
 import { headerOf, relationsOf } from "../corpus/relate";
+import { renderStatements, statementsDigest } from "../rules/render";
 import type { Chunk, Relation, SourceDoc } from "../types";
 import { stampVersions } from "./db";
 
@@ -34,10 +35,11 @@ function destinations(source: string): Map<string, string> {
   return new Map([...linkDefinitions(stripFences(source))].map(([id, definition]) => [id, definition.destination]));
 }
 
-/** Reads and parses every document, resolving relations against the whole set. @public */
-export function load(sources: readonly SourceDoc[], packageName?: string): Loaded[] {
+/** Reads and parses every document with each rule marker's statement rendered, resolving relations against the whole set. @public */
+export function load(sources: readonly SourceDoc[], packageName?: string, statements: ReadonlyMap<string, string> = new Map()): Loaded[] {
   return sources.map((doc) => {
-    const source = readFileSync(doc.file, "utf-8");
+    const raw = readFileSync(doc.file, "utf-8");
+    const source = renderStatements(raw, statements);
     const stat = statSync(doc.file) as { size: number; mtimeMs?: number };
     const { title, description } = frontmatter(source);
     const chunks = chunkDocument(doc, source);
@@ -49,14 +51,20 @@ export function load(sources: readonly SourceDoc[], packageName?: string): Loade
       relations: relationsOf(doc, chunks, headerOf(source), sources, packageName, destinations(source)),
       size: stat.size,
       mtime: stat.mtimeMs ?? 0,
-      hash: fnv1a(source),
+      hash: fnv1a(raw),
     };
   });
 }
 
 /** Replaces the whole index from `sources`, in one transaction. @public */
-export function build(db: Database, sources: readonly SourceDoc[], canonVersion: string, packageName?: string): BuildReport {
-  const loaded = load(sources, packageName);
+export function build(
+  db: Database,
+  sources: readonly SourceDoc[],
+  canonVersion: string,
+  packageName?: string,
+  statements: ReadonlyMap<string, string> = new Map(),
+): BuildReport {
+  const loaded = load(sources, packageName, statements);
 
   const write = db.transaction(() => {
     db.run("DELETE FROM relation");
@@ -117,7 +125,7 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
       for (const relation of entry.relations) insertRelation.run(relation.from, relation.kind, relation.to ?? null, relation.raw);
     }
 
-    stampVersions(db, canonVersion);
+    stampVersions(db, canonVersion, statementsDigest(statements));
   });
 
   write();

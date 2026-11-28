@@ -1,0 +1,13 @@
+diff --git a/src/controllers/guestbook.ts b/src/controllers/guestbook.ts
+index dd7a2880..1cb6c69e 100644
+--- a/src/controllers/guestbook.ts
++++ b/src/controllers/guestbook.ts
+@@ -8,7 +8,7 @@ import { GuestbookUnavailableView, GuestbookView } from "../views/guestbook";
+ 
+ export const guestbook = definePage(routes.guestbook, {
+   query: GuestbookQuery,
+-  loader: async (c, config, query) => ({ siteName: config.siteName, listing: await guestbookPage(c.env.DB, query.page) }),
++  loader: async (c, _config, query) => ({ siteName: c.env.SITE_NAME, listing: await guestbookPage(c.env.DB, query.page) }),
+   view: (_c, _config, state) => {
+     const { siteName, listing } = state.data;
+     if (listing === null) return renderPage(GuestbookUnavailableView({ siteName }), { status: 503 });

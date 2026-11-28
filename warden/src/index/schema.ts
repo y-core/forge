@@ -2,7 +2,7 @@
 export const SCHEMA_VERSION = "5";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
-export const INDEXER_VERSION = "9";
+export const INDEXER_VERSION = "10";
 
 // Without `-_/.§` in `tokenchars` the tokenizer splits `ui/core`, `Result<T,E>` and `§5c` into
 // pieces; `porter` wraps it so `returning` and `Return` are one term.

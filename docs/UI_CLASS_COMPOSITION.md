@@ -98,16 +98,12 @@ reimplemented, for the reason §1a gives about a second copy of the table. It sh
 same resolver. It judges _position_ only; whether a token names anything the design system compiles is `validate-class-tokens`, which owns its own
 rules (`class-tokens.ts`) as a derived check does.
 
-**The positions it reaches are the ones the formatter sorts**, which is what makes the two agree: a quoted `class`/`className` attribute; an
-expression container, whose string literals — both branches of a ternary among them — are each judged, and whose template literals are judged one
-chunk at a time, split at every `${…}`, because that chunk is the unit a sorter reorders; and the argument span of a `cn` or `cva` call, wrapped
-across lines or nested inside a container. A `//`- or block-commented literal is dead code and is not judged. **One carve-out:** a span whose
-brackets do not balance is skipped rather than guessed at — a fabricated literal would fail the gate on source that does not exist.
+**The positions it reaches are the ones the formatter sorts**, which is what makes the two agree; `src/tooling/gate/checks/class-order.ts` owns
+which positions those are, and skips a span whose brackets do not balance rather than fabricate a literal to fail.
 
-**What that buys: the formatter may sort classes**, holding forge's literals in Tailwind's canonical order. A sorter **reorders tokens within one
-literal and never moves a token between literals**, so under the invariant sorting is provably output-preserving. It must be pointed at the same
-stylesheet an app compiles, `src/ui/assets/css/tailwind.css`; given only upstream Tailwind it treats every forge token utility as unknown and hoists
-it to the head of its literal.
+**What that buys: the formatter may sort classes.** A sorter reorders tokens within one literal and never moves one between literals, so under the
+invariant sorting is output-preserving. Point it at `src/ui/assets/css/tailwind.css`, the stylesheet an app compiles, or it hoists every forge token
+utility to the head of its literal.
 
 **The agreement rests on the lists naming the same callees**, and they do: `sortTailwindcss.functions` in `.oxfmtrc.json`, `CLASS_CALLEES` in
 `src/tooling/lint/ast.ts`, and the call spans `design-parse.ts` reads are each exactly `cn` and `cva`. A callee one list judges and another does not
@@ -207,22 +203,22 @@ inside a label, and `&:has(:focus-visible)` paints the label, so the recipe cove
 cannot reach is a _sibling_ — `Switch`'s track is not an ancestor of its input — which keeps `peer-focus-visible:ring-2` on that track alone, with a
 one-line reason at the site.
 
-**`state-disabled`, `state-invalid` and `state-busy` reach it the same way, and each must** — a state prop landing on a hidden inner control while
-the recipe sits on the wrapping label is the ordinary shape here, not the exception. A recipe without the branch leaves `<Switch busy>` and
-`<Toggle busy>` silently inert, so a new state recipe carries it from the start.
+<!-- rule:forge-state-recipe-descendant --> `state-disabled`, `state-invalid` and `state-busy` reach it the same way: a state prop landing on a
+hidden inner control while the recipe sits on the wrapping label is the ordinary shape here, not the exception. A recipe without the branch leaves
+`<Switch busy>` and `<Toggle busy>` silently inert, so a new state recipe carries it from the start.
 
 **A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** A recipe that paints under a state selector — at base scope
 it sets at most `outline-style`, as `focus-ring` and `focus-ring-outset` do through `outline-none` — takes the group `forge:<name>` rather than
 its compiled signature; `config/steps.config.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property in such a key, so no
 override edge is derived into or out of one either.
 
-**A state recipe must contend with no base-scope utility.** `state-invalid` sets `border-color` and `--tw-ring-color` only under
-`&[aria-invalid="true"]` and its siblings. A caller's `class` is always last under last-wins `cn`, so if `<Input class="ring-primary">`
-displaced the recipe, the control would announce `aria-invalid` while looking valid. Equally, `state-busy` must not displace a caller's
-`cursor-wait`. The slot key guarantees both, and the selector tag on a compiled signature (§1c) separates the same pairs. **A state recipe
-therefore travels as one token of the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its own
-argument buys no separation. What earns one is a base-scope token that does contend — `cursor-pointer` takes its own argument because
-`state-busy` paints `cursor: progress`.
+<!-- rule:forge-state-recipe-slot-keyed --> `state-invalid` sets `border-color` and `--tw-ring-color` only under `&[aria-invalid="true"]` and its
+siblings. A caller's `class` is always last under last-wins `cn`, so if `<Input class="ring-primary">` displaced the recipe, the control would
+announce `aria-invalid` while looking valid. Equally, `state-busy` must not displace a caller's `cursor-wait`. The slot key guarantees both, and the
+selector tag on a compiled signature (§1c) separates the same pairs.
+
+<!-- rule:forge-state-recipe-in-base-literal --> Slot-keyed, a state recipe contends with nothing, so an argument of its own buys no separation.
+What earns one is a base-scope token that does contend — `cursor-pointer` takes its own argument because `state-busy` paints `cursor: progress`.
 
 **The paint recipes keep their compiled signature, deliberately.** A recipe such as `field-chrome` declares its whole payload at base scope, so a
 consumer's later `rounded-lg`, `h-auto` or `w-20` should win — the override [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises. A **paint** recipe would
@@ -237,46 +233,44 @@ caller re-tone a component by passing `[--tone:…]` after it. Every cell is mea
 tone's text property deliberately reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a
 owns the audited pairs behind each property.
 
-**A toned surface the pointer cannot act on takes the paint without the hover fill**, because a panel that recolours on hover reads as a button,
-and the fill can drop a glyph on it below 4.5:1. `tone.ts` keeps the paint and the hover as separate tables, so the control resolver and the
-surface resolver derive from one source.
+**A toned surface the pointer cannot act on takes the paint without the hover fill**, because a panel that recolours on hover reads as a button;
+`tone.ts` keeps the paint and hover tables separate so both resolvers derive from one source.
 
 ### 1f. Which Utility Composes a Class, and In What Order
 
 **The ratified points deciding which of `const`, `cva` and `cn` a class expression uses**; `src/ui/README.md` owns the worked call-site examples.
 
-**A class string that never varies is a module-scope `const`, not a `cn` call at render** — resolved once at load rather than once per element, and
-named for every call site that shares it. `src/ui/core/utils/recipes.ts` (`PANEL_HEADER`, `FIELD_SIZE`, …) is the pattern.
+<!-- rule:forge-static-class-const --> It resolves once at load rather than once per element, and is named for every call site that shares it.
+`src/ui/core/utils/recipes.ts` (`PANEL_HEADER`, `FIELD_SIZE`, …) is the pattern.
 
-**Variant axes belong in `cva`, and the caller's class goes in the resolver's own `class` slot** — `buttonVariants({ tone, size, class: cls })`,
-never `cn(buttonVariants({ tone, size }), cls)`. A `cva` resolver already ends in `cn` (`src/ui/core/utils/cva.ts`), so the outer call is a second
-resolution pass over a settled string, buying the precedence the resolver already gives `class`.
+<!-- rule:forge-cva-class-slot --> Variant axes belong in `cva`, as `buttonVariants({ tone, size, class: cls })` shows. A `cva` resolver already
+ends in `cn` (`src/ui/core/utils/cva.ts`), so an outer call is a second resolution pass over a settled string, buying the precedence the resolver
+already gives `class`.
 
 **`cn` is for combining two or more independent sources** — a base plus a caller's class, a base plus a conditional fragment, a resolver plus a
 non-variant class — **or for resolving conflicts inside one string.** A single-argument `cn` is not a no-op: `cn("p-4 p-8")` returns `"p-8"`, so
 wrapping one string is meaningful wherever it may carry a conflict (§1b gives the other reason a lone `cn` earns its place — it puts a bare const
 in a class position a sorter can reach).
 
-**The caller's class is always the last argument**, which is the whole of the caller-wins guarantee [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises:
-`cn` keeps the last utility to claim a conflict group (§1a), and `cva` appends `class` after base, variants and compounds. Placed earlier it loses
-to the component's own defaults, silently and only for the utilities that happen to collide.
+<!-- rule:forge-caller-class-last --> That order is the whole of the caller-wins guarantee [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises: `cn` keeps
+the last utility to claim a conflict group (§1a), and `cva` appends `class` after base, variants and compounds. Placed earlier it loses to the
+component's own defaults, silently and only for the utilities that happen to collide.
 
 ---
 
 ## 2. Colour Scheme Declaration Contract
 
-**A scheme file declares each role step exactly once, and no forge stylesheet declares a custom property under `.dark`.** A step whose value differs
-by mode is written with `light-dark()`, and the branch is selected by `color-scheme`, which `theme-base.css` sets on the light and dark roots.
+<!-- rule:forge-theme-dark-one-site --> A step whose value differs by mode is written with `light-dark()`, and the branch is selected by
+`color-scheme`, which `theme-base.css` sets on the light and dark roots.
 
 The rule is about declaration _sites_, not the selector, which is why it is stated that way and not as "no `.dark` block": `theme-base.css` sets
 `color-scheme: dark` under `.dark`, which carries no value a consumer's own scheme could half-supply. The gate enforces exactly that shape — a
 `.dark` rule declaring no custom property passes.
 
-**The two-block form is what this refuses** — the same steps under `:root`, then again under `.dark` — because it cannot be supplied safely. Both
-selectors weigh 0-1-0 and both match the document element, so source order decides, and a consumer's scheme is imported after forge's own. A
-consumer supplying only the `:root` half beats forge's dark half and leaks light values into dark mode with no error: light mode looks correct, and
-the defect is visible only to a reader already on the dark theme. **A documented requirement that fails silently is a design defect rather than a
-documentation gap.**
+The two-block form — the same steps under `:root` and again under `.dark` — cannot be supplied safely. Both selectors weigh 0-1-0 and both match the
+document element, so source order decides, and a consumer's scheme is imported after forge's own. A consumer supplying only the `:root` half beats
+forge's dark half and leaks light values into dark mode with no error: light mode looks correct, and the defect is visible only to a reader already
+on the dark theme. **A documented requirement that fails silently is a design defect rather than a documentation gap.**
 
 `color-scheme` is declared in `theme-base.css` rather than in the scheme files, so a scheme carries colour and nothing structural: the scheme is the
 file a consumer replaces, and the mode wiring is the file they do not. Declaring it also hands the mode to the user agent, so the UA-rendered
@@ -338,8 +332,8 @@ specificity instead appears to work until the next utility is added.
 
 ### 2f. A Reserved Root, Where a Utility Root Carries Two Concerns
 
-**A theme token is declared in a namespace no other concern under the same root reads. A font-size step is `--text-size-*`, never a bare `--text-*`;
-a font face is `--font-face-*`, never a bare `--font-*`** — so the concern is legible from the name, to a reader and to a table alike.
+<!-- rule:forge-css-token-reserved-root --> **A theme token is declared in a namespace no other concern under the same root reads**, so the concern
+is legible from the name, to a reader and to a table alike.
 
 Tailwind's `--text-*` namespace carries font size while the `text-*` utility also carries colour, so `--text-hero` and `--color-hero` produce the
 same class name. A conflict table cannot tell them apart, guesses colour — what nearly every unenumerated name under `text-` is — and drops the

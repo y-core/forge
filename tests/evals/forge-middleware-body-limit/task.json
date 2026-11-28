@@ -1,0 +1,35 @@
+{
+  "id": "forge-middleware-body-limit",
+  "tree": "forge",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "bait": [],
+  "accept": ["src/security/body-limit.accept.ts"],
+  "traps": [
+    {
+      "id": "headers-facade",
+      "rules": ["project:docs/NAMESPACES.md#5d"],
+      "detector": { "kind": "rg", "pattern": "@remix-run/headers", "paths": ["src"] }
+    },
+    {
+      "id": "sibling-barrel",
+      "rules": ["canon:NAMESPACE_DESIGN.md#2a", "project:docs/FORGE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "from \"\\.\\./(?!validation/mod|primitives/mod)[a-z-]+/mod\"", "paths": ["src"], "pcre": true }
+    },
+    {
+      "id": "web-apis-only",
+      "rules": ["canon:LIBRARY_ARCHITECTURE.md#1d", "project:docs/FORGE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "\\bBun\\.|from \"node:", "paths": ["src/security"] }
+    },
+    {
+      "id": "refusal-shape",
+      "rules": ["project:docs/FORGE_ERRORS.md#3e"],
+      "detector": { "kind": "test", "file": "src/security/body-limit-refusal.accept.ts" }
+    },
+    {
+      "id": "co-location",
+      "rules": ["canon:TESTING.md#2a", "project:docs/TEST_RUNNERS.md#2"],
+      "detector": { "kind": "step", "label": "validate-co-location" }
+    }
+  ]
+}

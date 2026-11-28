@@ -1,0 +1,10 @@
+diff --git a/src/controllers/webhooks.ts b/src/controllers/webhooks.ts
+index 4c4eaa31..c5e7d005 100644
+--- a/src/controllers/webhooks.ts
++++ b/src/controllers/webhooks.ts
+@@ -26,3 +26,4 @@ export const orderWebhook = createAction(routes.orderWebhook, async (context) =>
+   if (!order.success) return new Response("Unprocessable order", { status: 422 });
+-  if (!(await forwardOrder(order.output, config.fulfilmentUrl))) return new Response("Fulfilment unavailable", { status: 502 });
++  const forwarded = await fetch(config.fulfilmentUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(order.output) });
++  if (!forwarded.ok) return new Response("Fulfilment unavailable", { status: 502 });
+   return new Response(null, { status: 204 });

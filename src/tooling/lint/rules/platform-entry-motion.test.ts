@@ -4,7 +4,7 @@ import { call, literal, methodCall, other, runRule } from "../lint.fixture.ts";
 import { platformEntryMotion } from "./platform-entry-motion.ts";
 
 const DETAIL =
-  "a class added inside `requestAnimationFrame` to start an entry transition — declare it with `@starting-style` and `transition-behavior: allow-discrete` (forge-ui-platform-entry-motion — src/ui/design/reference/16-platform.md)";
+  "[forge-ui-platform-entry-motion] a class added inside `requestAnimationFrame` to start an entry transition — declare it with `@starting-style` and `transition-behavior: allow-discrete`";
 
 describe("platform-entry-motion", () => {
   it("reports a class added inside `requestAnimationFrame`", () => {

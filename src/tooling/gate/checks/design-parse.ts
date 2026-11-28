@@ -1,7 +1,7 @@
 import { balancedSpan, blankSourceComments, lineAt } from "./source-scan";
 import type { BarrelImport, ClassLiteral, CustomPropertyCitation, RuleMarker, SkippedClassPosition } from "./types";
 
-const RULE_ID_GRAMMAR = /^forge-ui-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RULE_ID_GRAMMAR = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
 
 const BACKTICKED = /`([^`]+)`/g;
 

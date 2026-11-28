@@ -17,7 +17,7 @@ Which subpath you reach for is decided by what you are building:
 | `@y-core/forge/auth/web` | mounting pages, guarding routes, or replacing forge's markup |
 | `@y-core/forge/auth/client` | bundling the browser half of the passkey ceremony or of `signoutClearsSiteData` — a side-effect import, and `onPasskeyPrf` for a page that derives a key from a passkey |
 
-The edge is one-way — `auth/web` imports `auth`, and `auth` never names `auth/web` ([`NAMESPACES.md`][namespaces-5h] §5h).
+The edge runs one way, from `auth/web` to `auth` ([`NAMESPACES.md`][namespaces-5h] §5h).
 
 **Standing the capability up is [`AUTH_MOUNTING.md`][am]** — the one order that works (§1), the route groups and their guards (§2) and the
 seams you supply (§3).
@@ -57,8 +57,8 @@ never inline. `confirmUrl` names the confirm route you mount yourself ([`AUTH_MO
 
 **`secondFactors` lists what a user may enrol after the emailed code**, in the order the pages list them and owed factors are enrolled in.
 Any entry brings recovery codes with it. Leave it out and every sign-in is the emailed code alone. Where the host or the env varies, `rpId`,
-`rpName`, `origin` and `issuer` also take a function of the request. An empty `rpName` or `issuer`, or an `issuer` holding `:`, throws:
-at the call when written as a literal, at `await resolve(c)` when a function returns it. The next section is what each `requirement` demands.
+`rpName`, `origin` and `issuer` also take a function of the request. An invalid `rpName` or `issuer` throws where it is
+read. The next section is what each `requirement` demands.
 
 **`address` defaults to the account's email**: the address a code goes to, the label an authenticator app shows and the name a passkey is saved
 under. Pass `address` to read it from somewhere else.
@@ -73,12 +73,9 @@ Every store is built over the one client `db` returns, and one `FactorStore` is 
 The account pages read all of a user's factors from `enrolments` in one read. If you compose `AuthRequestServices` yourself instead, keep that:
 a factor service whose rows live in a store of its own shows there as not enrolled.
 
-**Back the session with `storage: "cookie"`.** A signed-in identity lives in D1, in the row `sessions` writes at sign-in, so the session only
-carries that row's token beside the visitor's own state, and an anonymous visitor writes nothing anywhere. KV storage still works. Give the
-cookie a `maxAge` of at least the session's absolute lifetime, because an idle touch does not rewrite it ([`AUTH_MOUNTING.md`][am-1] §1). The
-guards' contribution carries that lifetime, so `applyMiddlewareChain` throws at registration where the cookie's `maxAge` is shorter or unset;
-`createAnonymousSession`'s 365-day default passes. The idle bound defaults to 24 hours. A bound over 20 hours is exempt from WCAG 2.2.1 Timing
-Adjustable; an app that shortens one below that owes the visitor a warning before it expires and a way to extend it.
+**Back the session with `storage: "cookie"`.** A signed-in identity lives in D1, so the session only carries that row's token beside the visitor's
+own state. Give the cookie a `maxAge` of at least the session's absolute lifetime — `createAnonymousSession`'s 365-day default passes, and the chain
+throws at registration on one shorter or unset. [`AUTH_MOUNTING.md`][am-1] §1 has why, and what shortening the idle bound owes the visitor.
 
 **An unusable key ring rejects the services rather than answering a `Result`**: resolving a binding throws, and operating on a resolved store
 answers a `Result` ([`FORGE_ERRORS.md`][eh-5e] §5e).
@@ -253,20 +250,28 @@ Forge mounts every auth route except this one: the confirmation URL is yours, so
 `POST` from that form that calls `confirm`**:
 
 ```tsx
+import { AuthStoreError } from "@y-core/forge/auth";
+import { EmailChangeConfirmView } from "@y-core/forge/auth/web";
+import { mintCsrf, parseFormData } from "@y-core/forge/form";
+
 // GET /email/confirm?t=…
-const token = c.url.searchParams.get("t") ?? "";
-const link = await services.emailChange.inspect(token, Date.now());
-if (!link.ok) return refusalPage(link.error);
-return confirmPage(
-  <EmailChangeConfirmView {...link.data} token={token} submitPath='/email/confirm' csrfToken={await mintCsrf(c, "/email/confirm")} />,
-);
+async function showConfirm() {
+  const token = c.url.searchParams.get("t") ?? "";
+  const link = await services.emailChange.inspect(token, Date.now());
+  if (!link.ok) return refusalPage(link.error);
+  return confirmPage(
+    <EmailChangeConfirmView {...link.data} token={token} submitPath='/email/confirm' csrfToken={await mintCsrf(c, "/email/confirm")} />,
+  );
+}
 
 // POST /email/confirm
-const form = await parseFormData(c);
-const outcome = await services.emailChange.confirm(String(form.get("token") ?? ""), Date.now());
-if (!outcome.ok) return outcome.error instanceof AuthStoreError ? unavailablePage() : refusalPage(outcome.error);
-if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);
-return changedPage(outcome.data.user);
+async function confirm() {
+  const form = await parseFormData(c);
+  const outcome = await services.emailChange.confirm(String(form.get("token") ?? ""), Date.now());
+  if (!outcome.ok) return outcome.error instanceof AuthStoreError ? unavailablePage() : refusalPage(outcome.error);
+  if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);
+  return changedPage(outcome.data.user);
+}
 ```
 
 **Never call `confirm` from the `GET`.** A mail client's link scanner opens the link before its owner does, and whichever request calls
@@ -367,9 +372,8 @@ than the sign-in, so on a group without `require-auth` it holds until `ttlMs` ru
 ## Guarding a route you wrote yourself
 
 `createAuthGuards` builds the stack for every group in one call and is what a mount uses (`AUTH_ROUTE_GROUPS` is the table it cuts them from, and
-[`AUTH_MOUNTING.md`][am-2] §2 says why each group is guarded as it is). Its `rateLimit` keys a group by dotted path, and a group with no key
-inherits its nearest keyed ancestor's limit with a budget per route; `false` opts a group out ([`AUTH_MOUNTING.md`][am-1] §1). The guard
-primitives are exported for a page you route yourself:
+[`AUTH_MOUNTING.md`][am-2] §2 says why each group is guarded as it is). How its `rateLimit` keys each group is [`AUTH_MOUNTING.md`][am-1] §1's. The
+guard primitives are exported for a page you route yourself:
 
 | Guard | Admits |
 | --- | --- |
@@ -425,11 +429,9 @@ step-up in the session ([`AUTH_FLOWS.md`][af-9c] §9c).
 **A guard refuses in the medium its group answers in.** Pass `medium: "json"` and `requireAuth` answers `401 {"error": …}` and the enrolment
 guards `403 {"error": …}` instead of redirecting — which is what a browser controller posting a ceremony step can actually read.
 
-**An htmx request is redirected by navigation, not by a 3xx.** Every redirect auth sends answers an htmx request with a 204 carrying
-`HX-Redirect`: a refusal from `requireAuth`, `requireEnrolment`, `requirePendingEnrolment` or `requireFreshStepUp`, an auth page sending an
-anonymous visitor to sign-in, the verify page sending on a visitor who owes an enrolment, and an auth action's redirect such as the users list
-after an admin remove. htmx then loads that page and updates the address bar, instead of swapping the page into the target. A request without
-htmx still gets its 3xx, so your htmx forms and links need nothing extra.
+**An htmx request is redirected by navigation, not by a 3xx.** Every redirect auth sends — a guard's refusal, or an auth page's or action's
+redirect — answers an htmx request with a 204 carrying `HX-Redirect`, so htmx loads the page rather than swapping it into the target. Your htmx
+forms and links need nothing extra.
 
 **After sign-in, `requireAuth` returns the visitor to the page they were on.** It records that page in the sign-in URL's `next` parameter, or
 the name you pass as `returnParam`:
@@ -445,8 +447,8 @@ Between requests, a sign-in is written in one place per fact: `establishAuthSess
 `clearAuthSession`, and `markAuthSigninPending` / `resolveAuthSigninPending`. Each of the first four writes to D1 and answers an
 `AuthStoreResult`; on a failure the session is left as it was, so answer 503 and let the visitor retry.
 
-**Sign-out destroys the session**, so the next request starts a fresh one with no visitor data. `AuthWebOptions.signOut: { keepVisitorData:
-true }` keeps it, dropping only the auth keys and rotating the id; `clearAuthSession` takes the same value as its third argument.
+`clearAuthSession` takes the same `{ keepVisitorData: true }` as `AuthWebOptions.signOut`, which keeps visitor data across sign-out
+([`AUTH_MOUNTING.md`][am-1] §1).
 
 ---
 
@@ -546,6 +548,9 @@ nothing about any token they do not already hold.
 through the app's CSRF policy (`mintCsrf`) — as a `NavState` (`@y-core/forge/ui/chrome`), shaped to spread straight onto `Navbar`:
 
 ```tsx
+import { authNav } from "@y-core/forge/auth/web";
+import { Navbar } from "@y-core/forge/ui/chrome";
+
 const nav = authNav({ signoutPath: paths.auth.signout() });
 // …per request, in the layout:
 <Navbar config={primaryNav} resolveHref={resolveNavHref} icon={AppIcon} {...(await nav(context))} />;
@@ -572,6 +577,8 @@ copy it is a plain button. `signout.menuitem` overrides that in every place. To 
 yourself. A `NavState` slot may also be a plain node, so narrow it first:
 
 ```tsx
+import { AUTH_NAV_SIGNOUT_SLOT } from "@y-core/forge/auth/web";
+
 const slot = (await nav(context)).slots[AUTH_NAV_SIGNOUT_SLOT];
 const signout = typeof slot === "function" ? slot({ inMenu: false }) : slot;
 ```
@@ -584,6 +591,9 @@ No shipped page lists an account's security events, so render `SecurityEventList
 `createSecurityEventStore` reads:
 
 ```tsx
+import { createSecurityEventStore } from "@y-core/forge/auth";
+import { SecurityEventListView } from "@y-core/forge/auth/web";
+
 const events = await createSecurityEventStore(db).listByUser(identity.userId, { limit: 20 });
 if (!events.ok) throw events.error;
 <SecurityEventListView rows={events.data} level={2} />;
@@ -600,6 +610,8 @@ Its root carries `AUTH_SECURITY_EVENT_LIST_ID`.
 `AuthWebOptions.views` takes one override per page name, and each entry receives exactly the props forge's own view receives:
 
 ```tsx
+import type { AuthWebOptions } from "@y-core/forge/auth/web";
+
 const options: AuthWebOptions<Env> = {
   resolveServices,
   paths,
@@ -701,8 +713,8 @@ resume();
 The controller speaks each outcome through `announce()`, so **the page needs `<Announcer />` from `@y-core/forge/ui/core`** in its layout: a
 refusal interrupts, a success does not. Without one the ceremony still works and says nothing to a screen reader.
 
-When you render a ceremony root yourself, take every attribute name and default from the `PASSKEY_*` constants in `@y-core/forge/auth`, never a
-literal.
+When you render a ceremony root yourself, take every attribute name and default from the `PASSKEY_*` constants in `@y-core/forge/auth`
+([`NAMESPACES.md`][namespaces-5h] §5h).
 
 **A token per endpoint, never one shared** — the app's CSRF policy binds a token to a path, and a ceremony spans two ([`AUTH_FLOWS.md`][af-3] §3).
 
@@ -743,8 +755,8 @@ onPasskeyPrf(async ({ credentialId, output }) => {
 });
 ```
 
-**Test `output` for `null`, never `prf.enabled` or `getClientCapabilities()`.** A registration already returns the bytes a later step-up with
-the same salt will, so you can wrap a key at once. Why the output never reaches your server is [`AUTH_FLOWS.md`][af-3d] §3d.
+**Test `output` for `null`**, the one signal [`AUTH_FLOWS.md`][af-3d] §3d trusts, which also says why the output never reaches your server. A
+registration already returns the bytes a later step-up with the same salt will, so you can wrap a key at once.
 
 A handler that throws does not stop the ceremony succeeding or navigating. Only the last handler registered is called, and `onPasskeyPrf`
 returns the function that removes it.
@@ -841,7 +853,7 @@ token of yours carries. A secret that ever wrapped a TOTP secret stays until `au
 after one, because its nonce key is derived from the **token's own** key id.
 
 **Each secret is held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule**, which `importAuthKeyRing` applies and `resolveAuthServices`
-applies again to a ring built by hand. Generate each with `openssl rand -hex 32`, and source them from Worker secrets, never from a literal.
+applies again to a ring built by hand. Generate each with `openssl rand -hex 32`, and source them from Worker secrets.
 
 ---
 
@@ -873,8 +885,6 @@ guarantees, and why it is not a removal, is [`AUTH_FLOWS.md`][af-3c] §3c.
 
 **Your notifier is sent `factor-replaced`** once the swap commits, so a renderer covering every notice type must cover it
 ([Delivering the codes and links forge does not send](#delivering-the-codes-and-links-forge-does-not-send)).
-
-**A custom `FactorStore` must implement `replaceSecret`** ([Backing a store contract yourself](#backing-a-store-contract-yourself)).
 
 ---
 
@@ -924,10 +934,8 @@ export default {
 carries. The other two are different: nothing else deletes an account that sign-up created for an address that never answered, or a security
 event, so without the purge both build up for good.
 
-**One run deletes a bounded amount, so a backlog clears over several runs.** It works through challenges, nonces, sessions, security events and
-then accounts, in steps of a fixed number of rows with a ceiling of steps per table, and no transaction spans them: a step that fails takes only
-itself back. `deleted` counts each table's own rows, and the rows a deleted account's cascade removes are not counted. A run sends at most 40
-queries against the free plan's 50 per invocation, which leaves little for other work in the same invocation.
+**One run deletes a bounded amount, so a backlog clears over several runs.** A run sends at most 40 queries, against the free plan's 50 per
+invocation, so leave it little company in its invocation. `deleted` counts each table's own rows, not what a deleted account's cascade removes.
 
 **Schedule it more often while `complete` is `false`.** A table still held lapsed rows when its step ceiling ran out, or a constraint blocked
 it, and the rest waits for the next run.
@@ -1024,23 +1032,23 @@ contract — and know that **the methods below carry rules the caller does none 
 | `AuthSessionStore.resolve` | Hold the row against `expires_at > at`, the idle bound **and** a deactivated owner in the one statement that reads it, naming the owner's columns rather than selecting them all. Write `last_seen_at` back only when the row read shows the touch interval has passed, under a guard repeating that test, and resolve the identity even when that write fails. Correctness rests on the predicate, not on the purge |
 | `AuthSessionStore.create` | Insert the row with an id of its own, `last_seen_at` set to the sign-in, and an expiry from the store's lifetime, and record `signed-in`, deleting the replaced row first, in one batch |
 | `AuthSessionStore.rotate` | Move the row onto the new token with one in-place `UPDATE`, so every other column carries over, and record `stepped-up` only where that `UPDATE` moved a row |
-| `AuthSessionStore.revoke` / `revokeOthers` | Delete the user's rows except the one `origin.keep` names, and record `sessions-revoked` in the batch only where a row went. With `keep: null`, drop the `token_hash != ?` term rather than binding `NULL` into it, which matches no row and so deletes nothing |
+| `AuthSessionStore.revoke` / `revokeOthers` | Delete the user's rows except the one `origin.keep` names, and record `sessions-revoked` in the batch. With `keep: null`, drop the `token_hash != ?` term rather than binding `NULL` into it, which matches no row and so deletes nothing |
 | `UserStore.changeEmail` | Move the address, mark it verified, record `email-changed` and delete every session the user holds, the current one included, in one batch |
 | `UserStore.claimEmailChange` | Stamp the request unless one was stamped inside `cooldownMs`, deciding in the one statement |
 | `FactorStore.listConfirmedKinds` | Select the kind alone, of confirmed rows only. A signed-in request under `requireAuth` reads it, and a sealed secret must never ride along |
-| `FactorStore.confirm` | Confirm only a row not yet confirmed, answering `false` otherwise. For any kind but `passkey`, record `factor-added` and delete the user's other sessions in the same batch, each only where the confirmation landed |
+| `FactorStore.confirm` | Confirm only a row not yet confirmed, answering `false` otherwise. For any kind but `passkey`, record `factor-added` and delete the user's other sessions in the same batch |
 | `FactorStore.countAttempt` | Find the factor **and** spend one guess in the one statement, reopening a budget spent longer ago than `lockoutMs`. `null` is "no such factor, or the budget refusing" |
 | `FactorStore.recordVerification` | Write the counter, the cleared budget, `last_verified_at` **and** any `resealed` secret in the one statement, under the `last_counter <` guard **and** a `secret = frame` guard. Split across two, a replayed code re-seals a row it did not advance; without the frame guard, a code checked against a secret a concurrent replacement swapped out is accepted, and a re-seal riding it writes the old secret back |
-| `FactorStore.replaceSecret` | Update a confirmed `totp-app` row of that user in place — the secret, the counter, the cleared budget, `last_verified_at` and `updated_at` — then record `factor-replaced` and delete the user's sessions but `origin.keep`, each only where the update landed, in one batch. Answer `false` where no row matched. Never delete and re-insert: that passes through zero second factors, which is the removal the minimum refuses |
-| `FactorStore.recordVerification` and `replaceSecret` — and nothing else | **These are the only methods that may stamp `last_verified_at`.** `purgeStaleTotpSecrets` deletes by it; leave it NULL and the window is measured from enrolment instead, so the first run drops the factor of every long-standing user, including the ones signing in daily. Stamp it anywhere a guess is merely spent and the purge never reaches anyone |
+| `FactorStore.replaceSecret` | Update a confirmed `totp-app` row of that user in place — the secret, the counter, the cleared budget, `last_verified_at` and `updated_at` — then record `factor-replaced` and delete the user's sessions but `origin.keep`, in one batch. Never delete and re-insert: that passes through zero second factors, which is the removal the minimum refuses |
+| `FactorStore.recordVerification` and `replaceSecret` — and nothing else | **These are the only methods that may stamp `last_verified_at`**, which `purgeStaleTotpSecrets` measures staleness by ([`AUTH_FLOWS.md`][af-9b] §9b) |
 | `FactorStore.countSecretsNotUnder` | Read the key id out of the secret's own first six bytes. A column holding it separately can disagree with the bytes that actually decide whether the secret opens |
 | `FactorStore.remove` / `CredentialStore.removeForUser` | Decide the `floor` in the batch that deletes: probe, then guard the event, the session revocation and the delete on the user still holding a confirmed row of a `floor` kind afterwards. Answer `second-factor-required` where the guard refuses, writing nothing. A count read before the batch lets two concurrent removals take a user's last two second factors |
 | `FactorStore.remove` | Delete the factor and, in the same batch, the user's recovery codes and `recovery-code` row once the user holds no confirmed factor that needs recovery codes beside it ([Choosing which factors a deployment offers](#choosing-which-factors-a-deployment-offers)). Where the factor was confirmed, record `factor-removed` and delete the user's other sessions in that batch too. Split, a failure between them leaves an account holding codes alone |
 | `CredentialStore.create` / `removeForUser` | Insert or delete the credential, record `factor-added` or `factor-removed`, and delete the owner's other sessions, in one batch. `removeForUser` carries the owner in the `WHERE`, so another user's credential deletes nothing. In the same batch, after the credential goes, it deletes the owner's `passkey` factor row once no credential remains, and then the recovery codes and `recovery-code` row on the same condition as `FactorStore.remove`. Out of that order, the last passkey's factor row keeps the codes alive |
-| `RecoveryCodeStore.consume` | Spend a live, unused code, then record `recovery-code-used`, delete the user's other sessions and clear the factor's `failed_attempts`, in one batch and only where this call spent the code. A staged code, a used one or another user's never matches |
+| `RecoveryCodeStore.consume` | Spend a live, unused code, then record `recovery-code-used`, delete the user's other sessions and clear the factor's `failed_attempts`, in one batch. A staged code, a used one or another user's never matches |
 | `RecoveryCodeStore.commit` | Swap the staged set in for the live one and confirm the factor, recording `recovery-codes-issued` and deleting the user's other sessions, in one batch, so a failure leaves the old set working. Answer `false` when no staged set was there |
 | `AdminUserStore.claimFirstAdmin` | Take the role only while no administrator exists, then record `admin-granted`, then move the claimant's session per `rotation`, each guarded on the write before it, in one batch |
-| `AdminUserStore.setAdmin` / `setDeactivated` | Match only an account not already in the asked-for state, and record the event naming `adminId` only where the row changed; answer `unchanged` for an account already there. Deactivating deletes the user's sessions in the same batch, and only when the deactivation landed, so a refused last-admin deactivation signs nobody out |
+| `AdminUserStore.setAdmin` / `setDeactivated` | Match only an account not already in the asked-for state, and record the event naming `adminId`; answer `unchanged` for an account already there. Deactivating deletes the user's sessions in the same batch, and only when the deactivation landed, so a refused last-admin deactivation signs nobody out |
 | `AdminUserStore.resetFactors` | Delete the user's factors, credentials, recovery codes and sessions, revoke their unrevoked bearer tokens and record `factors-reset`, in one batch. Keep the user's security events |
 | `AdminUserStore.remove` | Delete the user and every row of theirs in the auth tables, sessions and security events among them, in one transaction, and answer `referenced` — not an error — when a foreign-key, `NOT NULL` or `CHECK` constraint refuses the user row's delete, leaving every child in place. The shipped adapter deletes the user row alone and the schema's `ON DELETE CASCADE` removes the rest |
 | `IdentityLinkStore.unlink` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing |

@@ -72,11 +72,11 @@ This is the corpus's only routing table; nothing else carries a copy.
 ## 3. The Two Tiers and the Citation Scheme
 
 **Tier 1, the Floor, is invariant** — nothing overrides it. **Tier 2, the Defaults, are rebuttable**, and only by an explicit written brief from the
-consumer: each opens with the literal token `Default:` and ends with the circumstance under which departing is correct. Never by your own aesthetic
-read of the surrounding code.
+consumer, never by your own aesthetic read of the surrounding code.
 
-Every normative sentence carries a stable id in a trailing `rule:forge-ui-…` HTML comment, invisible when rendered, so a finding cites the sentence
-rather than the paragraph. A section number cites the chunk that sentence sits in.
+Each rule's statement lives in the register, `config/rules.config.ts`, and its stable id opens the paragraph, list item or table cell that argues
+it, as a `rule:forge-ui-…` HTML comment; warden renders the statement in bold there. A finding cites the rule's id, and a section number cites the
+chunk the rule sits in.
 
 That is the whole of what you need to read the corpus. The tiers' full definitions — the Floor's Verify/Refuse split, what makes a Default
 well-formed, and the identifier scheme's rules — are `UI_DESIGN_GUIDANCE.md` §2 and §3's, in forge's own `docs/`.
@@ -85,16 +85,14 @@ well-formed, and the identifier scheme's rules — are `UI_DESIGN_GUIDANCE.md` �
 
 ## 4. The Working Contract
 
-**Before acting, you must have loaded [`floor.md`][floor].** It is the invariant tier — the obligations you verify before reporting done, and the
-prohibitions you hold the whole time you are generating. There is no surface small enough to skip it, and no brief that overrides it.
+**Before acting, you must have loaded [`floor.md`][floor]**: its obligations are verified before you report done and its prohibitions held
+throughout, on every surface and under every brief.
 
-**Before finishing, you must have run [`preflight.md`][preflight] and reported its countable evidence.** Counts, not adjectives: "looks right" is
-not a preflight result.
+**Before finishing, you must have run [`preflight.md`][preflight] and reported its countable evidence** — counts, not adjectives.
 
 Between those two, read only what the task names (§1).
 
-Part of acting is the **Design Read**, defined as `forge-ui-design-read` in [`floor.md`][floor] with the shape it takes; do not reconstruct it from
-here.
+Part of acting is the **Design Read**, defined as `forge-ui-design-read` in [`floor.md`][floor].
 
 ---
 

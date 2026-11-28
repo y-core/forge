@@ -1,0 +1,29 @@
+{
+  "id": "consumer-contact-form",
+  "tree": "consumer",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "accept": ["tests/contact.accept.ts"],
+  "traps": [
+    {
+      "id": "issue-message",
+      "rules": ["dependency:forge/INPUT_VALIDATION.md#1b", "canon:ERROR_HANDLING.md#3b"],
+      "detector": { "kind": "rg", "pattern": "\\bissues?\\b[^\\n]*\\.message\\b", "paths": ["src"] }
+    },
+    {
+      "id": "strict-object",
+      "rules": ["dependency:forge/INPUT_VALIDATION.md#1d", "canon:BOUNDARIES.md#3a", "canon:BOUNDARIES.md#3b"],
+      "detector": { "kind": "rg", "pattern": "\\bv\\.(object|looseObject)\\(", "paths": ["src"] }
+    },
+    {
+      "id": "raw-env",
+      "rules": ["canon:APP_ARCHITECTURE.md#3a", "canon:CODE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "c\\.env\\.(?!DB\\b)[A-Z_]+", "paths": ["src"], "pcre": true }
+    },
+    {
+      "id": "substring-markup-assertion",
+      "rules": ["canon:TESTING.md#3a", "canon:CODE_REVIEW.md#3b"],
+      "detector": { "kind": "rg", "pattern": "toContain\\(|toMatch\\(|\\.includes\\(", "paths": ["tests"] }
+    }
+  ]
+}

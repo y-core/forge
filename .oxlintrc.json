@@ -16,9 +16,8 @@
     "forge/suppression-needs-reason": "error",
     // The JSX contract's ordering half, read off the AST; `docs/STATE_ATTRIBUTES.md` states the rule.
     "forge/data-slot-before-spread": "error",
-    // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
-    // are `forge-ui-` + the key here; `docs/UI_DESIGN_GUIDANCE.md` states them
-    // and `validate-design` fails when this list and `design-rules.ts`'s register disagree.
+    // The design corpus's class-string rules, read off the AST rather than line by line. Each rule
+    // carries its register id, and `validate-rules` fails a register lint key no config enables.
     "forge/a11y-heading-size-by-class": "error",
     "forge/a11y-aria-beside-data": "error",
     "forge/a11y-label-association": "error",
@@ -39,6 +38,7 @@
     "forge/platform-text-pretty": "error",
     "forge/reduced-motion": "error",
     "forge/spacing-scale-only": "error",
+    "forge/vouched-message-env-key": "error",
     // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see docs/FORGE_REVIEW.md §7c
     "jsx-a11y/prefer-tag-over-role": "off",
     "typescript/no-explicit-any": "error",
@@ -106,6 +106,46 @@
             "checkGlobalObject": true
           }
         ],
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "process",
+                "message": "A Worker has no `process`: read the env binding, and import \"node:process\" only in build-time code."
+              },
+              {
+                "name": "node:buffer",
+                "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code."
+              },
+              { "name": "buffer", "message": "A Worker has no `Buffer`: use `Uint8Array`, and import \"node:buffer\" only in build-time code." }
+            ],
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
+              },
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              },
+              {
+                "group": ["@remix-run/headers"],
+                "message": "Take header classes from the http namespace — only src/http/ imports @remix-run/headers."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // `http` is the one namespace that wraps `@remix-run/headers`; everything else above still holds there.
+      "files": ["src/http/**"],
+      "rules": {
         "eslint/no-restricted-imports": [
           "error",
           {

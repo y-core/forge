@@ -5,6 +5,9 @@ import { changed } from "../impact/git";
 import { impact } from "../impact/impact";
 import { renderImpact } from "../impact/render";
 import type { Knowledge } from "../index/open";
+import { sweepRules } from "../rules/check";
+import { corpusSections, rulesInScope, type StepSummary } from "../sdk/data";
+import { runQuery } from "../sdk/query";
 import { outline, readSection } from "../search/read";
 import { related } from "../search/related";
 import { renderHit } from "../search/render";
@@ -43,7 +46,7 @@ export function knowledgeTools(knowledge: Knowledge): readonly ToolSpec[] {
       name: "knowledge_search",
       annotations: reading("Search the governing corpus"),
       description:
-        "Rank the governing corpus against a question. Returns chunk ids of the form `canon:CODE_RULES.md#5c` — pass one to knowledge_read. Each hit carries a coverage figure from 0 to 1: how much of your question that section actually addresses. A question the corpus does not cover returns nothing at all rather than a near miss, so an empty result is an answer — it means no rule here governs what you asked. Hits are drawn from three corpora: the fleet canon, this repository's own documents, and the installed library's consumer-facing documents — the last governs the library rather than this repository, so read it as advice on using the library and never as a rule about where this repository's own code goes. Search before inferring any architectural rule." +
+        "Rank the governing corpus against a question. Returns chunk ids such as `canon:CODE_RULES.md#5c` for knowledge_read, each with a 0–1 coverage of your question. An empty result is an answer: no rule here governs what you asked. Hits come from the fleet canon, this repository's documents and the installed library's consumer docs — read the last as advice on using the library, never as a rule on where this repository's code goes. Search before inferring any architectural rule." +
         covers,
       inputSchema: {
         type: "object",
@@ -115,6 +118,31 @@ export function knowledgeTools(knowledge: Knowledge): readonly ToolSpec[] {
         required: ["ref"],
       },
     },
+    {
+      name: "warden_check",
+      annotations: reading("Sweep files with the register's patterns"),
+      description:
+        "The Tier-2 review sweep in one call: the register's rg patterns over the tree, `files` or a `diff`. Returns JSON hits { rule, level, file, line, match } and, once per rule, its statement, rationale chunk id and triage. A `fail` hit breaks a gated rule; read a `warn` hit against its triage.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: { type: "array", items: STRING, description: "Repository-relative files to check instead of the tree" },
+          diff: { ...STRING, description: "Check only files changed against this git ref, e.g. `main`" },
+          rules: { type: "array", items: STRING, description: "Rule ids to run instead of every rule in scope" },
+        },
+      },
+    },
+    {
+      name: "warden_query",
+      annotations: reading("Query the register, corpus and gate in code"),
+      description:
+        'Run an async arrow over frozen `rules` (id, statement, detectors, scope, rationale.chunk), `corpus` (sections: id, path, section, title, gloss, body, relations) and `steps` (tier, label, fixable, watches), returning only what it returns, as JSON. No require, process, I/O or timers; 2s limit. Filter and join here instead of paging through search results, e.g. `async () => rules.filter(r => r.detectors.every(d => d.kind === "review")).map(r => r.id)`.',
+      inputSchema: {
+        type: "object",
+        properties: { code: { ...STRING, description: "An async arrow function expression; its resolved value is returned" } },
+        required: ["code"],
+      },
+    },
   ];
 }
 
@@ -164,8 +192,21 @@ function boundedLimit(value: unknown): number {
   return Math.min(50, Math.max(1, Math.floor(value)));
 }
 
-/** Runs one tool against an open index. @public */
-export function callTool(knowledge: Knowledge, name: string, args: Record<string, unknown>): ToolResult {
+function strings(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+}
+
+function scopeKind(knowledge: Knowledge): "libs" | "apps" {
+  return knowledge.kind === "libs" ? "libs" : "apps";
+}
+
+/** Runs one tool against an open index; `steps` is the repository's step table, which `warden_query` exposes. @public */
+export async function callTool(
+  knowledge: Knowledge,
+  name: string,
+  args: Record<string, unknown>,
+  steps: readonly StepSummary[] = [],
+): Promise<ToolResult> {
   const advisory = knowledge.advisory === "" ? "" : `! ${knowledge.advisory}\n\n`;
 
   switch (name) {
@@ -231,6 +272,32 @@ export function callTool(knowledge: Knowledge, name: string, args: Record<string
       } catch (error) {
         return failure(error instanceof Error ? error.message : String(error));
       }
+    }
+
+    case "warden_check": {
+      const rules = rulesInScope(knowledge.root, scopeKind(knowledge));
+      if (!rules.ok) return failure(rules.error);
+      const files = strings(args.files);
+      const ids = strings(args.rules);
+      const report = sweepRules({
+        root: knowledge.root,
+        rules: rules.data,
+        ...(files === undefined ? {} : { files }),
+        ...(typeof args.diff === "string" ? { diff: args.diff } : {}),
+        ...(ids === undefined ? {} : { ids }),
+      });
+      if (!report.ok) return failure(report.error);
+      return text(truncate(JSON.stringify(report.data), "", "Narrow it with `files`, `diff` or `rules`."));
+    }
+
+    case "warden_query": {
+      const code = typeof args.code === "string" ? args.code : "";
+      if (code.trim() === "") return failure("warden_query needs `code`, an async arrow function");
+      const rules = rulesInScope(knowledge.root, scopeKind(knowledge));
+      if (!rules.ok) return failure(rules.error);
+      const result = await runQuery(code, { rules: rules.data, corpus: corpusSections(knowledge.db), steps });
+      if (!result.ok) return failure(result.error);
+      return text(advisory + truncate(result.data, "", "Return less: filter, map to the fields you need, or slice."));
     }
 
     default:

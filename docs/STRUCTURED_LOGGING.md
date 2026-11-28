@@ -44,8 +44,8 @@ audience: consumer
 
 ### 2a. LogChannel Object Interface
 
-`LogChannel` is an **object** (not a bare function). The logger calls `channel.write(record)`; the viewer calls `channel.read?(query)`. `read` is
-optional — channels that have no backing store (like `consoleChannel`) simply omit it and the viewer renders an empty table.
+`LogChannel` is an **object**, not a bare function. A channel with no backing store (like `consoleChannel`) omits the optional `read`, and the
+viewer renders an empty table.
 
 The prefix captured at construction time is used for **both** write and read, so a `kvLogChannel` configured with `prefix: "app-logs"` always reads
 `app-logs||…` keys — never the default `logs||…` prefix.
@@ -54,10 +54,6 @@ The prefix captured at construction time is used for **both** write and read, so
 
 `kvLogChannel` writes structured JSON log records to a Workers KV namespace and exposes a `read` method for the log viewer. **Pair it with
 `consoleChannel` for dual output** — see §2d for the selection pattern.
-
-`Date`, `Map` and `Set` carry their payload outside enumerable own properties, so the clone every channel receives (§2h) gives each an explicit form
-instead of flattening it to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and `{ type: "Set", values: […] }`. A
-reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores rather than overflowing the stack.
 
 **The key format is §2g's**, and the viewer inherits its ordering from it.
 
@@ -133,18 +129,16 @@ its `data` replaced by the single field `LOG_REDACTION_FAILED`. Failing closed i
 publish exactly the values the pass exists to remove, and throwing would let a logging call fail the work it describes.
 
 **The opt-out is one greppable literal**, `redact: "allow-unredacted-logs"` — after the log viewer's `"allow-unauthenticated"` precedent (§5a), and
-deliberately not an `"off"` member of `mode`, which §5b forbids: a security relaxation must not share an option name with a choice between two
-equally-safe behaviours. It disables the pass for the whole logger.
+not an `"off"` member of `mode`, because a security relaxation never shares an option with a choice between two safe behaviours. It disables the
+pass for the whole logger.
 
 **`withRedaction(channel, redact)` can only tighten.** It wraps a channel so each record passes through `redact` before `write`; `read`/`readEntry`
 pass through unchanged. It runs **after** the logger-wide floor, on a record whose masked values are already gone, so it cannot restore one — the
 configuration where console is dirtier than KV is unrepresentable, and that is the point of the ordering. Its use is a sink held to a **stricter**
 standard than the floor: a third-party destination, or dropping `body` on the persisting channel while console keeps it.
 
-Independently, `kvLogChannel` applies a built-in **stack-redaction default**: `KvLogChannelOptions.persistStack` is `false`, so any `stack` property
-is recursively stripped from a **cloned** `record.data` before persistence — error stacks never enter the KV retention window. The caller's
-record is never mutated, so `consoleChannel` keeps the full stack for local debugging. Set `persistStack: true` only when stacks must survive in KV
-(e.g. a short-retention debug namespace).
+Independently, `kvLogChannel` strips every `stack` from its own clone unless `persistStack` is set, so error stacks never enter the KV retention
+window while `consoleChannel` keeps them. **Set `persistStack` only for a short-retention debug namespace.**
 
 ### 2f. Channel Write Failures and flush's Error Contract
 
@@ -168,12 +162,10 @@ buffer by its cap — writes `flush` never sees, and which would otherwise fail 
 best-effort contract over evicted writes are owned by `src/logging/logger.ts`; usage is in `src/logging/README.md`.
 
 **Both failure modes are absorbed, not only the asynchronous one.** A channel may fail two ways: by rejecting the promise it returned, or by
-throwing before it returns one at all. The second is reachable through the default channel — `consoleChannel` calls `JSON.stringify`, which throws
-on a cyclic `data` payload, so an object graph holding a back-reference would otherwise take the request down. The logger's own clone marks a
-back-reference `"[circular]"` before any channel sees it (§2e), so that payload reaches the throw only on a hand-built record or a logger carrying
-the `"allow-unredacted-logs"` opt-out — both of which the absorption still covers. A synchronous throw has no promise to attach a sibling handler
-to, so it is reported directly instead, and nothing enters the pending buffer for `flush` to await. The guard is per channel rather than around the
-fan-out, so one channel throwing still leaves the rest to run.
+throwing before it returns one at all. `consoleChannel`'s `JSON.stringify` throws on a cyclic payload, which the logger's clone prevents except on a
+hand-built record or under the `"allow-unredacted-logs"` opt-out. A synchronous throw has no promise to attach a sibling handler to, so it is
+reported directly instead, and nothing enters the pending buffer for `flush` to await. The guard is per channel rather than around the fan-out, so
+one channel throwing still leaves the rest to run.
 
 `RequestLoggerOptions` mirrors the option and threads it into the per-request logger (§3a).
 
@@ -210,9 +202,7 @@ local test, the KV record days later in the viewer — so a shape that differs b
 **Every channel receives one JSON-stable clone, built before the fan-out.** Redaction clones `data` inside `dispatch`, so what reaches `write` is
 never the caller's live object: a `Date` is its ISO instant, a `Map` and a `Set` carry their tagged form, a repeated reference on its own path is
 `"[circular]"`, and a `URL` is `origin + pathname`. `consoleChannel` prints exactly what `kvLogChannel` stores, and **a channel author must not
-expect a live instance** — this is the contract, not an implementation detail. `consoleChannel` keeps its own `urlNarrowing` replacer anyway,
-because it is a public factory a caller may hand a hand-built record to; it is defence in depth at zero cost rather than dead code.
-
+expect a live instance** — this is the contract, not an implementation detail.
 **A value's own `toJSON` decides its logged form.** This is the standard "safe to log" pattern: give a domain object a `toJSON` that drops its
 secret, and the secret is absent from the console line _and_ from the KV record. `kvLogChannel` consults `toJSON` before its own `Map`/`Set` forms,
 exactly as `JSON.stringify` does, and then walks the result — so `persistStack: false` (§2e) still strips a `stack` the `toJSON` returned.
@@ -228,16 +218,13 @@ so this is not a persistence-only concern. Log a query parameter you actually ne
 
 ### 3a. requestLogger Configuration
 
-`requestLogger` is middleware. **Register it with `app.use("*", …)` near the top of the middleware chain.** The `channels` function is called
-per-request for env-dependent selection (§2d); `bindings` adds extra fields to every record.
+`requestLogger` is middleware. **Register it with `app.use("*", …)` near the top of the middleware chain.** `channels` is called per request, for
+the selection §2d describes.
 
 ### 3c. Ordering: requestId Before requestLogger
 
-`requestId()` middleware must run before `requestLogger` in the middleware chain so the `bindings` callback can read the already-set request ID from
-context. If ordered incorrectly, `requestId` will be undefined in every log record.
-
-`applyMiddlewareChain` produces that order, along with the rest of the chain's — see [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e, which is where the
-whole order is stated. A hand-written chain registers `requestId()` first and `requestLogger` after it.
+**`requestId` runs before `requestLogger`**, or the `bindings` callback finds no id and every record carries none. `applyMiddlewareChain` produces
+that order ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 
 ### 3d. Forge's Own Records Follow the Request Logger
 
@@ -342,8 +329,7 @@ the page's `view` never executes — there is no HX-branch and no fragment call 
 
 The `channel` factory is called once per request, and §2a's prefix rule is what makes the viewer read the key space the logger writes to.
 
-**`access` is required because logs expose request paths, ids, and error messages** — forgetting a guard is a compile error, and public mounts must
-opt out explicitly.
+<!-- rule:forge-log-viewer-access --> Logs expose request paths, ids and error messages, so `access` is a required option rather than a default.
 
 **`icon` is required**: the app injects its own bound `ForgeIcon<"chevron-down">` (from `@y-core/forge/ui/core`) so `logging/viewer` renders the
 filter-bar chevron without owning an icon set. This is what makes `logging/viewer` a declared cross-namespace edge onto `ui/core` — see

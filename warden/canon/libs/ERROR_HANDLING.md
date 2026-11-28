@@ -46,32 +46,29 @@ There is exactly **one** result primitive, published from a single namespace, di
 
 **Return `Result` from any function that can fail predictably.**
 
-**There is exactly one failure field: `error`.** No `errors`, no `reason`, no `message` — every domain shape reuses that one channel. Success
-carries `data`. A second failure field is how a codebase ends up with two half-honoured conventions and call sites that check the wrong one.
+`Result`'s type owns the shape; **every domain shape reuses its one failure field, `error`**, because a second one is how a codebase ends up with
+half-honoured conventions.
 
-**Build values with `ok()` / `err()`, never object literals.** They are the one documented exception to the `create*` naming rule
-([`NAMESPACE_DESIGN.md`][nd-4a] §4a): they construct values, not configured objects.
+<!-- rule:libs-error-handling-result-literal --> They are the one documented exception to the `create*` naming rule ([`NAMESPACE_DESIGN.md`][nd-4a]
+§4a): they construct values, not configured objects.
 
 ### 1b. Narrowing a Result
 
 **Narrow with a single `if (!r.ok)` guard and return early.** Chaining by early return keeps the happy path at the left margin; nesting does not.
 After the guard, the success branch is narrowed by the discriminant alone.
 
-**A cast after a `Result` check is a defect.** The discriminant exists so the narrowing is free; reaching for `as` means the guard was written in a
-shape the compiler cannot follow, and the fix is the guard.
+**A cast after a `Result` check is a defect**: it means the guard was written in a shape the compiler cannot follow, and the fix is the guard.
 
 ### 1c. Domain Aliases
 
-A domain alias is a plain alias that narrows **only** the failure type `E`. The discriminant stays `ok`; the failure channel stays `error`.
+A domain alias narrows **only** the failure type `E`; the `ValidationResult` and `GuardResult` declarations own their shapes.
 
-**A validation result carries a flat list of already-formatted messages** in `error` — one per failing field, ready to render. Do not collapse the
-issues into a single `Error`: the list is what lets a response surface every failing field at once instead of one at a time.
+**A validation result carries a flat list of already-formatted messages, one per failing field**, never a single `Error`, so a response can surface
+every failing field at once.
 
-**A guard result is for predicate checks that produce no success value** — origin, CSRF, challenge verification. Its failure type is typically a
-string-literal union of reason codes.
+**A guard result is for predicate checks that produce no success value** — origin, CSRF, challenge verification.
 
-**Never echo a guard's reason code to a client.** It is a server diagnostic, and it describes which check failed — which is exactly the information
-an attacker is probing for.
+**Never echo a guard's reason code to a client**: it names which check failed, exactly what an attacker is probing for.
 
 ---
 
@@ -79,9 +76,8 @@ an attacker is probing for.
 
 ### 2a. Never Return a Bare Nullable
 
-**A public function that can fail does not return `T | null` or `T | undefined`.** A nullable return collapses every distinct failure into one
-indistinguishable absence, so the caller cannot tell "not found" from "malformed" from "the binding was missing" — and it silently invites `??`,
-which turns a failure into a default.
+**A public function that can fail does not return `T | null` or `T | undefined`**: its caller cannot tell "not found" from "malformed" from "the
+binding was missing", and it invites `??`, which turns a failure into a default.
 
 `undefined` remains correct for a value that is _legitimately optional_, where absence is not a failure and carries no reason worth reporting.
 
@@ -127,7 +123,7 @@ other untrusted string — the message may embed input the client itself supplie
 ### 4a. Where the Posture Is Owned
 
 [`BOUNDARIES.md`][boundaries-5] §5 owns the fail-closed rule, the `required: false` asymmetry, and the conditions under which a fail-open exception
-may be ratified. This section restates none of it, and owns only what is specific to the _error path_ itself.
+may be ratified; this section owns only what is specific to the _error path_.
 
 ### 4b. No Error Path Ships an Unprotected Response
 
@@ -153,8 +149,8 @@ last place a header policy should be missing.
 
 Predictable outcomes of valid interactions: validation errors, not-found resources, business rule violations. They are not exceptional.
 
-**Return `Result<T, E>` from service and utility functions**, and a rendered failure from handlers. **Never `throw`** — it hides the error path from
-the type system and forces callers into `try/catch`.
+**Return `Result<T, E>` from service and utility functions**, and a rendered failure from handlers, **never a `throw`**, which hides the error path
+from the type system.
 
 The one throw that belongs in this tier is a **programming error**: an argument shape the API contract forbids, an invariant a caller violated. That
 is a bug being surfaced, not a runtime condition being handled, and no caller could have done anything with a `Result` for it.
@@ -164,10 +160,9 @@ than throwing ([`BOUNDARIES.md`][boundaries-5b] §5b).
 
 ### 5b. Unexpected Errors and the Error Boundary
 
-Mistakes that cannot be recovered at the call site. **The application needs no per-route `try/catch`** — the router installs an error boundary as
-middleware, and it is installed at more than one depth, because a throw from a route handler and a throw from an application-level guard unwind
-through different amounts of the chain and therefore carry different headers. The repository's own `docs/FORGE_ERRORS.md` §5b names the depths and
-the guarantee each one gives.
+Mistakes that cannot be recovered at the call site. **The application needs no per-route `try/catch`**: the router installs an error boundary as
+middleware at more than one depth, because a route-handler throw and an application-guard throw unwind through different amounts of the chain and so
+carry different headers. The repository's own `docs/FORGE_ERRORS.md` §5b names the depths and the guarantee each one gives.
 
 The portable consequence: **middleware that queues headers before calling next still protects an error page; middleware that queues on the way out
 does not**, because the guards downstream of a throw never ran.

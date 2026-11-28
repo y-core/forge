@@ -1,16 +1,15 @@
 import { attributeNamed, attributesOf, openingTag, statedString } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 const LIVE_ROLES = new Set(["alert", "status", "log"]);
 
 const ROUTE = "speak through `announce()` into the page's one `<Announcer />`";
 
 /** A live region opened outside the page's one announcer, whose utterances would then interleave. */
-export const a11yOneLiveRegion: LintRule = {
+export const a11yOneLiveRegion = defineLintRule("forge-ui-a11y-one-live-region", {
   meta: { type: "problem", docs: { description: "A page has one live region; a second one interleaves its announcements with the first." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-one-live-region");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         const liveAttribute = attributeNamed(node, "aria-live");
@@ -34,4 +33,4 @@ export const a11yOneLiveRegion: LintRule = {
       },
     };
   },
-};
+});

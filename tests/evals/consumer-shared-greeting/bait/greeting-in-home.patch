@@ -1,0 +1,62 @@
+diff --git a/src/controllers/home.ts b/src/controllers/home.ts
+index 66be5343..a01df52c 100644
+--- a/src/controllers/home.ts
++++ b/src/controllers/home.ts
+@@ -5,7 +5,13 @@ import { routes } from "../routes";
+ import { siteSummary } from "../services/site";
+ import { HomeView } from "../views/home";
+ 
++/** How the site greets a visitor: by name, or as a friend when it has none. */
++export function greetingFor(siteName: string, visitor: string): string {
++  const name = visitor.trim();
++  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
++}
++
+ export const homePage = definePage(routes.home, {
+-  loader: async (c, config) => siteSummary(c.env.DB, config.siteName),
+-  view: (_c, _config, state) => renderPage(HomeView({ site: state.data })),
++  loader: async (c, config) => ({ site: await siteSummary(c.env.DB, config.siteName), greeting: greetingFor(config.siteName, "") }),
++  view: (_c, _config, state) => renderPage(HomeView({ site: state.data.site, greeting: state.data.greeting })),
+ });
+diff --git a/src/views/home.tsx b/src/views/home.tsx
+index d91f00b1..cfcef72c 100644
+--- a/src/views/home.tsx
++++ b/src/views/home.tsx
+@@ -1,6 +1,6 @@
+ import type { SiteSummary } from "../model/site";
+ 
+-export function HomeView({ site }: { site: SiteSummary }) {
++export function HomeView({ site, greeting }: { site: SiteSummary; greeting: string }) {
+   return (
+     <html lang='en'>
+       <head>
+@@ -10,6 +10,7 @@ export function HomeView({ site }: { site: SiteSummary }) {
+       <body>
+         <main>
+           <h1>{site.name}</h1>
++          <p>{greeting}</p>
+           <p>{site.databaseUp ? "The database is up." : "The database is not answering."}</p>
+         </main>
+       </body>
+diff --git a/tests/app.test.ts b/tests/app.test.ts
+index afbf9f4e..dcdc0539 100644
+--- a/tests/app.test.ts
++++ b/tests/app.test.ts
+@@ -17,10 +17,15 @@ afterEach(async () => {
+ });
+ 
+ describe("the home page", () => {
+-  it("names the site and reports the database up", async () => {
++  it("names the site, greets the visitor as a friend and reports the database up", async () => {
+     const res = await createWorker({ scriptSrc: ["'self'"] }).request("/", {}, testEnv(d1));
+ 
+     expect(res.status).toBe(200);
+-    expect((await res.text()).split(/<[^>]+>/).filter(Boolean)).toEqual(["Forge Eval", "Forge Eval", "The database is up."]);
++    expect((await res.text()).split(/<[^>]+>/).filter(Boolean)).toEqual([
++      "Forge Eval",
++      "Forge Eval",
++      "Welcome to Forge Eval, friend.",
++      "The database is up.",
++    ]);
+   });
+ });

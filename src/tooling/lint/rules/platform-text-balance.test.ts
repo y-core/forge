@@ -3,10 +3,10 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { platformTextBalance } from "./platform-text-balance.ts";
 
-const CORPUS = "(forge-ui-platform-text-balance — src/ui/design/reference/16-platform.md)";
+const PREFIX = "[forge-ui-platform-text-balance] ";
 
 const detail = (size: string): string =>
-  `\`${size}\` heading with no \`text-balance\` — balance the line breaks with \`text-wrap: balance\` ${CORPUS}`;
+  `${PREFIX}\`${size}\` heading with no \`text-balance\` — balance the line breaks with \`text-wrap: balance\``;
 
 describe("platform-text-balance", () => {
   it("reports a display-sized heading with no `text-balance`", () => {

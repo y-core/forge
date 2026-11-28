@@ -32,29 +32,26 @@ audience: consumer
 
 ## 1. State Attribute Contract
 
-**State attributes are the styling hooks CSS matches on to react to a component's state, and they are declared once, in
-`src/ui/contracts/state-attrs.ts`, which both tiers import.** Neither the server-rendered component nor the browser controller owns the contract: a
-state attribute is written in **two places that cannot see each other**, and drift is _silent_ — the selector stops matching, so the component looks
-unstyled rather than broken. The same argument produced the delegated-event vocabulary ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). The declaration is
-authoritative over any prose naming forge's state attributes, and nothing here enumerates it, for the reason [`UI_CLASS_COMPOSITION.md`][ucc-1a] §1a
-gives about `class-groups.ts`.
+**State attributes are the styling hooks CSS matches on, declared once in `src/ui/contracts/state-attrs.ts`, which both tiers import**, because the
+server component and the browser controller write them in two places that cannot see each other, and drift is silent: the selector stops matching
+and the component looks unstyled rather than broken. The declaration is authoritative over any prose naming forge's state attributes; nothing here
+enumerates it.
 
 **Adding a styling hook means adding it to that declaration first.** A component that emits a state attribute outside the table fails the
 conformance sweep (§4) — smuggling a hook past it is the exact failure the single declaration exists to prevent.
 
-**And a declared name with no producer is removed.** A hook that is never emitted is the _inverse_ of the drift above and just as misleading: a
-consumer styles against it and gets a rule that can never match — so a hook is added with its producer, never ahead of it. The question such a hook
-has to answer is whether it describes a state a selector cannot already reach. Where the answer is yes it gets a controller rather than a deletion;
-where a selector already reaches the state — `:has()` reading a popup's own `:popover-open` from the trigger's rule — it goes.
+<!-- rule:forge-state-attr-has-producer --> A hook that is never emitted is the _inverse_ of the drift above and just as misleading: a consumer
+styles against a rule that can never match. A hook describing a state no selector can reach gets a controller; one a selector already reaches —
+`:has()` on a popup's own `:popover-open` — is deleted.
 
 **`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not `aria-checked`, so reusing `data-checked` would
 announce a tab as a radio; and calling it structural rather than a state would be false, because it is precisely a state a stylesheet reacts to.
 
 ### 1a. Presence, Not Value
 
-**Boolean states are emitted by presence, with an empty value — `data-selected=""`, never `data-selected="true"`.** `[data-selected]` is a cheaper
-and a more honest selector, and a false state emits nothing at all. The declaration marks the few valued attributes as such: they carry a choice
-rather than a flag. `data-state` is the valued state a component computes from its own enum, and it is never a serialized payload (§3).
+<!-- rule:forge-state-presence-empty --> `[data-selected]` is a cheaper and a more honest selector, and a false state emits nothing at all. The
+declaration marks the few valued attributes as such: they carry a choice rather than a flag. `data-state` is the valued state a component computes
+from its own enum, and it is never a serialized payload (§3).
 
 **A state the platform already exposes is not in the table** ([`UI_SSR_COMPONENTS.md`][usc-3e] §3e); republishing it as a `data-` flag would be a
 second copy of a fact forge does not own.
@@ -66,16 +63,12 @@ second copy of a fact forge does not own.
 a stylesheet matching `[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the correct ARIA for a widget changes,
 the styling breaks with it.
 
-**Writing the pair is the controller's own step, and deliberately not one function's.** `applyStateAttrs` reconciles the `data-` half; the
-controller writes the ARIA half beside it, in the same statement. A single helper would have to know which ARIA attribute a state maps to, and that
-is the widget's question rather than the table's: `selected` is `aria-selected` on a tab and `aria-current` on a carousel dot, which is a link that
-was never selectable. Pairing them by hand is what lets each controller answer it. **Every client repaint is pinned by its controller's co-located
-test reading both halves**, so a repaint that wrote one and not the other fails there rather than in a consumer's page.
+**Writing the pair is the controller's own step, and deliberately not one function's**: `applyStateAttrs` reconciles the `data-` half and the
+controller writes the ARIA half beside it, because which ARIA attribute a state maps to is the widget's question — `selected` is `aria-selected` on
+a tab and `aria-current` on a carousel dot. **Every client repaint is pinned by its controller's co-located test reading both halves.**
 
-**The pairing is a licence to emit the hook, not a licence to emit it unreconciled.** A `data-` attribute no controller ever updates and no
-stylesheet ever reads is not a hook at all — it is a claim the markup makes once and cannot keep, so it is deleted rather than kept for symmetry.
-That is why `Toggle` and `ToggleGroup.Item` emit no `data-pressed`: nothing reads it and nothing reconciles it, so it could only ever go stale on
-the first press.
+**The pairing is a licence to emit the hook, not to emit it unreconciled**: a `data-` attribute no controller updates and no stylesheet reads is
+deleted rather than kept for symmetry, which is why `Toggle` and `ToggleGroup.Item` emit no `data-pressed`.
 
 **`aria-orientation` is emitted on both axes, including the role's default**, where the design reference omits the default value. An attribute
 present exactly when a caller passed a non-default is one a test has to assert two ways and a reader has to know a role table to interpret.
@@ -104,33 +97,31 @@ only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-3e] §3e); the ru
 
 ## 2. Presentational Attributes Are Declared Too
 
-**The enum half of the vocabulary is declared beside the state half, and is emitted through `presentationAttrs()` rather than hand-written at each
-call site.** These are the styling hooks that carry a _choice_ rather than a flag — `data-tone` and `data-size` among them — and
-spelling one as a string literal in the component that emits it is the same two-places-that-cannot-see-each-other problem §1 solves for the boolean
-states, with the same silent failure mode: a stylesheet is written against a name, and nothing holds a literal to a declaration.
+<!-- rule:forge-attr-vocabulary-via-helper --> The enum half of the vocabulary — the styling hooks that carry a _choice_ rather than a flag,
+`data-tone` and `data-size` among them — is declared beside the state half, and spelling one as a string literal in the component that emits it is
+the same two-places-that-cannot-see-each-other problem §1 solves for the boolean states, with the same silent failure mode: a stylesheet is written
+against a name, and nothing holds a literal to a declaration.
 
 **They are the attribute mirror of the prop vocabulary** ([`UI_SSR_COMPONENTS.md`][usc-1m] §1m), so the declaration is one list and not two: a prop
 drawn from the ratified vocabulary becomes an attribute drawn from the same names.
 
-**The frozen-hook technique from `state-attrs.ts` carries over unchanged.** A runtime member access on the declaration table retains the whole table
-in every consumer bundle, so the attribute names are reached as frozen module-scope constants and never by dynamic key.
+<!-- rule:forge-attr-table-no-dynamic-key --> **The frozen-hook technique from `state-attrs.ts` carries over unchanged**: a runtime member access on
+the declaration table retains the whole table in every consumer bundle, so the attribute names are reached as frozen module-scope constants.
 
 ## 3. The Island Payload Is Not a State Enum
 
-**A serialized island payload is written to `data-island-state` and never to `data-state`.** One shared name would carry two grammars — a
-component's enum and a JSON object — that the reader cannot tell apart: `hydrateState` throws unless the value parses to a JSON object, so a
-component spreading `...rest` onto an element that also carries an enum would make `resume()` throw from markup that type-checks.
+<!-- rule:forge-island-state-attr --> One shared name would carry two grammars — a component's enum and a JSON object — that the reader cannot tell
+apart: `hydrateState` throws unless the value parses to a JSON object, so a component spreading `...rest` onto an element that also carries an enum
+would make `resume()` throw from markup that type-checks.
 
-**The split is by name, not by a parse-and-guess.** A tolerant reader that treated an unparseable value as "no state" would swallow a genuinely
-corrupt payload, which is the failure `resume()` exists to report. Giving the payload its own name makes the throw unreachable from a component's
-enum by construction, and leaves `data-state` a declared member of §1's table.
+**The split is by name, not by a parse-and-guess**, because a tolerant reader would swallow a genuinely corrupt payload, the failure `resume()`
+exists to report.
 
 ## 4. The Sweep Is Closed-World
 
 **The sweeps assert that every `data-*` a forge element emits is declared** — in the state table, in §2's presentational set, or in the wiring
-vocabulary, which carries its reason beside each name. The assertion runs in that direction and not the other: filtering the rendered attributes
-down to the declared set before comparing them makes the comparison unfalsifiable, which is how an undeclared name ships past a test whose stated
-purpose is to stop it.
+vocabulary, which carries its reason beside each name — and never filter the rendered attributes to the declared set first, which would make the
+comparison unfalsifiable.
 
 **Each sweep sees different things, which is why they are separate.** One **renders** probes and reads the attributes off the markup, so it sees
 what ships and nothing a component merely mentions; the other **scans source text**, so it reaches the namespaces no probe mounts — at the cost of
@@ -163,9 +154,8 @@ hardcoding it** — `slotToken(own, inherited)`, so a component nested inside an
 per split with the reason it is a split. It holds the pair both ways: a `classSlot` with no reason beside it fails, and a reason with no split to
 explain fails too.
 
-**`forge/data-slot-before-spread` does not catch this and is not extended to.** It enforces the _ordering_ of a slot attribute against the forwarded
-props, never its _placement_ on the element tree, so an inner-element token is outside what it can see. Naming the splits in the sweep's table is
-the record; teaching a class-order check about element identity would be a second, weaker copy of the sweep.
+**`forge/data-slot-before-spread` does not catch this and is not extended to**: it checks a slot attribute's ordering against forwarded props, never
+its placement in the tree, and the sweep's table is already the record.
 
 [ucc-1a]: ./UI_CLASS_COMPOSITION.md#1a-conflict-resolution-the-fail-open-boundary-and-the-memo
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer

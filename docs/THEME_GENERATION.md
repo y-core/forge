@@ -56,9 +56,8 @@ prose here; [`SOURCE_OF_TRUTH.md`][sot-2d] §2d registers the dial contract and 
 
 ### 1a. The Dial Declaration and Its Units
 
-**A dial is declared once and carries everything about itself** — the state field, the query parameter, the accessible name, the range, the step,
-and the value an absent parameter means. `dialQuery` and `leverRows` read that one row, and so do a customiser's loader, sliders and browser scope,
-so adding a dial is a data edit rather than a change in each of them.
+**A dial is declared once, in `DIALS`, and carries everything about itself**, so `dialQuery`, `leverRows` and a customiser's loader, sliders and
+browser scope all read one row, and adding a dial is a data edit rather than a change in each of them.
 
 **One unit convention is not derivable and is therefore stated: a chroma dial carries thousandths.** A dial steps in whole numbers, and
 `buildTheme` divides on the way in. A reader who assumes the dial value is the OKLCh chroma is out by three orders of magnitude, and the scheme
@@ -70,9 +69,8 @@ still renders.
 them, an absent or non-finite value as the dial's fallback. A loader that reads the dials from the query string alone needs no storage, no cookie
 and no server-side session, so a scheme is a link: sharing one is sharing the URL, and reloading is reproducing it exactly.
 
-**This is why a customiser built on it needs no pre-paint script.** The precedent in [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b is that an inline script
-is for state the server cannot know; every dial arrives in the request, so the server can render the correct scheme and there is no intermediate
-state to correct.
+**This is why a customiser built on it needs no pre-paint script**: [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b reserves one for state the server cannot
+know, and every dial arrives in the request.
 
 **Nothing in the contract navigates.** `dialQuery` returns the equivalent link as a string, so a browser half can repaint in place and _publish_
 that link rather than write it into the address bar — a drag then costs no history entry and no request.
@@ -82,34 +80,26 @@ that link rather than write it into the address bar — a drag then costs no his
 A shipped scheme is reproducible from two gray dials, and a preset is that pair under a name. These properties keep the alias from becoming a second
 source of truth:
 
-- **The preset parameter is input-only, and an explicit dial beside it wins.** A loader expands `PRESET_PARAM` to dial values and `dialQuery` never
-  emits it, so no state can be expressed two ways at once.
+- **The preset parameter is input-only, and an explicit dial beside it wins**, so no state can be expressed two ways at once.
 - **Picking a preset is a command, not a binding.** `PRESET_ACTION` names the scope action a pick fires, which writes both dials; the painter then
   reacts exactly as it does to a drag. A binding would make the picker a second holder of the scheme's state.
-- **Which preset the dials name is derived, never stored.** `matchPreset` answers `undefined` for dials between presets, and `PRESET_CUSTOM` is the
-  option that stands for them, because a control naming `slate` beside a scheme whose dials have drifted off `slate` is the disagreement the live
-  readouts exist to prevent.
+- **Which preset the dials name is derived, never stored**: `matchPreset` answers `undefined` between presets and `PRESET_CUSTOM` stands for them,
+  so a picker never names `slate` beside dials that have drifted off it.
 
 **The preset values are fitted to the shipped scheme files, not transcribed from them**, and the fit is re-derived against those files by
 `src/ui/contracts/theme/color.test.ts` rather than asserted here.
 
 ### 1d. Shape Tokens Are Not a Scheme
 
-**Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — the radii, the control heights, `--border-width` and
-`--elevation` — are declared once beside the semantic colour mapping, and every component reads them through the bridged utilities (`rounded-field`,
-`h-control-*`, `border-field` and their kin) rather than through a raw Tailwind size. `rounded-sm` through `rounded-xl` are bridged to `--radius`
-too; bare `rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source. The same test refuses an
-all-sides border width that does not read `--border-width` — a bare `border`, `border-2` or `border-[3px]` — so every bordered surface takes
-`border-field`; a one-sided rule such as `border-b` is a divider and is not judged.
+<!-- rule:forge-theme-scheme-no-shape --> The shape tokens — the radii, the control heights, `--border-width` and `--elevation` — are declared once
+in `theme-base.css`, and every component reads them through the bridged utilities (`rounded-field`, `h-control-*`, `border-field` and their kin)
+rather than a raw Tailwind size. `src/ui/core/shape-radius.test.ts` owns which raw spellings a `ui` source may not use.
 
-**`--elevation` multiplies every length in the `--shadow-*` scale**, so `:root { --elevation: 0 }` in a shape file paints no elevation at all
-and `1` is the default geometry. The scale itself stays in `@theme inline`, where a `:root` copy would never reach a utility; the multiplier is
-what lets a shape file reach it. The focus ring is an `inset-ring`, outside that scale, so a flat shape keeps it.
+**`--elevation` multiplies every length in the `--shadow-*` scale**, which is how a shape file reaches a scale that stays in `@theme inline`: `0`
+paints no elevation and `1` is the default. The focus ring is an `inset-ring` outside that scale, so a flat shape keeps it.
 
-**Why not a scheme file.** A scheme is the file a consumer replaces, and the contrast audit walks every `theme-*.css` that is not a declared token
-file, on the assumption that it holds colour steps and nothing else (§3a). Putting a radius in one would either make every shipped scheme restate a
-value that has nothing to do with its tint, or hand the audit a token it cannot measure. Keeping shape in the mapping file means any
-scheme composes with any shape, and the audit's assumption stays true.
+**Why not a scheme file**: the contrast audit walks every `theme-*.css` that is not a declared token file on the assumption that it holds colour
+steps and nothing else (§3a), so a radius in one would either be restated by every scheme or hand the audit a token it cannot measure.
 
 **The alternate ships as proof, not as a catalogue.** `shape-compact.css` re-declares exactly those tokens and is imported after `forge.css`,
 the same cascade a scheme uses. Its name deliberately does not start with `theme-`, which is the prefix the audit takes as "a scheme". An
@@ -119,10 +109,9 @@ application's own shape file follows the same shape: one `:root` block, those to
 [`UI_CLASS_COMPOSITION.md`][ucc-2f] §2f names as overloaded between colour and width, so the width recipe is declared as a static utility in
 `forge-ui.css` where `cn` reads its compiled signature unambiguously.
 
-**The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is a custom property, with no scale
-behind it. Every dialled property but `--radius` is named by `SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector`, `--border-width` and
-`--elevation` are not dialled: a pill is a pill at every radius, a hairline that moves with a slider is a different decision from a corner that
-does, and elevation is a look a shape file chooses rather than a quantity a generated theme derives.
+**The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c); `SHAPE_PROPERTIES` and `shapeVars` own which are dialled.
+`--radius-selector`, `--border-width` and `--elevation` are not, because each is a look a shape file chooses rather than a quantity a slider should
+move.
 
 ---
 
@@ -149,10 +138,9 @@ byte off what renders.
 `src/ui/assets/build/color.ts` and the gate's `src/tooling/gate/checks/color.ts` import them; a third copy is where the three would drift
 apart while every test kept passing.
 
-**The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF constrains _outgoing_ edges only — so it may be imported
-and may not import out, which leaves it as the only one that can hold the shared function. That is also what
-`@y-core/forge/ui/contracts/theme` publishes and all it may publish: the theme's type contract and the colour arithmetic over it, never a component,
-a route or anything that would give the subpath an outgoing edge.
+<!-- rule:forge-theme-contract-leaf --> **The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF constrains
+_outgoing_ edges only — so it may be imported and may not import out, which leaves it as the only one that can hold the shared function — the one
+`@y-core/forge/ui/contracts/theme` publishes.
 
 **Both gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at constant lightness and hue, as CSS Color 4 specifies,
 is what any emitted coordinate needs, so it lives once in `toSrgbGamut` beside the arithmetic; `ui/assets/build`'s `oklchToSrgb` composes over it
@@ -176,12 +164,9 @@ than written out, so the steps the file declares are provably the ones the live 
 **The corner radius is driven directly rather than through a scale**, because it is not a colour and has no twelve steps; it is a dial whose whole
 output is one custom property.
 
-**Shape is emitted as a second block, under its own comment, rather than folded into the scheme, and only once a dial moves it off
-`theme-base.css`.** The scheme block stays exactly what §1d says a scheme is — colour steps and nothing else — so the shape declarations follow it
-as a file a reader saves separately, the way `shape-compact.css` ships. A scheme is imported after `theme-base.css`, so a block restating the
-default would still shadow it. **The block is written in `theme-base.css`'s own units**: control heights in rem, so they scale with the reader's
-root font size, and each radius as an offset from `--radius`. `--radius` itself heads the block, because a radius written relative to it would
-otherwise follow the consuming app's corner radius rather than the one previewed.
+**Shape is emitted as a second block, under its own comment, and only once a dial moves it off `theme-base.css`**, so the scheme block stays colour
+steps alone (§1d) and a block restating the default never shadows it. **The block is written in `theme-base.css`'s own units** — control heights in
+rem, each radius as an offset from `--radius`, which heads the block so the radii follow the previewed corner rather than the app's.
 
 ### 2d. No Generated Colour Reaches Markup
 
@@ -211,13 +196,12 @@ variants.
 to the contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message,
 is the check's own — [`SOURCE_OF_TRUTH.md`][sot-2b] §2b names the files, and this section names no assertion.
 
-**A gate that measured nothing is a failure rather than a pass**: an empty pair list is refused, so deleting the audit cannot be mistaken for
-satisfying it.
+<!-- rule:forge-contrast-refuses-empty --> So deleting the audit cannot be mistaken for satisfying it.
 
 ### 3b. Accepted Exemptions
 
-A pair the criteria do not bind is **recorded, not omitted**. An exemption row names the token, the step, the value that step is pinned at in each
-mode, the worst-case measured ratio, and the reason no criterion applies.
+A pair the criteria do not bind is **recorded, not omitted**: an exemption row names the token, the step and its pinned value in each mode, the
+worst-case ratio, and the reason no criterion applies.
 
 These properties make the list a contract rather than a suppression list:
 
@@ -229,10 +213,9 @@ These properties make the list a contract rather than a suppression list:
 
 ### 3c. The Live Readout Reuses the Audit
 
-**`liveRatios` measures the same pairs the gate does**, from the same declaration, so a scheme a reader generates is judged by the criteria forge
-enforces on its own — not by a second, friendlier list that happens to agree today. **Both compare the ratio unrounded**, and only the displayed
-number is rounded: a pair that fails by less than the rounding a reader is shown must fail on both sides, or the agreement above holds
-everywhere except at the boundary that matters.
+**`liveRatios` measures the same pairs the gate does**, from the same declaration, so a generated scheme is judged by the criteria forge enforces on
+its own. **Both compare the ratio unrounded** and round only the displayed number, so a pair failing by less than the shown rounding fails on both
+sides.
 
 **A side names the family it is a step of, and may name a step per mode.** Both families are generated, so a side resolves as
 `theme[family][mode].solid[sideStep(side, mode)]` and nothing else reads `.step`. The per-mode form exists for exactly one side —
@@ -245,9 +228,8 @@ comment: a pair resolving through a fixed token has no generated value to measur
 above them. **A translucent side is measured by the gate only**: `liveRatios` reads a scale step as opaque, so no scale pair carries an
 opacity, and `color.test.ts` holds that.
 
-**The readout's key carries the background as well as the token**, because one token is audited against two different backgrounds and a token-only
-key silently collapses those rows onto each other. A `LiveRatio` carries the one text both a Worker render and a browser repaint print, so the
-value on first paint and the value after a drag can never disagree in format.
+**The readout's key carries the background as well as the token**, because one token is audited against two backgrounds; a `LiveRatio` carries the
+one text a Worker render and a browser repaint both print.
 
 ### 3d. A Focus Ring Is Read Against the Surface It Is Drawn On
 
@@ -272,15 +254,13 @@ palette step in both modes, and the near-white that clears them is written `ligh
 contrast nudge rather than an inversion (§3c) — while `--accent-11` flips, and `--accent-contrast` is near-white in both modes because the
 gray ramp's first step in light and last in dark are both near-white.
 
-A per-mode nudge on a held fill is allowed; an inversion is not. A held value is chosen by running the contrast step and taking the step that clears
-its floor in **both** modes, exactly as `ACCENT_RAMP.dark.lightness[8]` was chosen — never by reading a number out of this document, which
-enumerates none.
+A per-mode nudge on a held fill is allowed; an inversion is not. A held value is the step that clears its floor in **both** modes when the contrast
+step runs, as `ACCENT_RAMP.dark.lightness[8]` was chosen; this document enumerates none.
 
 ### 4a. One Value Cannot Be Both a Fill and Text
 
-One token cannot answer for both roles across both modes: a step light enough to read as text on a dark page is, as a fill, a pale slab that the
-near-white on it does not clear. So `--tone` and `--tone-text` resolve to different tokens for every intent, `warning` included — its text role is
-step 11, which is the shape the other three take too.
+**One token cannot be both a fill and text across both modes**: a step light enough to read as text on a dark page is, as a fill, a pale slab its
+near-white does not clear. So `--tone` and `--tone-text` resolve to different tokens for every intent, `warning` included.
 
 ### 4b. The Token Set Per Intent
 

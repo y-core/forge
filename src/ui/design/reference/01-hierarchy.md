@@ -31,19 +31,13 @@ Hierarchy is the answer to one question a user asks of every screen: _what am I 
 | Secondary | `tone='neutral' appearance='outline'` | The real alternative a user might take instead | Zero or one, usually |
 | Tertiary | `tone='neutral' appearance='ghost'` | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
 
-Default: exactly one primary button renders per surface — a page, a `Dialog`, or a `Card` each count as one surface — unless a written brief
-describes a surface with two genuinely co-equal outcomes, such as an accept/decline decision with no default.
 <!-- rule:forge-ui-hierarchy-one-primary -->
 
-Default: the outline button is reserved for the action a user would plausibly take _instead_ of the primary one, not for the second-most-visible
-thing on the surface, unless a brief calls for a paired control set where both members carry equal commitment.
 <!-- rule:forge-ui-hierarchy-secondary-alternative -->
 
-Default: every remaining action uses `appearance='ghost'`, including cancel and dismiss, unless the action is the sole control on an otherwise empty
-surface and would read as decoration without a border. <!-- rule:forge-ui-hierarchy-ghost-remainder -->
-
-The paints themselves make the case: the primary button fills with `--primary`, the outline one draws a border from `--input` and no fill, and the
-ghost one is text with a hover wash of `--accent`. Those are the levels of ink, in descending order.
+<!-- rule:forge-ui-hierarchy-ghost-remainder --> The paints themselves make the case: the primary button fills with `--primary`, the outline one
+draws a border from `--input` and no fill, and the ghost one is text with a hover wash of `--accent`. Those are the levels of ink, in descending
+order.
 
 ### 1a. Before / after — the three-primary dialog
 
@@ -76,15 +70,10 @@ import { Button, Card } from "@y-core/forge/ui/core";
 
 ## 2. De-emphasise before you emphasise
 
-The instinct when something does not stand out is to make it louder. The cheaper move is to make its neighbours quieter: a surface has a fixed
-budget of attention, so lowering three things raises the fourth for free.
+<!-- rule:forge-ui-hierarchy-deemphasize-first --> The instinct when something does not stand out is to make it louder. The cheaper move is to make
+its neighbours quieter: a surface has a fixed budget of attention, so lowering three things raises the fourth for free.
 
-Default: when an element does not read as prominent enough, lower the weight of its neighbours before raising its own — reach for
-`appearance='ghost'` over `appearance='outline'`, and a `Badge` with `appearance='outline'` over a filled one — unless a brief sets Variance above
-forge's ratified default. <!-- rule:forge-ui-hierarchy-deemphasize-first -->
-
-Default: a `Badge` used as a neutral label rather than a status signal uses `appearance='outline'`, unless the badge is the only element
-distinguishing two otherwise identical rows. <!-- rule:forge-ui-hierarchy-badge-outline-first -->
+<!-- rule:forge-ui-hierarchy-badge-outline-first -->
 
 Use two text colors and stop. `--foreground` (or `--card-foreground` inside a `Card`) carries the line that matters; `--muted-foreground` carries
 everything supporting. A third competing color is what `forge-ui-text-color-budget` forbids, and `Card.Title` / `Card.Description` are already built
@@ -92,7 +81,8 @@ as that exact pair — copy the relationship rather than inventing a new one.
 
 ## 3. Icon-only actions
 
-`Button` `shape` offers `icon` as a square box the size scale drives, and `square` as a _relationship_ — full width, aspect-ratio 1.
+<!-- rule:forge-ui-hierarchy-icon-button-size --> `Button` `shape` offers `icon` as a square box the size scale drives, and `square` as a
+_relationship_ — full width, aspect-ratio 1.
 
 | You have | Use | Why |
 | --- | --- | --- |
@@ -101,10 +91,6 @@ as that exact pair — copy the relationship rather than inventing a new one.
 | An icon action beside `lg` controls | `shape='icon' size='lg'` | A 48px square — `--control-h-lg` |
 | An icon action in a rail whose width the app owns | `shape='square'` | Takes the parent's width and stays square, so the rail's token stays the single source |
 
-Default: an icon-only `Button` uses `shape='icon'` and never a text size with a hand-tuned padding override, unless the button sits in a container
-whose width is set by the app, in which case `shape='square'` is the correct choice. <!-- rule:forge-ui-hierarchy-icon-button-size -->
-
-Default: `shape='square'` is used only where the parent supplies a definite width, unless a brief specifies a fluid grid of equal cells.
 <!-- rule:forge-ui-hierarchy-square-needs-width -->
 
 Every icon-only button still needs an accessible name — `forge-ui-accessible-name` is a Floor rule. A `Tooltip` whose trigger is `kind='label'` is
@@ -112,9 +98,9 @@ that name; a description tooltip is not a substitute for one.
 
 ## 4. Severity is a ladder, and `neutral` is the bottom rung
 
-`Alert` and `Toast` take the same `tone` scale — `neutral` / `destructive` / `info` / `success` / `warning`, `neutral` being the default. Each
-non-`neutral` tone is a claim about how much the message matters. Making that claim when the message does not carry it teaches a user to ignore the
-component.
+<!-- rule:forge-ui-hierarchy-severity-default-first --> `Alert` and `Toast` take the same `tone` scale — `neutral` / `destructive` / `info` /
+`success` / `warning`, `neutral` being the default. Each non-`neutral` tone is a claim about how much the message matters. Making that claim when
+the message does not carry it teaches a user to ignore the component.
 
 | The message says | Tone | Note |
 | --- | --- | --- |
@@ -124,11 +110,6 @@ component.
 | An operation failed, or data will be lost | `destructive` | Reserve it; spending it on validation noise devalues it |
 | A neutral fact worth a colour of its own | `info` | Rarely earns its place over `neutral` |
 
-Default: an `Alert` or `Toast` uses `tone='neutral'` unless the message names a specific failure, a specific risk, or a completed action whose
-result the user cannot otherwise see. <!-- rule:forge-ui-hierarchy-severity-default-first -->
-
-Default: `tone='destructive'` is reserved for loss and failure, never for a confirmation prompt or a field-level validation message, unless a brief
-defines a domain where the two are the same event.
 <!-- rule:forge-ui-hierarchy-destructive-reserve -->
 
 The same ladder governs `Badge`, whose own default is `tone='neutral' appearance='soft'`: `tone='primary' appearance='solid'` fills with `--primary`
@@ -138,13 +119,10 @@ Colour alone never carries the severity — `forge-ui-not-color-alone` is a Floo
 
 ## 5. Labels are a last resort
 
-A label exists because a value would otherwise be ambiguous. When the value is self-evident — an email address, a timestamp, a currency amount in a
-column headed with its currency — the label is noise that competes with the thing it introduces.
+<!-- rule:forge-ui-hierarchy-label-last-resort --> A label exists because a value would otherwise be ambiguous. When the value is self-evident — an
+email address, a timestamp, a currency amount in a column headed with its currency — the label is noise that competes with the thing it introduces.
 
-Default: a value that is unambiguous in context renders without a label, unless the value appears in a form the user will submit, where a `Label` is
-required by `forge-ui-accessible-name`. <!-- rule:forge-ui-hierarchy-label-last-resort -->
-
-When a label is genuinely needed, spend as little as possible on it:
+<!-- rule:forge-ui-hierarchy-hidden-section-title --> When a label is genuinely needed, spend as little as possible on it:
 
 | Situation | Reach for |
 | --- | --- |
@@ -152,9 +130,6 @@ When a label is genuinely needed, spend as little as possible on it:
 | A stacked read-only detail | `Field` with the default `orientation='vertical'` |
 | A real form control | `FormField.Label`, or a `Label` carrying `FIELD_LABEL_CLASSES` |
 | A group heading a sighted user reads from layout | a visually hidden heading, so `forge-ui-heading-order` still holds |
-
-Default: a section whose purpose is obvious from its layout carries a visually hidden heading rather than a visible one, unless the section is one
-of several that a user must choose between by name. <!-- rule:forge-ui-hierarchy-hidden-section-title -->
 
 ### 5a. Before / after — a labelled detail block
 
@@ -189,9 +164,5 @@ import { Card, Field } from "@y-core/forge/ui/core";
 
 ## 6. Where the primary action lives
 
-Default: a `Card`'s single most important action renders in `Card.Footer`, and a surface-level control that acts on the card as a whole renders in
-`Card.Action`, unless the card is itself a link target, in which case it carries no button at all.
-<!-- rule:forge-ui-hierarchy-card-action-placement -->
-
-`Card.Action` is grid-positioned into the header's second column and spans both header rows, so a `ghost` icon button placed there aligns against
-the title and description without any manual positioning.
+<!-- rule:forge-ui-hierarchy-card-action-placement --> `Card.Action` is grid-positioned into the header's second column and spans both header rows,
+so a `ghost` icon button placed there aligns against the title and description without any manual positioning.

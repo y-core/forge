@@ -23,9 +23,9 @@ interface Row {
 }
 
 /** Whether the index is current, cheapest gate first: the version, then `size`/`mtimeMs`, then a content hash. @public */
-export function freshness(db: Database, sources: readonly SourceDoc[], canonVersion: string): Freshness {
-  if (!versionsMatch(db, canonVersion)) {
-    return { fresh: false, rebuild: true, stale: [], reason: "the schema, the indexer or the canon version changed" };
+export function freshness(db: Database, sources: readonly SourceDoc[], canonVersion: string, rulesDigest: string): Freshness {
+  if (!versionsMatch(db, canonVersion, rulesDigest)) {
+    return { fresh: false, rebuild: true, stale: [], reason: "the schema, the indexer, the canon version or a rule statement changed" };
   }
 
   const rows = db.query<Row, []>("SELECT corpus, tree, path, size, mtime, hash FROM source").all();

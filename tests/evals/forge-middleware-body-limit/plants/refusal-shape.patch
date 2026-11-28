@@ -1,0 +1,22 @@
+diff --git a/src/security/body-limit.ts b/src/security/body-limit.ts
+index 2dc52b05..43e6f861 100644
+--- a/src/security/body-limit.ts
++++ b/src/security/body-limit.ts
+@@ -38,15 +38,14 @@ async function readCapped(body: ReadableStream<Uint8Array>, maxBytes: number): P
+ export function bodyLimit<Bindings = Record<string, unknown>>(options: BodyLimitOptions<Bindings>): Middleware {
+   const { maxBytes } = options;
+   if (!Number.isInteger(maxBytes) || maxBytes < 0) throw new Error(`bodyLimit: maxBytes must be a whole number of bytes, got ${maxBytes}`);
+-  const refuse = createRefusalAnswer<Bindings>(options.onRefuse);
+ 
+   return async (context, next) => {
+     const { request } = context;
+     const declared = declaredLength(request);
+-    if (declared !== null && declared > maxBytes) return refuse(context, TOO_LARGE);
++    if (declared !== null && declared > maxBytes) return new Response("Payload Too Large", { status: 413 });
+     if (request.body === null) return next();
+     const bytes = await readCapped(request.body, maxBytes);
+-    if (bytes === null) return refuse(context, TOO_LARGE);
++    if (bytes === null) return new Response("Payload Too Large", { status: 413 });
+     context.request = new Request(request, { method: request.method, body: bytes });
+     return next();
+   };

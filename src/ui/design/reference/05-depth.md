@@ -35,44 +35,33 @@ Forge's primitives already occupy each level of the ladder below, so the design 
 | 3 | `shadow-md` on `--popover` | `Popover.Content`, `Menu.Popup` | Transient, tied to a trigger, dismissible. |
 | 4 | `shadow-lg` on `--popover` | `Dialog`, `Toast` | Above everything; blocks or interrupts. |
 
-Every one of those shadow classes is what the primitive already renders — `Card` is `shadow-sm border border-border bg-card text-card-foreground`,
-`Dialog` is `shadow-lg`, `Menu.Popup` is `shadow-md`. Reaching for the right level therefore means reaching for the right component.
+Every one of those shadow classes is what the primitive already renders, so reaching for the right level means reaching for the right component.
 
 ### 1a. The two modes spell a level differently
 
 The shadow token does the switching, so a component does not. In light a level is a cast shadow. In dark black ink over a near-black surface would
 render nothing, so the same value drops the cast layers and carries the level with a 1px inset rim plus a soft outer falloff whose radius is the
 level — a clean edge transition, not a glow, and the falloff is the fainter of the two for exactly that reason. Both spellings come out of the
-`--cast-*` and `--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's, unchanged, in `theme-base.css`. Nothing about
-choosing a level changes: it is still the primitive you reach for.
+`--cast-*` and `--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's, unchanged, in `theme-base.css`. Choosing a
+level does not change.
 
 ### 1b. Claiming a level
 
-**Default: express elevation by picking the primitive that already sits at that level, not by adding a shadow utility to a lower one.**
-<!-- rule:forge-ui-depth-primitive-first --> Override only when a surface genuinely has no matching primitive — a drag preview, a sticky column
-header — in which case take the shadow class from the level it is claiming, unchanged.
+<!-- rule:forge-ui-depth-primitive-first -->
 
-**Default: a surface is raised only when it is genuinely closer to the user.**
-<!-- rule:forge-ui-depth-earn-raise -->
+<!-- rule:forge-ui-depth-earn-raise --> Closer means: it covers content, it can be dismissed, or it is a discrete object among peers. A region that
+is merely _important_ is not closer, and takes weight or spacing instead.
 
-Closer means: it covers content, it can be dismissed, or it is a discrete object among peers. A region that is merely _important_ is not closer, and
-takes weight or spacing instead. Override when a brief asks for a marketing surface, where a raised card is doing attention work rather than
-distance work.
+<!-- rule:forge-ui-depth-flat-body --> `bg-background text-foreground`, no border, no shadow.
 
-**Default: keep page body content at level 0.** <!-- rule:forge-ui-depth-flat-body --> `bg-background text-foreground`, no border, no shadow.
-Override when the body is a canvas of peer objects — a board of records — where each object is a `Card` and the page behind them stays flat.
-
-**Default: reserve `Dialog` for work that must not proceed in the background.**
-<!-- rule:forge-ui-depth-dialog-last -->
-
-Destructive confirmation, a required decision. Anything a user can reasonably ignore is a `Popover` at level 3 or a `Toast` they can dismiss.
-Override when the platform's focus trap is the point — a flow that is genuinely modal, such as re-authentication.
+<!-- rule:forge-ui-depth-dialog-last --> Destructive confirmation, a required decision. Anything a user can reasonably ignore is a `Popover` at
+level 3 or a `Toast` they can dismiss.
 
 ---
 
 ## 2. Choosing a separator
 
-Given two regions that must read as distinct, the devices that separate them are not interchangeable.
+The devices that separate two regions are not interchangeable.
 
 | Given | Choose | Because |
 | --- | --- | --- |
@@ -81,36 +70,21 @@ Given two regions that must read as distinct, the devices that separate them are
 | A region on a differently-shaded ground | `bg-muted` with `text-muted-foreground` | A background change reads as a different _kind_ of region |
 | A surface that covers something | `Card`, `Popover.Content`, `Dialog` | Only a covering surface earns a shadow |
 
-**Default: try spacing, then a background token, then a hairline, before a shadow.**
-<!-- rule:forge-ui-depth-separator-order -->
+<!-- rule:forge-ui-depth-separator-order --> The order runs cheapest-first: each step adds one more visual claim.
 
-The order runs cheapest-first: each step adds one more visual claim. Override when the two regions scroll independently, where a shadow is the only
-cue that survives the scroll.
-
-**Default: a raised panel takes `bg-popover` with `text-popover-foreground`.**
-<!-- rule:forge-ui-depth-popover-token -->
-
-`Popover.Content`, `Menu.Popup` and `Dialog` already do; a hand-built panel at level 3 or 4 pairs the same two tokens
-(`forge-ui-foreground-pairing`). Override never for the pairing — only for which token, and only under a brief that themes overlays separately.
+<!-- rule:forge-ui-depth-popover-token --> `Popover.Content`, `Menu.Popup` and `Dialog` already do; a hand-built panel at level 3 or 4 pairs the
+same two tokens (`forge-ui-foreground-pairing`).
 
 ---
 
 ## 3. Shadows describe a light source
 
-A shadow in forge is soft and offset downward, because it is standing in for a light above the interface. A hard shadow with no blur is not a
-smaller version of that — it is a second shape, and it reads as a graphic border, not as height.
+<!-- rule:forge-ui-depth-soft-shadow --> A shadow in forge is soft and offset downward, because it is standing in for a light above the interface. A
+hard shadow with no blur is not a smaller version of that — it is a second shape, and it reads as a graphic border, not as height.
 
-**Default: every shadow is blurred and offset on the block axis only.**
-<!-- rule:forge-ui-depth-soft-shadow -->
+`shadow-sm` / `shadow-md` / `shadow-lg` are the ones forge uses. Under a flat, illustrative brief the offset shadow is the aesthetic.
 
-`shadow-sm` / `shadow-md` / `shadow-lg` are the ones forge uses. Override under a brief calling for a deliberately flat, illustrative style — where
-the offset shadow is the aesthetic, applied consistently rather than to one element.
-
-**Default: never add a shadow class to a component that already renders one.**
-<!-- rule:forge-ui-depth-no-shadow-stack -->
-
-`<Card class="shadow-lg">` is a `Card` claiming a `Dialog`'s distance while sitting in the page flow. Override when the card genuinely is lifted — a
-drag-in-progress state — and then only for the duration of the lift.
+<!-- rule:forge-ui-depth-no-shadow-stack --> `<Card class="shadow-lg">` is a `Card` claiming a `Dialog`'s distance while sitting in the page flow.
 
 ### 3a. Before / after
 
@@ -182,12 +156,8 @@ import { Card, Separator } from "@y-core/forge/ui/core";
 
 The other answer is promotion: if the inner regions are genuinely peer objects, make them siblings of the outer `Card` rather than children of it.
 
-**Default: at most one elevation change per containment step.**
-<!-- rule:forge-ui-depth-one-step -->
-
-A `Dialog` may hold a `Card`-free body with a `Menu` opening above it; it may not hold a `Card` holding a `Popover` holding a bordered panel.
-Override when a genuinely layered tool UI — a canvas with a floating rail and a flyout off it — requires the third step, which `Toolbar`'s flyout
-already models.
+<!-- rule:forge-ui-depth-one-step --> A `Dialog` may hold a `Card`-free body with a `Menu` opening above it; it may not hold a `Card` holding a
+`Popover` holding a bordered panel.
 
 ---
 
@@ -197,9 +167,5 @@ Forge has one radius: `--radius`, declared in `src/ui/assets/css/theme-base.css`
 both computed from it, and a selector takes the pill `--radius-selector`; the `--radius-sm` to `--radius-xl` steps are computed from it too.
 `forge-ui-one-radius` holds as long as you take a step from the family rather than an arbitrary value.
 
-**Default: let the radius step follow the elevation step rather than the element's size.**
-<!-- rule:forge-ui-depth-radius-tracks-level -->
-
-Level 2 and above take the box step (`Card`, `Dialog` and `Menu.Popup` are `rounded-box`); controls inside them take the field step (`Button`
-and `Input` are `rounded-field`). Override under a brief that sets a flat or fully-pill radius, which moves `--radius`
-once rather than per component.
+<!-- rule:forge-ui-depth-radius-tracks-level --> Level 2 and above take the box step (`Card`, `Dialog` and `Menu.Popup` are `rounded-box`); controls
+inside them take the field step (`Button` and `Input` are `rounded-field`).

@@ -230,9 +230,9 @@ export function checkCrossEngineTags(config: CrossEngineTagsCheckConfig): CheckR
 
   if (findings.length > 0) {
     findings.push(
-      fail(
-        "A top-level block that reads what the engine computes runs on Firefox and WebKit too (docs/TEST_RUNNERS.md §1g); a false positive is tagged, never excused.",
-      ),
+      fail("A top-level block that reads what the engine computes runs on Firefox and WebKit too; a false positive is tagged, never excused.", {
+        rule: "forge-test-cross-engine-tag",
+      }),
     );
   }
 

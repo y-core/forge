@@ -10,7 +10,7 @@ function tagged(tag: string, ...chunks: string[]): AstNode {
 }
 
 const message = (keyword: string) =>
-  `\`sql\`${keyword} …\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds — put the statements in one \`batch()\` instead (docs/STORAGE_BINDINGS.md §1g).`;
+  `[forge-sql-explicit-transaction] \`sql\`${keyword} …\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds — put the statements in one \`batch()\` instead.`;
 
 describe("sql-explicit-transaction", () => {
   it("reports a fragment that opens a transaction", () => {

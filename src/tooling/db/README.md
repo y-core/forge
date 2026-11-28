@@ -12,9 +12,7 @@ composes the migration, applies it forward-only, and records what it applied. Se
 `migrate`, `seed` and `schema` carry verbs, and a bare group runs its first verb with the same flags: `forge db migrate` is
 `migrate apply`, `forge db seed` is `seed apply`, `forge db schema` is `schema check`.
 
-**Node-only, like every `tooling` namespace.** It reaches a local database through `wrangler`'s own `getPlatformProxy` and a deployed one through
-the D1 REST API, and is never reachable from a Worker. The runtime client a Worker reads the same database through is [`STORAGE_BINDINGS.md`][sb-1]
-§1.
+It reaches a local database through `getPlatformProxy` and a deployed one through the D1 REST API; a Worker uses [`STORAGE_BINDINGS.md`][sb-1] §1.
 
 ---
 
@@ -315,8 +313,7 @@ subpath carries only what a host config needs, `defineDbConfig`, `forgeSchema` a
 
 The default layout keeps everything under `config/db/`: `migrations` defaults to `config/db/migrations`, which is both where migrations are read
 from and where compose writes, and `snapshot` defaults to `config/db/schema.snapshot.json`. An entry in
-`schemas` may be a file or a directory of `.sql` files. Name forge's own schema with `forgeSchema`, never by a `node_modules` path: the
-specifier resolves wherever forge is installed, and it is the key the snapshot records, so the snapshot reads the same on every machine.
+`schemas` may be a file or a directory of `.sql` files. Name forge's own schema with `forgeSchema` ([`DATABASE_MANAGEMENT.md`][dm-8] §8).
 
 **Point wrangler at the same directory.** Every `forge db` verb refuses a `d1_databases` entry whose `migrations_dir` is not the directory forge
 applies from, and names the key to set. `migrations_dir` is resolved from the wrangler config's directory, so a config outside the root names the

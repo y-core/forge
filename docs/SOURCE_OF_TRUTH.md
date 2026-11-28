@@ -33,6 +33,10 @@ audience: internal
 - §3b The Namespace-Graph Rows: data, policy, and parser
 - §3c The Conflict-Group Row: data authoritative over prose
 - §4 Documented Subpaths Are Checked: every citation resolves or fails
+- §5 The Rule Register: the one home of a rule's sentence and its detectors
+- §5a What an Entry Holds and What It Derives: the entry, the marker, and the id convention
+- §5b The Round Trip Is Checked: what `validate-rules` holds between the register and the prose
+- §5c The Ratchet: the review-only share and each document's words may fall but not rise
 
 ---
 
@@ -77,6 +81,7 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 | The feature manifest's shape | `FeatureManifestSchema` in `src/tooling/curate/types.ts` |
 | The fleet's harness policy and its deny list | `warden/claude/settings.json`, synced to `.claude/settings.json` |
 | Paths every repository's `.gitignore` must ignore | `MUST_IGNORE` in `warden/src/sync/check.ts` |
+| Rule-share and word budgets | `config/rules-baseline.json` |
 
 ### 2b. Enforced Rules
 
@@ -93,11 +98,12 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | The namespace graph as _enforced_ | `src/tooling/gate/checks/namespace-graph.ts` + `src/tooling/gate/checks/namespace-graph-parse.ts` |
 | Governing-doc format as _enforced_ | `warden/src/checks/docs.ts` |
 | `@source` coverage as _enforced_ | `src/tooling/gate/checks/css-sources.ts` |
-| The modern-CSS rule catalog as _enforced_ — every id, tier, severity, replacement, and which mechanism enforces it | `src/tooling/lint/modern-css-rules.ts` |
+| The modern-CSS rule catalog as _enforced_ — every id, tier, severity and replacement | `src/tooling/lint/modern-css-rules.ts` |
 | Token contrast mappings and their measured ratios, as _enforced_ | `src/tooling/gate/checks/contrast.ts` + `src/tooling/gate/checks/contrast-parse.ts` |
 | An `opacity-*` on a class string, held to the audited pairs | `src/tooling/gate/checks/faded-text.ts` |
-| Every corpus rule id, the corpus file that states it, and which mechanism enforces it | `src/tooling/lint/design-rules.ts` |
-| The design corpus's citations and its register round trip as _enforced_ | `warden/src/checks/design.ts` + `src/tooling/gate/checks/design-parse.ts` |
+| Every rule id and how each is detected | `config/rules.config.ts` + `warden/src/rules/canon/` |
+| The rule register's round trip, as _enforced_ | `warden/src/checks/rules.ts` |
+| The design corpus's citations as _enforced_ | `warden/src/checks/design.ts` + `src/tooling/gate/checks/design-parse.ts` |
 | Every corpus rule about source, markup or class string, as _enforced_ | `src/tooling/lint/plugin.ts` and the rules under `src/tooling/lint/rules/` |
 | JSX pragma lines as _enforced_ | `src/tooling/gate/checks/jsx.ts` |
 | The slot-clobber ordering rule as _enforced_ | `src/tooling/lint/rules/data-slot-before-spread.ts` |
@@ -182,11 +188,9 @@ separates the two, and a ruling has a single home for the same reason a table do
 | How a rate limit is declared — the binding by name checked at registration, the window from the generated `RATELIMITS`, the one `RateLimit` type, trust on the chain alone, group versus route placement, the entry points | [`SECURITY_HARDENING.md`][sh-4e] §4e |
 | How a guard refuses — one `onRefuse(c, refusal)` hook declared on the chain and overridable per group, plain-text defaults, the media helpers, `Retry-After`, the `security.<guard>.refused` log line, the fixed statuses | [`FORGE_ERRORS.md`][eh-3e] §3e |
 
-**The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
-per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
-prevent, and writing one on purpose is worse than tolerating the asymmetry. So for those namespaces the README **is** the governing prose: cite it
-as the owner, and do not restate its rulings in a `docs/` document. Every other namespace's README teaches use and nothing else, deferring its
-rulings to the `docs/` document that owns them ([`AGENT_GUIDE.md`][ag-6c] §6c).
+**The README rows above own their namespace's rulings outright, because no `docs/` document covers them**, and a governing document per namespace
+would only be a second copy of what the README says. For those namespaces the README **is** the governing prose: cite it as the owner and restate
+none of its rulings in `docs/`. Every other namespace's README teaches use only ([`AGENT_GUIDE.md`][ag-6c] §6c).
 
 **A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
 the document without moving the row is how a second copy starts. **The move runs both ways**: retiring such a document returns the row here.
@@ -231,6 +235,55 @@ fails the gate.**
 For a subpath matched by a pattern rather than a literal key, the check additionally requires the file to exist — otherwise a citation of a
 stylesheet that was never written would satisfy the shape and send a reader to a resolution error.
 
+---
+
+## 5. The Rule Register
+
+**A rule with an id is stated in the register and argued in the prose**, the split [`AGENT_GUIDE.md`][ag-8] §8 sets. The register is not a second
+list of what the prose already says: the sentence moves into it and is deleted from the prose, and the gate checks the join between the two.
+
+### 5a. What an Entry Holds and What It Derives
+
+<!-- rule:forge-rule-entry-fields --> The statement is one sentence, a must or a never. A Default-tier design rule keeps its `Default: … unless …`
+form ([`UI_DESIGN_GUIDANCE.md`][udg-2b] §2b). Severity belongs to each detector, not to the entry.
+
+**Everything else is derived from where the marker sits.** The marker's section is the rule's rationale. Whether the rule is canon or forge's own,
+and which of `libs` and `apps` it applies to, follow from the tree holding that section. Nothing in the entry declares them, so nothing can disagree
+with the prose.
+
+**An id is prefixed by where its rule lives.** A forge rule's id starts `forge-`. A canon rule's starts with its document's filename in lower case,
+underscores as hyphens — `code-rules-` for `CODE_RULES.md`. A document both canon trees carry adds the tree in front, so `TESTING.md` in each is
+`libs-testing-` and `apps-testing-`.
+
+**A document read from disk shows the marker without the sentence.** Warden writes the statement in at the marker when it serves a section, and the
+file on disk has none to show. That is the cost of keeping one copy, and it is paid only by a reader who bypasses warden.
+
+### 5b. The Round Trip Is Checked
+
+**`validate-rules` fails when the register and the prose disagree.** It holds:
+
+- every marker to an entry, and every entry to a marker, each id well formed and declared once;
+- each marker to a numbered section in the tree its rule file governs, and each id to the prefix §5a sets;
+- each statement to its form;
+- each detector to something real — a lint key the plugin registers and some oxlint config enables, at the top level or in any `overrides`
+  entry; a declared step; a test source that exists;
+- every lint plugin rule to an id, and that id's entry to a lint detector naming the plugin rule;
+- every finding source, and every id a check reports under, to a declared id rather than a `§` citation.
+
+**A marker that does not open its paragraph, list item or table cell fails**, because the prose before it restates a rule the register holds.
+
+### 5c. The Ratchet
+
+**`warden:ratchet` fails when the review-only share of the register rises, or when a document holds more words than its budget.** A review-only
+rule is one no detector enforces. Both limits live in `config/rules-baseline.json`, which also lists every document the repository owns. A document
+the baseline does not list fails, and so does a listed document that does not exist. Forge is the canon's home, so the canon's documents are
+budgeted here too, keyed by their paths in this repository.
+
+**The fixer only tightens.** It lowers each budget to the document's current count, adds a new document at its current count, and drops a deleted
+one. It refuses to run when the review-only share has risen.
+
+**Raising a budget is a hand edit to the JSON**, made in the commit that needs the words, where review sees it next to the prose that grew.
+
 [ag-5d]: ../warden/canon/shared/AGENT_GUIDE.md#5d-crossing-the-governance-boundary
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
@@ -244,3 +297,4 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 [ram-3g]: ./ROUTING_AND_MIDDLEWARE.md#3g-a-slice-exports-its-contribution-as-data
 [ram-3h]: ./ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
 [sh-4e]: ./SECURITY_HARDENING.md#4e-one-declaration-per-rate-limit
+[udg-2b]: ./UI_DESIGN_GUIDANCE.md#2b-defaults--rebuttable-aesthetic-guidance

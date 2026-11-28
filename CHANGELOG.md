@@ -18,7 +18,86 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`validate-config-files` holds what `config/` holds** (`CONFIG_BASELINE.md` §6): the `*.config.ts` entry points, the `.ts` modules
+  they import directly or through one another, and the state files a tool writes there — `stateFiles`, defaulting to `CONFIG_STATE_FILES`,
+  the release's `config/changelog-sections.json` and the ratchet's `config/rules-baseline.json` — and the directories a tool writes there,
+  `stateDirs`, defaulting to `CONFIG_STATE_DIRS`, `forge db`'s `config/db/`. It fails a test, a module running `import.meta.main`, a module
+  nothing imports, any other file and any other subdirectory, and the row now watches `config/**`.
+  **Migration:** move a test beside the code it exercises, a script into the namespace whose artifact it writes, and a subdirectory's files
+  to the code they serve; declare any other file or directory a tool writes there in `stateFiles` or `stateDirs`.
+
+- **`browserStep`, `crossEngineStep` and `workerdStep` take no `watches`.** A Playwright spec reaches the app through the server it starts,
+  so a path list could only skip a run `--affected` should make; their options are `PlaywrightStepOptions`, `StepOptions` without
+  `watches`. **Migration:** drop `watches` from those calls.
+
+- **`wardenAppSteps` adds a `warden:check` row to the static tier, and the consumer lint base refuses layer-crossing imports.** A
+  controller importing another controller, a service importing a controller or a view, and a view importing a service or a controller now fail
+  `lint` under `src/tooling/config/oxlint.base.json`, each message opening with its rule id. `warden:check` runs the register's patterns,
+  failing on a `fail`-level hit and warning once per `warn` rule with hits. The `CODE_REVIEW.md` §3b sections hold no commands any more.
+  **Migration:** move a cross-layer import to middleware or a service; repoint a golden query that expected `canon:CODE_REVIEW.md#3b` for a
+  layer rule at the section that argues the rule, such as `canon:APP_ARCHITECTURE.md#2c`.
+
+- **Every forge lint message opens with its rule id as `[rule-id] `, and names no corpus file.** A message read
+  `<detail> (<id> — <corpus path>)`; it now reads `[<id>] <detail>`, and the 9 rules that reported without an id carry one too, among them
+  `[forge-sql-in-loop]` and `[forge-type-import-separation]`. No lint message cites a document section (`DOC.md §N`) any more. Internally each
+  rule is built with `defineLintRule(id, spec)`, which replaces the `reporter` helper, and `ReportedId` is gone; neither was exported.
+  **Migration:** a script or snapshot that matches lint output on the old trailing `(id — path)` matches the leading `[id]` instead.
+- **`ModernCssRule` has no `corpus` field**, and no row of `MODERN_CSS_RULES` or `MODERN_CSS_CITED_RULES` carries one. `validate-modern-css`
+  findings no longer start with `<id>: ` or end with the corpus path; the id is the finding's `rule`, which `formatFinding` prints as `[id]`.
+  **Migration:** drop `corpus` from a hand-built `ModernCssRule`, and read a rule's explanation from `src/ui/design/reference/16-platform.md`.
+- **Gate findings name no document section.** The comment-budget and cross-engine-tag findings drop their `§5a`, `§5b`, `§5f` and
+  `(docs/TEST_RUNNERS.md §1g)` text and carry the rule id in `rule` instead: `code-rules-comment-budget`, `code-rules-comment-forbidden`,
+  `code-rules-field-gloss` and `forge-test-cross-engine-tag`. **Migration:** a match on the `§` text matches the `[id]` prefix instead.
+- **`@y-core/forge/tooling/lint` no longer exports `RULE_CORPUS_PATH`, `RULE_ENFORCER`, `lintKeyOf`, `corpusIdOf`, `RuleId` or
+  `RuleEnforcer`, and `ModernCssRule` has no `enforcer` field.** Which mechanism detects a rule is now the rule register's, in
+  `config/rules.config.ts`, and each plugin rule carries the id it reports under. `validate-design` no longer holds the plugin against a
+  register, and `DesignCheckConfig` in `@y-core/forge/warden/checks` drops `oxlintConfig`. **Migration:** read a rule's rationale section
+  with `warden rules` instead of `RULE_CORPUS_PATH`, take a lint key from the plugin's own rule names instead of `lintKeyOf`, drop
+  `enforcer` from a hand-built `ModernCssRule`, and drop `oxlintConfig` from a `checkDesign` config.
+
+### Added
+
+- **The `merge` skill's `push` stops on a unit that adds structure** — a new root-level file or directory, or a new directory at any depth —
+  listing each one and pushing nothing; `--structure-approved` (`PushOptions.structureApproved`) passes it once the user has said yes.
+
+- **`validate-css-sources` takes `quotedClasses`**: files whose class-shaped strings are quoted data, never rendered, each with a reason,
+  which pass B skips; an entry naming no file or giving no reason fails.
+
+- **New findings on existing steps.** `validate-packaging` fails a `files` negation naming one file, a script reaching outside the checkout
+  through `../`, and an `engines.bun` floor off the Bun `packageManager` pins. `validate-co-location` fails an exemption its filename
+  convention already covers. `validate-config-files` takes `markdown`, holding `.oxfmtrc.json` to ignore `**/*.md`, and `nodeSubpaths`,
+  holding `playwright.config.ts` to forge's `forge.node` subpaths. `validate-rules` sweeps each rg detector's `examples` and, given
+  `sourceReach`, fails an rg rule that reaches no file under a tree unless it is exempted with a reason. `validate-comment-budget` takes
+  `coverTracked`, failing a `.ts`, `.tsx` or `.css` file in the git work tree its `sources` leave out.
+
+- **`noBuildStep` and `checkNoBuild`, in `@y-core/forge/tooling/gate`**: the `validate-no-build` row fails any resolved row of a step table
+  whose command runs a bundler, the compiler's emit or a `build` script.
+
+- **`warden check`, the `rg` detector kind and `@y-core/forge/warden/sdk`.** A register entry may carry an `rg` pattern with paths, globs,
+  a `fail` or `warn` level and a triage note; `warden check [--files|--diff] [--rules] [--json]` matches them in JS, as `rg -n` would, and
+  prints each hit with its rule's statement, rationale and triage. The SDK exports `rules`, `corpus`, `check` and `steps` for a script or a
+  REPL. The warden MCP server adds `warden_check` and `warden_query`, which runs an async arrow over the same data in a sandbox.
+
+- **`forge verify --json`** prints nothing but the failures, as `{ step, rule, file, line, message }[]` (`GateFailure` in
+  `@y-core/forge/tooling/gate`).
+
+- **The `handoff` and `merge` skills ship scripts** that squash, check, rebase with patch ids and prepare a push in one call each, printing the
+  `git push` rather than running it. Their logic is `handoff`, `mergeReviewed` and `preparePush` in `@y-core/forge/warden`.
+
+- **A rule register, and the `validate-rules` step in the static tier that holds it to the prose.** Each rule's id, one-sentence statement
+  and detectors are declared with `defineRules` from `@y-core/forge/warden`, and `checkRules` fails when a marker, an entry, a lint key, a
+  plugin rule's id or a finding's id has nothing on the other side. `warden rules` prints every registered rule with its rationale section
+  and statement. `isValidRuleId` in `@y-core/forge/tooling/gate` accepts any lower-case kebab-case id of two or more segments, no longer only
+  `forge-ui-` ones.
+
+- **The `warden:ratchet` step in the static tier, holding `config/rules-baseline.json`.** The review-only share of the rule register may not
+  rise, and no owned document may grow past its word budget. Its fixer lowers budgets and never raises one; raising a budget is a hand edit to
+  the JSON ([`docs/SOURCE_OF_TRUTH.md`](docs/SOURCE_OF_TRUTH.md) §5c).
+
+- **`Finding.rule`, in `@y-core/forge/tooling/gate`**: the id of the rule a finding breaks. `formatFinding` prints it as `[rule] ` before
+  the message when it is set, and a finding without one prints as before.
 
 ---
 

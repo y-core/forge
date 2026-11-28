@@ -144,7 +144,12 @@ URL generation and middleware wiring all read it. A page pairs a loader with a v
 bot guard and the parse are already written:
 
 ```tsx
-const { definePage } = createHandlerFactory<Bindings, AppConfig>(); // from @y-core/forge/app, once per app
+import { createHandlerFactory } from "@y-core/forge/app";
+import { renderPage } from "@y-core/forge/render/jsx";
+
+import { Home } from "./views/home";
+
+const { definePage } = createHandlerFactory<Bindings, AppConfig>(); // once per app
 
 export const homePage = definePage(routes.home, {
   cache: { maxAge: 300, scope: "public" },

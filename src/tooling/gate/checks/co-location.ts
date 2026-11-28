@@ -71,6 +71,11 @@ export function checkCoLocation(config: CoLocationCheckConfig): CheckResult {
     .filter(([, reason]) => reason.trim() === "")
     .map(([file]) => fail(`\`${file}\` is exempt from the co-location check with no reason — say why, or give it a test`));
 
+  // A second statement of what the filename already declares would outlive a rename that drops the convention.
+  const redundant = [...exempt.keys()]
+    .filter(declaredByName)
+    .map((file) => fail(`\`${file}\` is exempt from the co-location check, which its filename convention already does — delete the entry`));
+
   // The claim the filename makes, re-checked against the file: a `types.ts` that grew a function is
   // not a declaration file, and the convention stops covering it.
   const smuggled = modules
@@ -99,5 +104,5 @@ export function checkCoLocation(config: CoLocationCheckConfig): CheckResult {
     );
 
   const covered = modules.filter((module) => !exempt.has(module.file) && !declaredByName(module.file)).length;
-  return checkResult([...stale, ...reasonless, ...smuggled, ...findings], `${covered} modules have a co-located test`);
+  return checkResult([...stale, ...reasonless, ...redundant, ...smuggled, ...findings], `${covered} modules have a co-located test`);
 }

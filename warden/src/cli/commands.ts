@@ -6,9 +6,11 @@ import { check } from "../sync/check";
 import { resolveKindSource } from "../sync/kind";
 import { seed, seedFiles } from "../sync/seed";
 import { sync, syncPlan } from "../sync/sync";
+import { createCheckCommand } from "./check";
 import { ROOT_FLAG } from "./flags";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 import { DEFAULT_ARCH, placeNatives } from "./natives";
+import { createRulesCommand } from "./rules";
 import { show, SUBJECTS, type Subject } from "./show";
 
 /** Builds the `warden` command tree. @public */
@@ -88,6 +90,8 @@ export function createWardenCommands(): CommandBase {
     }),
   );
 
+  addCommand(root, createRulesCommand());
+  addCommand(root, createCheckCommand());
   createKnowledgeCommands(root);
   createCatalogueCommand(root);
   createServeCommand(root);

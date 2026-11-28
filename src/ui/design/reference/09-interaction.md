@@ -35,14 +35,12 @@ The through-line: **forge already implements the interaction models.** Almost ev
 
 ### 1a. The ring token and where it is drawn
 
-Default: draw focus with `focus-visible:ring-2 focus-visible:ring-ring`, and reach for no other treatment — unless a brief specifies a distinct
-focus style for a named surface. <!-- rule:forge-ui-interaction-ring-token --> The ring colour is `--ring`, declared once in
-`src/ui/assets/css/theme-base.css` and resolving through `--gray-11`, whose value the scheme file supplies per mode — so the same class is legible
-in both. It is a **solid step in both modes**, one step beyond `--input`: a mix carrying alpha composites against whatever is behind it, so the
-value measured is not the value that paints. A focus indicator is non-text contrast under WCAG 1.4.11 and has a 3:1 floor of its own, so it cannot
-be expressed as a tint. Visibility itself is the Floor (`forge-ui-focus-ring`); this rule is about not inventing a second treatment beside it. That
-is also why `forge-ui-platform-color-mix` in [`16-platform.md`][platform] excludes ring, border and outline tokens from the derived form it
-otherwise asks for.
+<!-- rule:forge-ui-interaction-ring-token --> The ring colour is `--ring`, declared once in `src/ui/assets/css/theme-base.css` and resolving through
+`--gray-11`, whose value the scheme file supplies per mode — so the same class is legible in both. It is a **solid step in both modes**, one step
+beyond `--input`: a mix carrying alpha composites against whatever is behind it, so the value measured is not the value that paints. A focus
+indicator is non-text contrast under WCAG 1.4.11 and has a 3:1 floor of its own, so it cannot be expressed as a tint. Visibility itself is the Floor
+(`forge-ui-focus-ring`); this rule is about not inventing a second treatment beside it. That is also why `forge-ui-platform-color-mix` in
+[`16-platform.md`][platform] excludes ring, border and outline tokens from the derived form it otherwise asks for.
 
 **Forge's own controls draw that ring _inside_ the element**, through the `focus-ring` utility. An outer ring is wrong on any control that shares an
 edge with a neighbour — inside a `Join` it cuts the group's silhouette in two — and it is not something a caller can correct from the call site.
@@ -61,7 +59,6 @@ when you are composing forge's controls.
 
 ### 1b. `focus-visible`, never bare `focus`
 
-Default: use the `focus-visible` variant, never bare `focus` — unless the control is reachable _only_ by pointer, which in practice never happens.
 <!-- rule:forge-ui-interaction-focus-visible --> `focus` fires on a mouse click too, so a ring flashes on every button press and trains the reader
 to ignore it. `focus-visible` is the browser's own judgement about whether the user is navigating by keyboard, and it is a better judgement than any
 heuristic written at the call site.
@@ -72,12 +69,10 @@ of a ring after a pointer press on WebKit. A ring on every engine and a script k
 
 ### 1c. Fixing an undersized target
 
-Default: fix an undersized target by moving up the `buttonVariants` size scale, never by adding padding to a smaller one — unless the control is not
-a button at all and the brief names its box.
-<!-- rule:forge-ui-interaction-size-from-button --> 28px (`h-7`) is the Floor, which every shipped shape's `sm` clears
-(`forge-ui-hit-target`). Which size an icon-only control takes is [`01-hierarchy.md`][hierarchy]'s (`forge-ui-hierarchy-icon-button-size`), and how
-the scale shifts under density is [`12-density.md`][density]'s (`forge-ui-density-button-size`); this rule is only about the remedy. Ad-hoc padding
-produces a row of controls whose boxes disagree by two or three pixels each — visible as a ragged edge, and untraceable to any one line.
+<!-- rule:forge-ui-interaction-size-from-button --> 28px (`h-7`) is the Floor, which every shipped shape's `sm` clears (`forge-ui-hit-target`).
+Which size an icon-only control takes is [`01-hierarchy.md`][hierarchy]'s (`forge-ui-hierarchy-icon-button-size`), and how the scale shifts under
+density is [`12-density.md`][density]'s (`forge-ui-density-button-size`); this rule is only about the remedy. Ad-hoc padding produces a row of
+controls whose boxes disagree by two or three pixels each — visible as a ragged edge, and untraceable to any one line.
 
 ```tsx
 import { Button } from "@y-core/forge/ui/core";
@@ -100,53 +95,32 @@ keys mean two different things depending on where the reader happens to be.
 
 ### 2a. `mountRovingFocus` and the radio exception
 
-Default: give a composite widget its keyboard with `mountRovingFocus`, not a `keydown` handler — unless the widget is a single control with one key
-binding that no composite pattern describes. <!-- rule:forge-ui-interaction-adopt-composite --> It takes
-`{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }`, resolves items live from the DOM on every interaction, skips disabled items, reads
-direction from the element so an RTL island navigates as RTL, and returns a disposer.
+<!-- rule:forge-ui-interaction-adopt-composite --> It takes `{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }`, resolves items live
+from the DOM on every interaction, skips disabled items, reads direction from the element so an RTL island navigates as RTL, and returns a disposer.
 
-Default: leave a `RadioGroup` alone — do not mount `mountRovingFocus` on it — unless the group is not built from same-named `<input type="radio">`
-at all. <!-- rule:forge-ui-interaction-no-roving-radio --> The platform already supplies the whole roving-tabindex contract for radios sharing a
-`name`: one tab stop, arrow keys that move _and_ check, Home/End. Mounting the controller beside it gives arrow keys two handlers, and the second
-one moves focus without checking, so the group's value and its focus stop agreeing.
+<!-- rule:forge-ui-interaction-no-roving-radio --> The platform already supplies the whole roving-tabindex contract for radios sharing a `name`: one
+tab stop, arrow keys that move _and_ check, Home/End. Mounting the controller beside it gives arrow keys two handlers, and the second one moves
+focus without checking, so the group's value and its focus stop agreeing.
 
-Default: collapse `Filter`'s unchosen chips by clipping them out of sight, never with `display:none`.
-<!-- rule:forge-ui-interaction-filter-collapses --> The unchosen chips stay in the radio group, so arrow keys move and check as APG describes, and
-the checked chip is always the one left standing beside the clear. A reader on it is told it is one of N, not that it is the only choice there
-is, and a focused chip is never clipped. A pointer user reaches a second facet through `×`, which empties the group and puts focus on its first
-chip. **The role is on `Filter.Group` and never on the `Filter` root**, which stays the `<form>` or `<fieldset>` that owns the reset: a
-`radiogroup` may own no child but a `radio`, so a reset inside it is an `aria-required-children` violation in a consumer's axe run. Give both
-components a name — the type requires `label` or `labelledby` on a `Filter.Group` — and keep the clear reachable, never hidden from the keyboard
-while a facet is chosen.
-
-Default: put every `Filter.Item` inside a `Filter.Group`, never directly in the `Filter` root.
-<!-- rule:forge-ui-interaction-filter-group-required --> The root carries no role, so chips it holds itself are loose radios named by nothing —
-strictly worse for a reader than a named group, and silent: the type cannot require a child, and deleting the `label` the root does not take is the
-shortest edit past the compile error a consumer upgrading meets. A lint rule is what makes the omission loud, because nothing in the rendered
-markup is missing so much as wrong.
+How `Filter`'s chips collapse and where they sit are Floor: `forge-ui-interaction-filter-collapses` and
+`forge-ui-interaction-filter-group-required`, in [`../floor.md`][floor].
 
 ### 2b. The initial tab stop
 
-Default: mark the item that should hold the tab stop at mount with `ACTIVE_COMPOSITE_ITEM` from `@y-core/forge/ui/contracts` — unless nothing in the
-composite is selected on first render, in which case the first item takes it. <!-- rule:forge-ui-interaction-active-item --> The pressed tool, the
-selected tab, the checked radio. **`Toolbar` does not derive it**, deliberately: a toolbar may have several items pressed at once, and the marker is
-singular — the controller takes the first one marked and ignores the rest. Which of them the tab stop belongs on is the app's answer, not one
-`pressed` can give. Without the marker a composite that shows a selection puts the tab stop somewhere else, and the first Tab press moves focus to a
-row that is not the one highlighted.
+<!-- rule:forge-ui-interaction-active-item --> The pressed tool, the selected tab, the checked radio. **`Toolbar` does not derive it**,
+deliberately: a toolbar may have several items pressed at once, and the marker is singular — the controller takes the first one marked and ignores
+the rest. Which of them the tab stop belongs on is the app's answer, not one `pressed` can give. Without the marker a composite that shows a
+selection puts the tab stop somewhere else, and the first Tab press moves focus to a row that is not the one highlighted.
 
 ### 2c. Listbox shapes and registered scopes
 
-Default: reach for `Select` — the native `<select>` — for a listbox-shaped control, rather than building a listbox out of `div`s and pointing
-`mountRovingFocus` at it — unless real focus genuinely belongs on the option, as it does in a toolbar, a tab list or a menu.
 <!-- rule:forge-ui-interaction-activedescendant --> The discriminator is where focus lives during the interaction. The platform gives `<select>` the
 popup, the typeahead, Home/End, and the mobile picker, for no script at all; a roving-focus controller calls `item.focus()`, which is right for a
 composite whose items are the focus targets and wrong for a list a user reads while typing somewhere else. Forge ships no combobox controller, so a
 control that genuinely needs an editable field over a filtered list is one you own end to end.
 
-Default: let the registered scope mount the controller for a shipped component — `Tabs`, `Menu`, `Tooltip` — rather than re-deriving its key
-handling — unless the markup sits somewhere a document-level `resume()` cannot reach, such as a shadow root attached after it ran, where you call
-`resume(root)` on that root. <!-- rule:forge-ui-interaction-named-controllers --> Under `@y-core/forge/ui/core/client` these are already
-registered as scopes, so the usual correct amount of code is the side-effect import and nothing else.
+<!-- rule:forge-ui-interaction-named-controllers --> Under `@y-core/forge/ui/core/client` these are already registered as scopes, so the usual
+correct amount of code is the side-effect import and nothing else.
 
 ```tsx
 // Wrong — a bare row of buttons, with arrow keys wired up by a hand-written listener elsewhere.
@@ -186,19 +160,15 @@ to `forge-ui-platform-inert` in [`16-platform.md`][platform].
 | The reader has no permission for this capability at all | omit it | nothing — correctly |
 | The control is mid-flight on a request | `hx-disable` (see [`11-htmx.md`][htmx]) | that the request is running |
 
-Default: prefer an enabled control that explains its refusal over a disabled one that does not — unless the reason is visible within one glance of
-the control. <!-- rule:forge-ui-interaction-disabled-last --> A disabled `Button` has no hover, no focus, and no accessible way to ask why; it is
-the one control state that cannot answer a question about itself.
+<!-- rule:forge-ui-interaction-disabled-last --> A disabled `Button` has no hover, no focus, and no accessible way to ask why; it is the one control
+state that cannot answer a question about itself.
 
-Default: express "displayed but not editable" as `readonly`, never as `disabled` — unless the value should also be excluded from form submission,
-which is what `disabled` additionally does. <!-- rule:forge-ui-interaction-readonly-not-disabled --> A `readonly` input stays focusable, stays
-selectable and stays copyable, and it still submits.
+<!-- rule:forge-ui-interaction-readonly-not-disabled --> A `readonly` input stays focusable, stays selectable and stays copyable, and it still
+submits.
 
-Default: hide a control only when the reader could never use it — never to express a transient state — unless the brief calls for progressive
-disclosure of an advanced group. <!-- rule:forge-ui-interaction-hide-vs-disable --> A control that disappears and reappears as state changes makes
-the layout jump and gives the reader nothing to reason about.
+<!-- rule:forge-ui-interaction-hide-vs-disable --> A control that disappears and reappears as state changes makes the layout jump and gives the
+reader nothing to reason about.
 
-Default: never make hover the only route to an action — unless the action is a genuine duplicate of one that is permanently visible.
 <!-- rule:forge-ui-interaction-hover-not-required --> Touch has no hover, and a keyboard user reaches a hover-revealed row action only if it is also
 revealed by `focus-within`.
 
@@ -209,16 +179,13 @@ revealed by `focus-within`.
 Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`][udg-8] §8). That setting is what the rules below encode: movement that reads as
 the interface _responding_, and never as the interface performing.
 
-Default: author one motion moment per interaction — unless a brief raises the motion dial for a named marketing surface.
-<!-- rule:forge-ui-interaction-one-moment --> A moment is a set of changes started together, on one duration and one easing, so a dialog that
-fades its backdrop as it scales its panel is one moment. A panel that scales and then slides its title in afterwards is two, and the reader waits
-for both. _Which_ changes may carry motion at all is [`12-density.md`][density]'s
-(`forge-ui-density-motion-budget`); this rule bounds how much motion any one of them gets.
+<!-- rule:forge-ui-interaction-one-moment --> A moment is a set of changes started together, on one duration and one easing, so a dialog that fades
+its backdrop as it scales its panel is one moment. A panel that scales and then slides its title in afterwards is two, and the reader waits for
+both. _Which_ changes may carry motion at all is [`12-density.md`][density]'s (`forge-ui-density-motion-budget`); this rule bounds how much motion
+any one of them gets.
 
 ### 4a. Declarative entry and exit
 
-Default: express entry with `starting:` and exit with `transition-discrete` on the base rule, and select open state with the `open:` / `not-open:`
-variants — unless the element is not a native popover, `<dialog>` or `<details>`, in which case a plain `transition-*` class is correct.
 <!-- rule:forge-ui-interaction-transition-controller --> `starting:` compiles to `@starting-style`, which the style engine applies before the first
 painted frame, and `transition-discrete` is `transition-behavior: allow-discrete`, which keeps `display` and `overlay` animatable so the element
 stays painted and in the top layer for the whole exit. Add `overlay` to the transition list on a popover: no JavaScript can keep an element in the
@@ -228,14 +195,10 @@ is `forge-ui-platform-entry-motion` in [`16-platform.md`][platform], which is th
 
 ### 4b. Popups and trigger state
 
-Default: put no bare `display` utility on a `[popover]` element or a `<dialog>` — reach for `opacity`, `visibility` or a `transform` instead —
-unless the utility is variant-gated on the open state. <!-- rule:forge-ui-interaction-no-display-on-popup --> The UA rule that hides a closed
-popover, `[popover]:not(:popover-open) { display: none }`, is not `!important`, so an author `display: flex` — `flex`, `grid`, `block`, or a
-responsive `md:flex` — outranks it and the popup renders permanently, on top of the page, before anything has opened it. Lay a popup's contents out
-on a child instead of on the popover element itself.
+<!-- rule:forge-ui-interaction-no-display-on-popup --> The UA rule that hides a closed popover, `[popover]:not(:popover-open) { display: none }`, is
+not `!important`, so an author `display: flex` — `flex`, `grid`, `block`, or a responsive `md:flex` — outranks it and the popup renders permanently,
+on top of the page, before anything has opened it. Lay a popup's contents out on a child instead of on the popover element itself.
 
-Default: give a trigger its open-state feedback with a `:has()` rule that reads the popup's own `:popover-open`, rather than a listener or a
-mirrored attribute on the trigger — unless the popup is modal, whose `::backdrop` paints over the trigger regardless.
 <!-- rule:forge-ui-interaction-trigger-state --> The trigger is styled from a _sibling's_ state, which no class on the trigger could know about, and
 `:has()` is what makes that expressible with no runtime at all — the general form of that move, for any ancestor read from a descendant's state, is
 `forge-ui-platform-parent-state` in [`16-platform.md`][platform]. Match the structure: a trigger that is the popup's **parent's** child reads
@@ -243,13 +206,11 @@ mirrored attribute on the trigger — unless the popup is modal, whose `::backdr
 
 ### 4c. Duration and animatable properties
 
-Default: keep an enter under 200ms and an exit shorter than its enter — roughly 120–200ms in, 80–150ms out — unless a brief specifies a slower
-deliberate reveal. <!-- rule:forge-ui-interaction-duration --> Exit is shorter because the reader has already decided; the only thing a slow exit
-adds is time between the decision and the next action.
+<!-- rule:forge-ui-interaction-duration --> Exit is shorter because the reader has already decided; the only thing a slow exit adds is time between
+the decision and the next action.
 
-Default: animate `transform` and `opacity` only — unless the moment is a disclosure whose whole point is the height change, as in `Collapsible` and
-`Accordion`. <!-- rule:forge-ui-interaction-no-motion-on-layout --> Animating `height`, `width` or `top` reflows every frame, and on a
-fragment-swapped page it reflows content the reader may be mid-click on.
+<!-- rule:forge-ui-interaction-no-motion-on-layout --> Animating `height`, `width` or `top` reflows every frame, and on a fragment-swapped page it
+reflows content the reader may be mid-click on.
 
 Every authored moment is subject to `forge-ui-reduced-motion`, which is Floor: gate it behind `motion-safe:` and give `motion-reduce:` the instant
 state or an opacity-only fade. That includes the declarative `starting:` / `open:` motion above.

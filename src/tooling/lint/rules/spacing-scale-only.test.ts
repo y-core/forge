@@ -3,9 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { attribute, literal, other, property, runRule } from "../lint.fixture.ts";
 import { spacingScaleOnly } from "./spacing-scale-only.ts";
 
-const CORPUS = "(forge-ui-spacing-scale-only — src/ui/design/floor.md)";
+const PREFIX = "[forge-ui-spacing-scale-only] ";
 
-const detail = (written: string, scale: string): string => `arbitrary value \`${written}\` where the scale states \`${scale}\` ${CORPUS}`;
+const detail = (written: string, scale: string): string => `${PREFIX}arbitrary value \`${written}\` where the scale states \`${scale}\``;
 
 describe("spacing-scale-only", () => {
   it("reports a pixel value the scale already states", () => {

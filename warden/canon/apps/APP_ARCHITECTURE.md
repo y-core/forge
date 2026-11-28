@@ -31,7 +31,7 @@ description: "The composition-root factory, the layer stack and its dependency r
 - §4 Concern-First Placement: deciding where a new unit belongs
 - §4a The Resolution Order: concern, then latency, then jank
 - §4b When Two Layers Fit: pick the one further from the request path
-- §4c What a Layer Must Never Accumulate: the drift each layer is prone to
+- §4c What a Layer Must Never Accumulate: each layer's drift
 - §5 Feature Development Sequence: the fixed order for adding a feature
 - §5a The Ordered Steps: model through tests
 - §5b Handler Structure: parse, validate, act, respond
@@ -73,10 +73,9 @@ catches every unmatched path; anything registered after it is unreachable.
 
 ### 1c. Development Relaxations Are Modules the Build Selects
 
-**Where a development environment needs a weaker policy than production, express the difference as a module the build selects — never as a
-runtime flag, and never as a second entry.** There is one entry. The weaker policy lives in a `*.dev.ts` module behind a package `imports` alias,
-whose `forge-dev` target is the development module and whose `default` target is the strict one. Both targets are annotated with one shared type,
-and the development module checks `__FORGE_DEV__` itself, so a bundle built under the condition without the define still answers strictly.
+<!-- rule:app-architecture-dev-policy-module --> There is one entry. The weaker policy lives in a `*.dev.ts` module behind a package `imports`
+alias, whose `forge-dev` target is the development module and whose `default` target is the strict one. Both targets are annotated with one shared
+type, and the development module checks `__FORGE_DEV__` itself, so a bundle built under the condition without the define still answers strictly.
 
 The canonical case is a content-security policy: a dev server injects a live-reload script whose hash must be allowed, and that allowance must not
 exist in production. The production build resolves the alias to the strict module, so the deployed bundle cannot contain the dev allowance,
@@ -133,10 +132,14 @@ Each layer may import only from the layers listed:
 | router | `controllers/`, `app/` middleware |
 | worker entry | routes, router, `controllers/`, `app/` |
 
-**A controller must not import another controller.** Shared behaviour between two controllers is either middleware or a service; making one
+<!-- rule:app-architecture-controller-imports-controller --> Shared behaviour between two controllers is either middleware or a service; making one
 controller a dependency of another turns the route map into a call graph nobody can read.
 
-**A service must not import a controller or a view.** A service that renders is not a service.
+<!-- rule:app-architecture-service-imports-ui --> A service that renders is not a service.
+
+<!-- rule:app-architecture-view-imports-service --> A view that reaches a service has stopped being pure (§2d).
+
+The consumer lint base refuses each such import, so none reaches review.
 
 ### 2c. No Layer Skipping
 
@@ -158,8 +161,7 @@ and the integration becomes reusable from a second route without being copied.
 **A view receives typed props and returns markup. It does not call a service, read config, or decide a business rule.** Every value a view needs was
 resolved before it was called.
 
-A page view composes its own layout — that is presentation, and it belongs to the view. What it must not do is _fetch_ what the layout needs; the
-controller resolves it and passes it in.
+A page view composes its own layout, but never _fetches_ what the layout needs: the controller resolves it and passes it in.
 
 ---
 
@@ -176,8 +178,8 @@ const baseUrl = config.site.url.origin;
 const apiKey = config.services.email.apiKey;
 ```
 
-**Never read a raw binding for a configured value in a handler or a service.** A direct read is untyped, unvalidated, and invisible to the schema —
-so a missing variable surfaces as `undefined` deep inside a request rather than as a startup error naming the field.
+**Never read a raw binding for a configured value in a handler or a service**: a missing variable then surfaces as `undefined` deep inside a
+request rather than as a startup error naming the field.
 
 Raw binding access remains correct for **binding objects themselves** — a KV namespace, a database, a rate limiter — which are resolved rather than
 validated ([`ERROR_HANDLING.md`][eh-5d] §5d).
@@ -209,17 +211,14 @@ Resolve every new unit by **concern first, then latency, then thread cost**:
 
 1. **Concern decides the layer before any performance question is asked.** Something needing trust, a secret, or a capability the browser lacks goes
    server-side. Something that is pure domain data — a schema, a table, a type — goes to the model. DOM, rendering, and input handling go to the
-   browser tier. **Most units are decided here and never reach step 2.**
-2. **Latency budget.** Work whose answer is needed within a single frame of user input must be synchronous and in-thread; anything else may be
-   deferred or moved.
+   browser tier. **Most units are decided here.**
+2. **Latency budget.** Work whose answer is needed within one frame of user input is synchronous and in-thread; anything else may be deferred.
 3. **Thread cost.** Work heavy enough to drop frames belongs off the render thread, where the platform allows it.
 
 ### 4b. When Two Layers Fit
 
-**Pick the one further from the request path.** A unit that does not need to run per-request and does not run per-request can never slow one down,
-and can never leak per-request state.
-
-The same tiebreak, stated for the browser: pick the layer further from the render thread.
+**Pick the one further from the request path**, since a unit that does not run per-request can neither slow one down nor leak per-request state; in
+the browser, pick the layer further from the render thread.
 
 ### 4c. What a Layer Must Never Accumulate
 
@@ -229,8 +228,7 @@ Each layer has a characteristic drift, and naming it is cheaper than re-deriving
 - **Views** accumulate data fetching (§2d).
 - **Services** accumulate presentation — a service that formats a message for a user has taken on a view's job and will be wrong for the next
   caller.
-- **The browser tier** accumulates domain logic. It should stay presentation and adapters, never deriving a fact the server or a domain module
-  already owns.
+- **The browser tier** accumulates domain logic; it stays presentation and adapters, never deriving a fact the server or a domain module owns.
 
 ---
 
@@ -238,7 +236,7 @@ Each layer has a characteristic drift, and naming it is cheaper than re-deriving
 
 ### 5a. The Ordered Steps
 
-**Follow this sequence for every new feature. Do not reorder it** — the early steps exist to prevent work that must be undone.
+**Follow this sequence for every new feature, in order**: the early steps prevent work that must be undone.
 
 1. **Model** — define the domain types and the schema.
 2. **Service** — implement any external integration against those types.

@@ -35,7 +35,7 @@ audience: consumer
   browsers
 - §3f Deriving allowedOrigins in Dev: `SITE_ORIGIN` as the source, the `FORGE_DEV_ORIGINS` binding as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
-- §4a rateLimit Middleware Factory: the binding by name, and where a limit is applied
+- §4a rateLimit Middleware Factory: high-risk paths, and where a limit is applied
 - §4b A Missing Binding Under `forge cf dev`: the availability trade, the build that alone may take it, and required versus optional
 - §4c What the Binding Counts: approximate, per location, `{ success }` only — a brake, not a quota
 - §4d Rate-Limit Key Selection: the default key and its trust precondition
@@ -102,9 +102,9 @@ after it, so a handler's CSP can only tighten the app's (§2f).
 
 `mergeSecurityHeaders(base, override)` deep-merges two `SecurityHeadersOptions`, concatenating directive arrays.
 
-**Use it only in a dev-only module** to layer the Wrangler live-reload inline-script hash onto the production CSP. **The live-reload hash must
-never appear in the production CSP**: the module sits behind the app's own `imports` alias, whose `default` target layers nothing, so a deploy
-bundles no module that names the hash ([`NAMESPACES.md`][namespaces-5i] §5i).
+<!-- rule:forge-dev-csp-behind-relax --> It exists to layer the Wrangler live-reload inline-script hash onto the production CSP from a dev-only
+module, which sits behind the app's own `imports` alias, whose `default` target layers nothing, so a deploy bundles no module that names the hash
+([`NAMESPACES.md`][namespaces-5i] §5i).
 
 ### 2d. getNonce and Automatic URL Sanitization
 
@@ -119,8 +119,10 @@ and collapses everything else — `javascript:`, `vbscript:`, `data:` — to `"#
 there is neutralised by the renderer rather than left to `object-src`. Before matching the scheme it strips control characters and whitespace, so
 `java\tscript:` and a leading-newline variant are caught. **It does not decode HTML entities**, and does not need to: the same pass escapes the
 value, so an entity-encoded payload is emitted with its `&` escaped and never re-decodes into a scheme in the browser. `safeUrl` picks the scheme;
-escaping is what closes the entity route. **Consumers never call either.** Together they are the render-layer complement to the nonce: a
-user-controlled URL cannot become script execution even if it reaches an attribute.
+escaping is what closes the entity route.
+
+<!-- rule:forge-safe-url-renderer-only --> Together they are the render-layer complement to the nonce: a user-controlled URL cannot become script
+execution even if it reaches an attribute.
 
 **A handler drop and a double escape sit beside the URL pass.** An attribute whose lowercased name begins `on` is dropped outright, as `style`
 is. A **string** `srcdoc` is escaped twice, because the browser decodes the attribute once before parsing the frame document, so a single escape
@@ -154,10 +156,10 @@ refused under Trusted Types (§2g).
   `Referer` too, so that fallback would become a 403.
 - **`Cross-Origin-Embedder-Policy` is opt-in** (`crossOriginEmbedderPolicy`): `require-corp` breaks every subresource lacking a CORP or CORS
   opt-in, a site-wide change rather than a header default.
-- **`style-src` and `font-src` default to `'self'` and are configurable** (`styleSrc`, `fontSrc`), so a route can name a font CDN without a
-  string literal in the app. Widening them never adds `'unsafe-inline'`. **Forge names no third-party origin for either:** a CDN font is never a
-  shared cache hit under cache partitioning, so it costs two connections and a visitor-IP disclosure for nothing. Self-hosting through the asset
-  pipeline's `fonts.downloads` needs no widening.
+- <!-- rule:forge-csp-first-party-fonts --> **`style-src` and `font-src` default to `'self'` and are configurable** (`styleSrc`, `fontSrc`), so a
+  route can name a font CDN without a string literal in the app. Widening them never adds `'unsafe-inline'`. A CDN font is never a shared cache hit
+  under cache partitioning, so it costs two connections and a visitor-IP disclosure for nothing. Self-hosting through the asset pipeline's
+  `fonts.downloads` needs no widening.
 - **Every unsafe CSP keyword is refused as a string and admitted only as an imported symbol.** `'unsafe-inline'`, `'unsafe-eval'`,
   `'unsafe-hashes'` and `'wasm-unsafe-eval'` throw when named as a string, case-insensitively, in every directive, at construction and in
   `applySecurityHeaders`. The opt-out is a `unique symbol` per keyword (`UNSAFE_INLINE`, `UNSAFE_EVAL`, `UNSAFE_HASHES`, `WASM_UNSAFE_EVAL`) placed
@@ -219,6 +221,9 @@ name is exported as `HTMX_TRUSTED_TYPES_POLICY` from `@y-core/forge/ui/contracts
 `forge-turnstile`, exported beside it as `TURNSTILE_TRUSTED_TYPES_POLICY`:
 
 ```ts
+import { createSecurityHeaders } from "@y-core/forge/security";
+import { HTMX_TRUSTED_TYPES_POLICY, TURNSTILE_TRUSTED_TYPES_POLICY } from "@y-core/forge/ui/contracts";
+
 createSecurityHeaders({ trustedTypes: { policies: [HTMX_TRUSTED_TYPES_POLICY, TURNSTILE_TRUSTED_TYPES_POLICY] } });
 ```
 
@@ -262,14 +267,11 @@ Pinned in `src/ui/client/htmx-security.browser.ts` (the swap, both refusals, the
 
 ### 3a. cors Middleware for API Routes
 
-**Apply CORS only on routes consumed cross-origin — never globally.** Derive `allowedOrigins` from `BaseUrlConfig` so the list matches the deployed
+<!-- rule:forge-cors-per-route --> Derive `allowedOrigins` from `BaseUrlConfig` so the list matches the deployed
 environment automatically.
 
 **`cors` has one placement: `app.use("/api/*", cors(...))`, registered after `applyMiddlewareChain`.** It answers a preflight without calling
-`next`, and a preflight reaches it through a group's checks: the CSRF policy never arms a CORS preflight, an `OPTIONS` carrying both `Origin` and
-`Access-Control-Request-Method`, and a group's `origin` check passes `OPTIONS` as a safe method. A group's rate limit counts a preflight, and its
-`guards` run on it, so a guard that refuses an uncredentialed request — a browser sends a preflight without cookies — must pass one. Every other
-`OPTIONS` is armed ([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
+`next`, so the preflight must first pass the group's checks; which of them arm on an `OPTIONS` is [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e's.
 
 **`cors()` rebuilds the downstream `Response` rather than mutating it in place.** A downstream response may carry immutable headers, where in-place
 mutation would throw or silently no-op; rebuilding with a fresh `Headers` clone is correct by construction.
@@ -291,25 +293,19 @@ never the private-network target `Access-Control-Allow-Private-Network` was for.
 
 ### 3b. originGuard — Strict Origin Allowlist
 
-Middleware that rejects any request whose `Origin` is not in the allowlist. Use on privileged endpoints a browser calls. **Never put it on a webhook
-receiver:** a delivery is server-to-server and carries no origin signal, so this guard refuses it. A receiver checks the signature with
-`createWebhookSigning`'s `verify` instead ([Signing and verifying webhooks][security-webhooks]).
+**`originGuard` is for a privileged endpoint a browser calls, never a webhook receiver**: a delivery carries no origin signal, so the guard
+refuses it. A receiver checks the signature instead ([Signing and verifying webhooks][security-webhooks]).
 
-**It fails closed on no signal at all.** `Origin` decides where it is present; otherwise the `Referer`'s origin does; a request carrying neither is
-`"missing"` and is refused with `403` like a disallowed one. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) are exempt before the check runs, so what
-this refuses is a state-changing request that offered no origin evidence — a curl `POST`, not a same-origin navigation.
+**It fails closed on no signal at all.** `Origin` decides, else the `Referer`'s origin, and a mutating request carrying neither is refused with
+`403` — a curl `POST`, not a same-origin navigation, since safe methods are exempt (§3e).
 
 ### 3d. crossOriginProtection — Fetch Metadata
 
-`crossOriginProtection()` enforces same-origin for state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`) using the browser
-`Sec-Fetch-Site` header.
-
-**Requests labelled `cross-site` are rejected with `403`, and a missing header is rejected (fail-closed).** The one build that accepts it is a
-Worker run by `forge cf dev`, whose `#relax/cop` module admits a request carrying no Fetch Metadata ([`NAMESPACES.md`][namespaces-5i] §5i). The
+**`crossOriginProtection()` refuses a mutating request whose `Sec-Fetch-Site` is `cross-site` or absent, with `403`.** The one build that accepts it
+is a Worker run by `forge cf dev`, whose `#relax/cop` module admits a request carrying no Fetch Metadata ([`NAMESPACES.md`][namespaces-5i] §5i). The
 middleware takes no options, so no production call site can ask for the same.
 
-`checkCrossOriginProtection(request)` performs the same check as a plain function, returning a `GuardResult` alias with the reason code in `error`.
-Use it when the result must drive conditional logic rather than an automatic rejection.
+`checkCrossOriginProtection` is the same check for logic that branches on the result.
 
 **The origin guards inspect browser-sent headers — they are not a CSRF token mechanism.** CSRF minting and verification live in
 `@y-core/forge/form`.
@@ -322,7 +318,7 @@ The middleware below defend against cross-origin mutation. They form a deliberat
 | --- | --- | --- | --- |
 | `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
 | `crossOriginProtection()` | `Sec-Fetch-Site` only | Fails closed (`403`), except in a Worker run by `forge cf dev` | Stricter, no allowlist |
-| `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Privileged browser-called endpoints keyed purely on an origin allowlist — never a webhook receiver |
+| `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Privileged browser-called endpoints keyed purely on an origin allowlist (§3b) |
 
 **`originProtection` is the recommended default** — the others are the single-signal tiers it is built from.
 
@@ -337,12 +333,12 @@ Fetch-Metadata vouch, and with no signal at all the guard fails closed. **An app
 
 Only `originProtection` reports why it refused: its `OriginRefusal` reason is `cross-site` or `same-site` from the Fetch-Metadata veto, and
 `disallowed` or `missing` from the allowlist. How it is answered and logged is the guard policy table's
-([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e). `crossOriginProtection()` takes no options, and `originGuard(allowed)` takes only its allowlist.
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e).
 
 **A caller that is not a browser is admitted by name: `originProtection({ missing: "allow" })`.** Under it a mutating request carrying neither
 `Origin`, `Referer` nor `Sec-Fetch-Site` passes, while a present `Origin` that is disallowed and a `cross-site` or `same-site` Fetch-Metadata value
 are still refused. A browser sends `Origin` on every cross-origin `POST`, so a request with no signal at all is not a browser carrying the
-visitor's cookies. Go's `CrossOriginProtection` and Remix's `cop()` admit the same request. **The default stays `missing: "refuse"`**, the
+visitor's cookies. **The default stays `missing: "refuse"`**, the
 fail-closed posture for a cookie-authenticated group, and the option is a named value, not a boolean, so every admitting group is greppable
 ([`NAMESPACES.md`][namespaces-5i] §5i). It is for an endpoint called by a server or a tool — an MCP endpoint, a CSP report receiver — that also
 sits under a group's origin check; such an endpoint never authenticates by cookie.
@@ -352,9 +348,8 @@ by default.
 
 ### 3f. Deriving allowedOrigins in Dev
 
-**The posture itself is canon.** Development is https at every hop, the dev server's local protocol is set to https, a scheme-rewriting middleware
-is never the fix, and `upgrade-insecure-requests`/HSTS/`Secure` cookies stay hardcoded: [`WORKERS_PLATFORM.md`][wp-4e] §4e rules on all of it, and a
-consuming app cites that. This section holds only what is forge's own — how `allowedOrigins` reaches the guards of §3.
+**The development transport posture is canon's** ([`WORKERS_PLATFORM.md`][wp-4e] §4e). This section holds only how `allowedOrigins` reaches the
+guards of §3.
 
 **HSTS is on in development too, so choose the dev hostname for it.** A browser stores the policy per hostname, every port and, with
 `includeSubDomains`, every name below; stored for bare `localhost`, it forces https on every local project there. Reach dev at a per-project
@@ -375,10 +370,8 @@ one is set: the same containment as the live-reload CSP hash (§2c), and a check
 Forge's own browser set serves no origin at all, so the canon's loopback-https rule for a browser suite does not reach it (`playwright.config.ts`
 owns why).
 
-**A session cookie's `Secure` flag has no off switch.** `createSignedCookie` hardcodes it as it hardcodes `httpOnly`. Development is https at every
-hop ([`WORKERS_PLATFORM.md`][wp-4e] §4e), so `Secure` is correct there by construction, and an in-process test harness needs no switch either:
-`Secure` is enforced by a browser deciding whether to send a cookie back over http. An option would only make reachable a relaxation computed from a
-mistyped env check and shipped silently.
+**A session cookie's `Secure` flag has no off switch**, as `httpOnly` has none: development is https, and an in-process test harness is not a
+browser that would withhold the cookie, so an option could only ship a relaxation computed from a mistyped env check.
 
 ---
 
@@ -386,11 +379,8 @@ mistyped env check and shipped silently.
 
 ### 4a. rateLimit Middleware Factory
 
-`rateLimit` wraps the Cloudflare Workers Rate Limiting binding. **Apply per-route, not globally**, to target high-risk endpoints such as form
-submissions and API mutations.
-
-**It names its binding: `rateLimit({ binding: "MAIN_LIMITER", key?, keySuffix?, methods?, onRefuse? })`.** The binding's type is `RateLimit`, and
-where a limit is declared — a guard group, or the route — is §4e's.
+`rateLimit` wraps the Workers Rate Limiting binding. **Apply it to high-risk paths, not globally** — form submissions and API mutations; whether
+on a guard group or the route is §4e's.
 
 ### 4b. A Missing Binding Under `forge cf dev`
 
@@ -420,10 +410,8 @@ for the binding, so under `methods: ["POST"]` a `GET` on the same path is served
 - **`period` is `10` or `60` seconds**, declared in `wrangler.jsonc`'s `ratelimits` beside `limit`.
 - **`limit()` answers `{ success }` and nothing else** — no remaining count and no reset time.
 
-So a limit is sized as a brake on a hostile rate, never as an allowance a client may spend to the last unit. A `429` can say
-only that the window is at most `period` long, which is why `Retry-After` carries the period and no `RateLimit` header is sent
-([`FORGE_ERRORS.md`][eh-3e] §3e). And a quota that must hold exactly — per credential, across locations — is a Durable Object counter the app
-builds, not this binding.
+So size a limit as a brake on a hostile rate; a quota that must hold exactly is a Durable Object counter the app builds. How a `429` reports the
+window is [`FORGE_ERRORS.md`][eh-3e] §3e's.
 
 ### 4d. Rate-Limit Key Selection
 
@@ -452,7 +440,7 @@ resolver over `c.env`. When the chain is built, a group's binding must be declar
 optional — and present in the chain's `rateLimits` table, so a typo throws at registration, naming the group. Required or optional is decided
 there, as §4b states; `rateLimit` has no boot check of its own, and `#relax/rate-limit` still skips an absent one under `forge cf dev`.
 
-**The window comes from wrangler, never a second declaration.** `forge cf gen env` emits a typed `RATELIMITS` constant, `{ NAME: { limit, period }
+<!-- rule:forge-rate-limit-window-generated --> `forge cf gen env` emits a typed `RATELIMITS` constant, `{ NAME: { limit, period }
 }`, from `wrangler.jsonc`'s `ratelimits`, and the app passes it to `applyMiddlewareChain` as `rateLimits`. The chain publishes it on the request
 context, so a route-level limit reads it too, and a name missing from it is a wiring error thrown where it is read. `validate-env-schema` holds
 the generated file to `wrangler.jsonc`, so the period a `429`'s `Retry-After` reports ([`FORGE_ERRORS.md`][eh-3e] §3e) is the one Cloudflare
@@ -492,17 +480,12 @@ These alternatives were rejected:
 
 ### 5a. requestId Middleware
 
-`requestId(options?)` generates a unique ID per request, sets the `X-Request-Id` response header, and stores the value in `requestIdCtx`.
-
-**Register at the top of the middleware stack** so all downstream middleware and handlers can read it — the position
-[`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e gives it, and `applyMiddlewareChain` puts it there. Read it with `requestIdCtx.getOptional(c)`.
-
-The inbound `CF-Ray` header is ignored unless `trustCfHeaders` is set — see §5c.
+**`requestId` goes first in the chain**, so everything downstream can read `requestIdCtx` — the position
+[`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e gives it. It adopts `CF-Ray` only under `trustCfHeaders` (§5c).
 
 ### 5b. Logging Integration
 
-`requestLogger` reads `requestIdCtx` to correlate log entries across a request's lifetime. **Because `requestId()` runs first, the logger always
-finds the ID already set** — the chain order is [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e's; what the logger does with the id is
+`requestLogger` correlates a request's entries through `requestIdCtx`, which §5a guarantees is set; what it does with the id is
 [`STRUCTURED_LOGGING.md`][sl-3c] §3c's.
 
 ### 5c. Cloudflare Header Trust Boundary — `trustCfHeaders`
@@ -519,8 +502,7 @@ them unless `trustCfHeaders: true`**, and every surface defaults to `false`:
 **`applyMiddlewareChain` takes a single `trustCfHeaders`, and it is the only place an app declares it**, so the trust posture is stated once and
 no surface can disagree with it. `rateLimit`, an approval and a hand-mounted group take no trust option of their own (§4e).
 
-**A Cloudflare-deployed app must set `trustCfHeaders: true` or pass a custom rate-limit `key`** — otherwise a group's limit throws where the chain
-registers it, and a route-level limit answers `503` with reason `key-failed`.
+**A Cloudflare-deployed app must set `trustCfHeaders: true` or pass a custom rate-limit `key`**; what each limit does otherwise is §4d's.
 
 ---
 
@@ -528,12 +510,8 @@ registers it, and a route-level limit answers `503` with reason `key-failed`.
 
 ### 6a. requireFormContentType
 
-Middleware factory enforcing a form content type — `application/x-www-form-urlencoded` or `multipart/form-data`. The comparison is case-insensitive
-and ignores any `; charset=…` parameter. A wrong or missing content type is rejected with `415`. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) pass
-unchecked, because they carry no form body; `isSafeMethod` is the same test.
-
-**Apply on HTML form submission endpoints to prevent JSON-based CSRF that bypasses same-site cookie protections. Do not use on API routes that
-accept JSON.**
+**Apply `requireFormContentType` to HTML form endpoints, never to an API route that accepts JSON.** Its `415` stops a JSON-bodied cross-site
+request that same-site cookies do not.
 
 ---
 
@@ -564,6 +542,9 @@ passes it, so passing proves nothing about a secret chosen by hand.
 | --- | --- | --- |
 | Key-ring root secret, the CSRF, signed-URL and session secrets included | `importKeyRing`, `importAuthKeyRing`, and a hand-built `KeyRing` when `resolveAuthServices` checks it | the hex-decoded bytes, so 64 hex characters is the floor |
 | Webhook secret | `createWebhookSigning` | the base64-decoded bytes after `whsec_` |
+
+<!-- rule:forge-secret-from-binding --> A secret in a binding is one `forge cf sync --rotate` can replace; a literal ships in every bundle and every
+clone of the repository.
 
 **Generate every secret from a CSPRNG.** `openssl rand -hex 32` gives a secret that passes for every row above; a webhook secret is
 `whsec_$(openssl rand -base64 32)`. `forge cf sync --rotate` generates 32 CSPRNG bytes of hex for a key marked `# forge:generate`; a key ring is

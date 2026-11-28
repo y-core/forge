@@ -54,9 +54,10 @@
     ]
   },
   "scripts": {
+    "eval": "bun run src/tooling/dev/eval/bin.ts",
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
-    "gen:bundles": "bun run config/bundles.ts",
-    "gen:d1-baseline": "bun run config/d1-baseline.ts && bun fmt --no-script src/tooling/db/backup/baseline-dump.fixture.ts",
+    "gen:bundles": "bun run src/tooling/gate/checks/bundle.ts",
+    "gen:d1-baseline": "bun run src/tooling/dev/d1-baseline.ts && bun fmt --no-script src/tooling/db/backup/baseline-dump.fixture.ts",
     "gen:icc": "bun run src/tooling/gate/checks/icc-profile.ts && bun fmt --no-script src/render/pdf/icc.ts",
     "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && bun fmt --no-script src/ui/core/utils/class-groups.ts",
     "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && bun fmt --no-script src/tooling/lint/data/design-scale.ts",
@@ -540,6 +541,10 @@
       "types": "./warden/src/mcp/mod.ts",
       "import": "./warden/src/mcp/mod.ts"
     },
+    "./warden/sdk": {
+      "types": "./warden/src/sdk/mod.ts",
+      "import": "./warden/src/sdk/mod.ts"
+    },
     "./warden/steps": {
       "types": "./warden/src/steps.ts",
       "import": "./warden/src/steps.ts"
@@ -548,6 +553,7 @@
   "files": [
     "README.md",
     "CHANGELOG.md",
+    "config/rules.config.ts",
     "docs/",
     "src/app/",
     "src/assets/",

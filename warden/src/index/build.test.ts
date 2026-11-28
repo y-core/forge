@@ -38,6 +38,16 @@ describe("load()", () => {
     expect(entry?.hash).toMatch(/^[0-9a-f]{8}$/);
   });
 
+  it("renders each statement at its marker before chunking, and hashes the file as written", () => {
+    const sources = fixture({ "docs/A.md": doc("A", "<!-- rule:forge-x --> Because y.") }, "warden-load-rendered-");
+    const [raw] = load(sources);
+    const [entry] = load(sources, undefined, new Map([["forge-x", "Never do x."]]));
+
+    expect(entry?.chunks[0]?.body).toContain("**Never do x.** <!-- rule:forge-x --> Because y.");
+    expect(entry?.chunks[0]?.rules).toBe("Never do x");
+    expect(entry?.hash).toBe(raw?.hash ?? "");
+  });
+
   it("falls back to the path when a document carries no title", () => {
     expect(load(fixture({ "docs/A.md": "## 1. One\n\nBody.\n" }, "warden-untitled-"))[0]?.title).toBe("docs/A.md");
   });

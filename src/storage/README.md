@@ -112,7 +112,7 @@ per call with the SQL text, cost and placement. The record never carries a bound
 
 ## Handling a failed query
 
-A failed call carries a `D1Failure`. Branch on its `kind`, never on the message text:
+A failed call carries a `D1Failure`, whose `kind` is what to branch on ([`STORAGE_BINDINGS.md`][sb-1g] §1g):
 
 ```ts
 import { createD1Client, sql } from "@y-core/forge/storage/db";
@@ -225,9 +225,8 @@ await db.execute(sql`INSERT INTO orders (id, customer_id) VALUES (${uuidv7()}, $
 SELECT * FROM orders WHERE id > ?1 ORDER BY id LIMIT 50;
 ```
 
-**`TEXT` is the default.** `uuidv7Bytes()` mints the same value from the same generator as raw octets for a `BLOB` column, ordered identically, and
-what you are trading — a smaller footprint against legible output everywhere the database is read by hand — is
-[`STORAGE_BINDINGS.md`][sb-1e] §1e's, along with the rule that a UUIDv7 is never a secret. Take it per table, not schema-wide.
+**`TEXT` is the default.** `uuidv7Bytes()` mints the same ordered value as raw octets for a `BLOB` column; the trade, and why a UUIDv7 is never a
+secret, are [`STORAGE_BINDINGS.md`][sb-1e] §1e's. Take it per table, not schema-wide.
 
 ```ts
 import { createD1Client, sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
@@ -315,8 +314,7 @@ const blobs = createKVStore<Uint8Array>(c.env.BLOBS, { codec: bytesCodec() }); /
 `jsonCodec<T>()` is the default, for records and arrays. Which to pick for a given namespace is [`STORAGE_BINDINGS.md`][sb-2b] §2b's, and it must
 match the format already stored there — a codec is not a migration.
 
-A custom codec is `{ type, encode, decode }`. Its `type` must name the wire form `decode` expects (`"text"` or `"arrayBuffer"`), because that is
-what the store dispatches the read on.
+A custom codec's `type` must name the wire form `decode` expects, because the store dispatches the read on it.
 
 ---
 

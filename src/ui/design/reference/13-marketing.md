@@ -12,12 +12,6 @@ who has not decided anything yet, where variance earns attention rather than cos
 So read this file as a **standing case for a written brief**, in the sense of `docs/UI_DESIGN_GUIDANCE.md` §2c, raising the dials of
 `12-density.md` from their ratified app-UI defaults (`UI_DESIGN_GUIDANCE.md` §8) toward roughly density 3, variance 7, motion 5.
 
-Default: marketing dial settings apply only when a written brief identifies the surface as a public-facing marketing or landing page, and never by
-inference from a route name, a file path, or the surrounding copy. <!-- rule:forge-ui-marketing-brief-required -->
-
-Default: a surface behind authentication is built at forge's app defaults even when its content is promotional — an upgrade prompt, a feature
-announcement — unless the brief names it a marketing surface explicitly. <!-- rule:forge-ui-marketing-authenticated-stays-app -->
-
 ## 0. Quick Reference
 
 - §1 What actually changes: type steps, vertical rhythm, the hero, the one accent moment
@@ -30,7 +24,10 @@ announcement — unless the brief names it a marketing surface explicitly. <!-- 
 
 ## 1. What actually changes
 
-The levers below, and only those. Everything else on the page is composed exactly as it would be in the app.
+Whether these levers apply at all is Floor: `forge-ui-marketing-brief-required`, in `floor.md`.
+
+<!-- rule:forge-ui-marketing-authenticated-stays-app --> The levers below, and only those. Everything else on the page is composed exactly as it
+would be in the app.
 
 | Lever | App default | Marketing | Terminates in |
 | --- | --- | --- | --- |
@@ -39,17 +36,12 @@ The levers below, and only those. Everything else on the page is composed exactl
 | The hero | none — a page starts at its content | one, at the top, carrying the single message | `Card`-free plain section |
 | The accent moment | none | exactly one element using `--primary` as a surface | `bg-primary text-primary-foreground` |
 
-Default: a marketing page opens with exactly one hero region carrying one headline, one supporting line, and one `primary` `Button`, unless the
-brief describes a page with two independent audiences that must be split above the fold. <!-- rule:forge-ui-marketing-hero-once -->
+<!-- rule:forge-ui-marketing-hero-once -->
 
-Default: the hero headline is the only place a type step above `text-3xl` appears, and the jump between the headline and the supporting line is at
-least two steps on the type scale, unless the brief supplies its own typographic scale. <!-- rule:forge-ui-marketing-type-step-jump -->
+<!-- rule:forge-ui-marketing-type-step-jump -->
 
-Default: marketing sections separate at `py-16` or larger and their internal groups at `gap-8` or larger, unless the section is a dense comparison
-table, which returns to the app density of `12-density.md`. <!-- rule:forge-ui-marketing-vertical-rhythm -->
+<!-- rule:forge-ui-marketing-vertical-rhythm -->
 
-Default: exactly one element per page uses `--primary` as a filled surface — the hero's `primary` `Button` is the usual holder — and every other
-call to action on the page is `secondary` or `ghost`, unless the brief specifies a repeated end-of-section call to action.
 <!-- rule:forge-ui-marketing-one-accent -->
 
 ## 2. Building it from components forge actually has
@@ -66,17 +58,13 @@ Forge ships no marketing-specific components, and none are needed. A landing pag
 | A named person | `Avatar` | Only with a real person's real image or initials via `Avatar.Fallback` |
 | Section separation | `Separator` | Between bands, in place of a border on each `Card` |
 
-Default: a marketing feature grid renders one `Card` per feature with `Card.Title` and `Card.Description` and no per-card `Button`, unless each
-feature links to a materially different destination. <!-- rule:forge-ui-marketing-card-feature-group -->
+<!-- rule:forge-ui-marketing-card-feature-group -->
 
-Default: an FAQ renders as an `Accordion` rather than as stacked `Card`s, unless every answer is short enough that all of them fit on screen at
-once. <!-- rule:forge-ui-marketing-accordion-faq -->
+<!-- rule:forge-ui-marketing-accordion-faq -->
 
-Default: a notice bar uses `Alert` with `neutral` or `info`, unless the notice reports a real service failure, which is the one case `destructive`
-is earned. <!-- rule:forge-ui-marketing-alert-notice -->
+<!-- rule:forge-ui-marketing-alert-notice -->
 
-Default: a capture form opens in a `Dialog` triggered by an explicit control, and never on a timer, a scroll position, or an exit-intent listener,
-unless the brief specifies the trigger. <!-- rule:forge-ui-marketing-dialog-capture -->
+<!-- rule:forge-ui-marketing-dialog-capture -->
 
 ### 2a. Before / after — the hero
 
@@ -127,33 +115,21 @@ brief reaches it. Specifically:
   hero's `class`.
 - `forge-ui-contrast-floor` — large display type at low contrast is a standing marketing accessibility failure. 3:1 for large text, in both `:root`
   and `.dark`.
-- `forge-ui-focus-ring` and `forge-ui-hit-target` — a landing page is still operated by keyboard, and a hero button is still a button.
-- `forge-ui-reduced-motion` — motion at 5 is the setting most likely to produce a scroll-triggered animation, and every one of them needs a
-  `motion-reduce:` path.
-- `forge-ui-heading-order` — the hero `<h1>` is the page's only one, and section headings descend from it without a skip. Sizing is a class, never a
-  tag choice.
+- `forge-ui-focus-ring` and `forge-ui-hit-target` — a hero button is still a button.
+- `forge-ui-reduced-motion` — every scroll-triggered animation at motion 5 needs a `motion-reduce:` path.
+- `forge-ui-heading-order` — the hero `<h1>` is the page's only one, and section headings descend from it without a skip.
 - `forge-ui-one-radius` — a marketing page is not the place to introduce a second corner radius.
 
-**`forge-ui-no-fabricated-data` applies with full force here.** No invented metric, no invented testimonial, no invented company logo, no invented
-person. "Trusted by 12,000 teams", "312% faster", a quote attributed to a fictional VP of Engineering, an `Avatar` holding a stock face — every one
-is a fabrication, and shipping it is worse on a marketing surface than anywhere else in the product, because a marketing surface is a claim to a
-stranger.
+<!-- rule:forge-ui-marketing-no-invented-proof --> **`forge-ui-no-fabricated-data` applies with full force here.** No invented metric, no invented
+testimonial, no invented company logo, no invented person. "Trusted by 12,000 teams", "312% faster", a quote attributed to a fictional VP of
+Engineering, an `Avatar` holding a stock face — every one is a fabrication, and shipping it is worse on a marketing surface than anywhere else in
+the product, because a marketing surface is a claim to a stranger.
 
-Default: a proof element — a metric, a quote, a customer name, an `Avatar` — renders only when the real value is supplied in the brief, and
-otherwise the element is omitted entirely rather than filled with a placeholder. <!-- rule:forge-ui-marketing-no-invented-proof -->
-
-Default: an `Avatar` on a marketing surface carries a real person's image or their real initials through `Avatar.Fallback`, unless the brief
-supplies an explicitly illustrative image and says so.
 <!-- rule:forge-ui-marketing-avatar-real-person -->
 
-Default: a section that has no real content yet is left out of the page rather than rendered with sample content, unless the brief asks for a
-wireframe, in which case every placeholder is labelled as one in the surrounding copy. <!-- rule:forge-ui-marketing-omit-unfilled-section -->
+<!-- rule:forge-ui-marketing-omit-unfilled-section -->
 
 ## 4. Motion at 5
 
-The raised motion dial buys entrance transitions on scroll and a longer duration on state changes. It does not buy anything that moves without the
-user causing it.
-
-Default: marketing motion is limited to one entrance transition per section and the state transitions the platform's own selectors already express,
-and never includes a looping animation, an auto-advancing carousel, or a parallax effect, unless the brief names the effect specifically.
-<!-- rule:forge-ui-marketing-motion-ceiling -->
+<!-- rule:forge-ui-marketing-motion-ceiling --> The raised motion dial buys entrance transitions on scroll and a longer duration on state changes.
+It does not buy anything that moves without the user causing it.

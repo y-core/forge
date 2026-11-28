@@ -1,350 +1,250 @@
 // Generated from src/tooling/lint/mod.ts by `bun run gen:bundles` — do not edit.
 
-// src/tooling/lint/design-rules.ts
-var RULE_CORPUS_PATH = {
-  "forge-ui-color-token-only": "src/ui/design/floor.md",
-  "forge-ui-color-theme-no-raw-utility": "src/ui/design/reference/04-color.md",
-  "forge-ui-no-inline-style": "src/ui/design/floor.md",
-  "forge-ui-spacing-scale-only": "src/ui/design/floor.md",
-  "forge-ui-no-nested-card": "src/ui/design/floor.md",
-  "forge-ui-interaction-focus-visible": "src/ui/design/reference/09-interaction.md",
-  "forge-ui-interaction-filter-group-required": "src/ui/design/reference/09-interaction.md",
-  "forge-ui-catalog-wrong-raw-input": "src/ui/design/catalog.md",
-  "forge-ui-contrast-floor": "src/ui/design/floor.md",
-  "forge-ui-hit-target": "src/ui/design/floor.md",
-  "forge-ui-a11y-label-association": "src/ui/design/floor.md",
-  "forge-ui-a11y-live-politeness": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-no-aria-readonly-on-button": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-one-live-region": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-aria-beside-data": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-heading-size-by-class": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-state-attrs-source": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-reduced-motion": "src/ui/design/floor.md",
-  "forge-ui-focus-ring": "src/ui/design/floor.md",
-  "forge-ui-optional-prop-undefined": "src/ui/design/reference/10-accessibility.md"
-};
-var RULE_ENFORCER = {
-  "forge-ui-color-token-only": ["lint"],
-  "forge-ui-color-theme-no-raw-utility": ["lint"],
-  "forge-ui-no-inline-style": ["lint"],
-  "forge-ui-spacing-scale-only": ["lint"],
-  "forge-ui-no-nested-card": ["lint"],
-  "forge-ui-interaction-focus-visible": ["lint"],
-  "forge-ui-interaction-filter-group-required": ["lint"],
-  "forge-ui-catalog-wrong-raw-input": ["lint"],
-  "forge-ui-contrast-floor": ["contrast", "faded-text"],
-  "forge-ui-hit-target": ["browser"],
-  "forge-ui-a11y-label-association": ["lint"],
-  "forge-ui-a11y-live-politeness": ["lint"],
-  "forge-ui-a11y-no-aria-readonly-on-button": ["lint"],
-  "forge-ui-a11y-one-live-region": ["lint"],
-  "forge-ui-a11y-aria-beside-data": ["lint"],
-  "forge-ui-a11y-heading-size-by-class": ["lint"],
-  "forge-ui-a11y-state-attrs-source": ["lint"],
-  "forge-ui-reduced-motion": ["lint"],
-  "forge-ui-focus-ring": ["lint"],
-  "forge-ui-optional-prop-undefined": ["lint"]
-};
-var PREFIX = "forge-ui-";
-function lintKeyOf(id) {
-  return id.slice(PREFIX.length);
-}
-function corpusIdOf(key) {
-  const id = `${PREFIX}${key}`;
-  return id in RULE_CORPUS_PATH ? id : void 0;
-}
-
 // src/tooling/lint/modern-css-rules.ts
-var CORPUS = "src/ui/design/reference/16-platform.md";
 var MODERN_CSS_RULES = {
   "forge-ui-platform-aspect-ratio": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "aspect-ratio",
     verify: "the percentage resolves against the inline size, so a ratio taken from a block-size padding is not the same box"
   },
   "forge-ui-platform-centering": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "place-items: center",
     verify: "the replacement moves the rule onto the container, so a child positioned against a different containing block changes box"
   },
   "forge-ui-platform-image-set": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "image-set()",
     verify: "a density query may also be switching art direction, which image-set() does not express"
   },
   "forge-ui-platform-isolation": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "isolation: isolate",
     verify: "the negative layer may be deliberately painting behind an ancestor's background rather than behind a sibling"
   },
   "forge-ui-platform-light-dark": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "light-dark()",
     verify: "light-dark() reads color-scheme, so the element must sit under a declared scheme rather than the media query's"
   },
   "forge-ui-platform-line-clamp": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "line-clamp",
     verify: "the prefixed form needs display: -webkit-box, which the standard property does not, so the box type changes with it"
   },
   "forge-ui-platform-logical-spacing": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "the logical property or utility on the same axis",
-    verify: "a rule that is physical on purpose \u2014 anchored placement, a mirrored glyph \u2014 states so rather than being rewritten",
-    enforcer: "lint"
+    verify: "a rule that is physical on purpose \u2014 anchored placement, a mirrored glyph \u2014 states so rather than being rewritten"
   },
   "forge-ui-platform-scrollbar": {
     tier: "A",
     severity: "fail",
-    corpus: CORPUS,
     replacement: "scrollbar-color and scrollbar-width",
     verify: "the standard properties style the scrollbar but cannot size or shape its parts the way the pseudo-elements did"
   },
   "forge-ui-platform-native-dialog": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "<dialog> opened with showModal(), or show() when non-modal",
     verify: "showModal() puts the element in the top layer and makes the rest of the page inert, which a positioned div was not doing"
   },
   "forge-ui-platform-native-popover": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "the Popover API",
     verify: "a popover light-dismisses on outside click and Escape, so a panel that must survive either one is not one"
   },
   "forge-ui-platform-native-details": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "<details> and <summary>",
     verify: "a closed <details> hides its content from find-in-page only until the browser expands it, which changes what a scripted panel guaranteed"
   },
   "forge-ui-platform-entry-motion": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@starting-style with transition-behavior: allow-discrete",
-    verify: "the starting style applies on the first style change after insertion, so an element already in the DOM never enters",
-    enforcer: "lint"
+    verify: "the starting style applies on the first style change after insertion, so an element already in the DOM never enters"
   },
   "forge-ui-platform-exit-geometry": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "geometry on the base selector, with only opacity, overlay and display keyed on the open state",
     verify: "a declaration moved to the base selector applies while closed too, so a closed state that must differ \u2014 a drawer docked off-screen \u2014 keys that difference on :not([open])"
   },
   "forge-ui-platform-parent-state": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: ":has()",
     verify: ":has() re-evaluates on every state change, so a class the script only set once becomes live"
   },
   "forge-ui-platform-inert": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "the inert attribute",
     verify: "inert removes the subtree from the accessibility tree as well as from the tab order, which a tabindex sweep did not"
   },
   "forge-ui-platform-theme-detection": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "light-dark()",
     verify: "light-dark() follows color-scheme, so a theme the app drives from a class rather than the media query needs the script"
   },
   "forge-ui-platform-smooth-scroll": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "scroll-behavior with scroll-margin",
     verify: "scroll-behavior is honoured for user-initiated scrolls too, which a per-call option was not"
   },
   "forge-ui-platform-ticker": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "keyframes gated on prefers-reduced-motion",
     verify: "keyframes run off the main thread and cannot read a value the interval was recomputing each tick"
   },
   "forge-ui-platform-counters": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "CSS counters",
     verify: "generated content is not in the DOM, so a number that has to be copied or read by a script stays in text"
   },
   "forge-ui-platform-count-up": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@property with counters",
     verify: "a registered custom property interpolates as a number but renders through content, which no assistive technology announces mid-animation"
   },
   "forge-ui-platform-animated-border": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@property with conic-gradient()",
     verify: "registering the angle makes it animatable, and the gradient then repaints without a frame callback"
   },
   "forge-ui-platform-motion-path": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "offset-path",
     verify: "offset-path also rotates the element along the path unless offset-rotate says otherwise"
   },
   "forge-ui-platform-reveal-mask": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "a CSS mask driven by one custom property",
     verify: "a mask composites the whole element, so a child that was outside the scripted clip is now masked too"
   },
   "forge-ui-platform-scroll-reveal": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "animation-timeline: view()",
     verify: "a view timeline re-runs as the element scrolls back out, where a one-shot observer did not"
   },
   "forge-ui-platform-carousel": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "scroll snap with ::scroll-button()",
     verify: "scroll snap steps by snap position rather than by index, so a track with uneven slides pages differently"
   },
   "forge-ui-platform-field-sizing": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "field-sizing: content",
     verify: "the control now grows without bound unless a max-block-size caps it, which the scripted height implicitly did"
   },
   "forge-ui-platform-anchor-positioning": {
     tier: "B",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "anchor()",
     verify: "anchor() needs the anchor and the positioned element in the same anchor scope, which a measured rectangle did not require"
   },
   "forge-ui-platform-layer": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@layer",
     verify: "an unlayered rule beats every layered one, so moving only part of a stylesheet into a layer inverts the order it had"
   },
   "forge-ui-platform-nesting": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "native CSS nesting",
     verify: "native nesting resolves a bare element selector differently from the preprocessor, which needed no & before a type"
   },
   "forge-ui-platform-container-query": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@container",
     verify: "a container query needs an ancestor declaring container-type, which establishes containment and can change that ancestor's own sizing"
   },
   "forge-ui-platform-subgrid": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "subgrid",
     verify: "subgrid inherits the parent's tracks, so a child that was sized independently now stretches to the parent's"
   },
   "forge-ui-platform-selector-list": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: ":is() or :where()",
     verify: ":is() takes the specificity of its most specific argument and :where() takes none, so neither matches the list's own specificity"
   },
   "forge-ui-platform-accent-color": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "accent-color",
     verify: "accent-color tints the native control and cannot change its shape, so a design that redrew the box is not expressible"
   },
   "forge-ui-platform-view-transition": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@view-transition { navigation: auto; }",
     verify: "the opt-in animates only a same-origin navigation whose outgoing and incoming documents both carry it"
   },
   "forge-ui-platform-text-balance": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "text-wrap: balance",
-    verify: "balancing is capped at a few lines, so it silently does nothing on a heading that wraps past the limit",
-    enforcer: "lint"
+    verify: "balancing is capped at a few lines, so it silently does nothing on a heading that wraps past the limit"
   },
   "forge-ui-platform-text-pretty": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "text-wrap: pretty",
-    verify: "pretty wrapping changes line breaks, so a block whose height was measured for a fixed box may now take another line",
-    enforcer: "lint"
+    verify: "pretty wrapping changes line breaks, so a block whose height was measured for a fixed box may now take another line"
   },
   "forge-ui-platform-field-sizing-adopt": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "field-sizing: content",
     verify: "the control grows without bound unless a max-block-size caps it, and the rows attribute stops being the height"
   },
   "forge-ui-platform-interpolate-size": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "interpolate-size: allow-keywords",
     verify: "the keyword is allowed from the declaring element down, so a transition on an ancestor's descendant needs it declared above both"
   },
   "forge-ui-platform-scope": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "@scope",
     verify: "a scoped rule stops at the scope's lower boundary, so a descendant the prefix used to reach through a slot is no longer matched"
   },
   "forge-ui-platform-display-contents": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "display: contents",
     verify: "the box disappears with its background, border and any transform, and until recently took its accessibility role with it"
   },
   "forge-ui-platform-color-mix": {
     tier: "C",
     severity: "warn",
-    corpus: CORPUS,
     replacement: "color-mix()",
     verify: "a mix with transparent composites against whatever is behind it, so a derived token carrying a contrast floor is not one"
   }
@@ -353,7 +253,6 @@ var MODERN_CSS_CITED_RULES = {
   "forge-ui-interaction-focus-visible": {
     tier: "C",
     severity: "warn",
-    corpus: "src/ui/design/reference/09-interaction.md",
     replacement: ":focus-visible",
     verify: "a control reachable only by pointer never matches :focus-visible, so it would lose its indicator entirely"
   }
@@ -364,23 +263,29 @@ function modernCssRule(id) {
 }
 
 // src/tooling/lint/report.ts
-var corpusPathOf = (id) => id in RULE_CORPUS_PATH ? RULE_CORPUS_PATH[id] : MODERN_CSS_RULES[id].corpus;
-function reporter(context, corpusId) {
-  return (detail, loc) => {
-    context.report({ message: `${detail} (${corpusId} \u2014 ${corpusPathOf(corpusId)})`, loc });
+function defineLintRule(id, spec) {
+  return {
+    id,
+    ...spec.meta === void 0 ? {} : { meta: spec.meta },
+    create(context) {
+      const report = (detail, at) => {
+        const message = `[${id}] ${detail}`;
+        context.report("node" in at ? { message, node: at.node } : { message, loc: at });
+      };
+      return spec.create(context, report);
+    }
   };
 }
 
 // src/tooling/lint/rules/a11y-aria-beside-data.ts
 var PRESENCE_STATES = ["pressed", "checked", "selected", "disabled", "invalid", "busy"];
 var PRESENCE_ATTRS = new Set(PRESENCE_STATES.map((state) => `data-${state}`));
-var a11yAriaBesideData = {
+var a11yAriaBesideData = defineLintRule("forge-ui-a11y-aria-beside-data", {
   meta: {
     type: "problem",
     docs: { description: "A state hook is emitted through `stateAttrs`, so its `aria-*` counterpart is never written alone." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-aria-beside-data");
+  create(_context, report) {
     return {
       JSXAttribute(node) {
         const name = node.name?.name ?? "";
@@ -392,7 +297,7 @@ var a11yAriaBesideData = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/ast.ts
 var CLASS_ATTRIBUTES = /* @__PURE__ */ new Set(["class", "className"]);
@@ -549,15 +454,14 @@ function headingTag(position) {
   const name = element.name;
   return name.type === "JSXIdentifier" && HEADING_TAG.test(name.name) ? name.name : void 0;
 }
-var a11yHeadingSizeByClass = {
+var a11yHeadingSizeByClass = defineLintRule("forge-ui-a11y-heading-size-by-class", {
   meta: {
     type: "problem",
     docs: {
       description: "A heading's size comes from a `text-*` class, so its level can follow the section's position rather than the size wanted."
     }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-heading-size-by-class");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const tag = headingTag(found.node);
       if (tag === void 0 || TEXT_SIZE.test(found.text)) return;
@@ -567,7 +471,7 @@ var a11yHeadingSizeByClass = {
       );
     });
   }
-};
+});
 
 // src/tooling/lint/jsx.ts
 function tagName(node) {
@@ -625,10 +529,9 @@ var LABEL_CONTROLS = /* @__PURE__ */ new Set([
   "NumberField",
   "Toggle"
 ]);
-var a11yLabelAssociation = {
+var a11yLabelAssociation = defineLintRule("forge-ui-a11y-label-association", {
   meta: { type: "problem", docs: { description: "A label names a control, by `for` or by wrapping it; otherwise it labels nothing." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-label-association");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         if (openingTag(node) !== "label") return;
@@ -639,13 +542,12 @@ var a11yLabelAssociation = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/a11y-live-politeness.ts
-var a11yLivePoliteness = {
+var a11yLivePoliteness = defineLintRule("forge-ui-a11y-live-politeness", {
   meta: { type: "problem", docs: { description: "A live region announces politely unless it has stated why it interrupts the reader." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-live-politeness");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         const value = statedString(attributeNamed(node, "aria-live")?.value);
@@ -657,13 +559,12 @@ var a11yLivePoliteness = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/a11y-no-aria-readonly-on-button.ts
-var a11yNoAriaReadonlyOnButton = {
+var a11yNoAriaReadonlyOnButton = defineLintRule("forge-ui-a11y-no-aria-readonly-on-button", {
   meta: { type: "problem", docs: { description: "The button role carries no readonly state, so the attribute states nothing a reader hears." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-no-aria-readonly-on-button");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         if (attributeNamed(node, "aria-readonly") === void 0) return;
@@ -676,15 +577,14 @@ var a11yNoAriaReadonlyOnButton = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/a11y-one-live-region.ts
 var LIVE_ROLES = /* @__PURE__ */ new Set(["alert", "status", "log"]);
 var ROUTE = "speak through `announce()` into the page's one `<Announcer />`";
-var a11yOneLiveRegion = {
+var a11yOneLiveRegion = defineLintRule("forge-ui-a11y-one-live-region", {
   meta: { type: "problem", docs: { description: "A page has one live region; a second one interleaves its announcements with the first." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-one-live-region");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         const liveAttribute = attributeNamed(node, "aria-live");
@@ -708,7 +608,7 @@ var a11yOneLiveRegion = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/a11y-state-attrs-source.ts
 var STATE_ATTR_KEYS = [
@@ -726,13 +626,12 @@ var STATE_ATTR_KEYS = [
   "state"
 ];
 var ARIA_STATE = new RegExp(`(?<![a-z0-9])aria-\\[?(${STATE_ATTR_KEYS.join("|")})(?![a-z0-9-])`);
-var a11yStateAttrsSource = {
+var a11yStateAttrsSource = defineLintRule("forge-ui-a11y-state-attrs-source", {
   meta: {
     type: "problem",
     docs: { description: "State is read in CSS from the `data-*` hook `STATE_ATTRS` registers, never from its `aria-*` counterpart." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-state-attrs-source");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = /* @__PURE__ */ new Map();
       for (const token of found.text.split(/\s+/)) {
@@ -744,14 +643,13 @@ var a11yStateAttrsSource = {
       }
     });
   }
-};
+});
 
 // src/tooling/lint/rules/catalog-wrong-raw-input.ts
 var RAW_CONTROLS = /* @__PURE__ */ new Set(["select", "input", "textarea", "button"]);
-var catalogWrongRawInput = {
+var catalogWrongRawInput = defineLintRule("forge-ui-catalog-wrong-raw-input", {
   meta: { type: "problem", docs: { description: "Composed markup renders the component the corpus points at, never the raw control it wraps." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-catalog-wrong-raw-input");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         const tag = openingTag(node);
@@ -761,16 +659,15 @@ var catalogWrongRawInput = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/color-theme-no-raw-utility.ts
 var PALETTE_HUES = "red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone";
 var COLOR_UTILITIES = "bg|text|border|ring|from|via|to|fill|stroke|divide|outline|decoration|accent|caret|placeholder|shadow";
 var PALETTE_UTILITY = new RegExp(`(?<![\\w-])((?:[a-z][a-z0-9-]*:)*)(${COLOR_UTILITIES})-(${PALETTE_HUES})-(?:50|[1-9]00|950)(?![\\w-])`, "g");
-var colorThemeNoRawUtility = {
+var colorThemeNoRawUtility = defineLintRule("forge-ui-color-theme-no-raw-utility", {
   meta: { type: "problem", docs: { description: "A raw palette utility is paired with its `dark:` counterpart, or replaced by a theme token." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-color-theme-no-raw-utility");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const paired = /* @__PURE__ */ new Set();
       const bare = /* @__PURE__ */ new Map();
@@ -785,7 +682,7 @@ var colorThemeNoRawUtility = {
       }
     });
   }
-};
+});
 
 // src/tooling/lint/data/design-scale.ts
 var SPACING_UNIT = "0.25rem";
@@ -1334,13 +1231,12 @@ var SHADOW_ROOTS = /* @__PURE__ */ new Set(["shadow", "inset-shadow", "drop-shad
 var COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\(/g;
 var DECLARED_PROPERTIES = /* @__PURE__ */ new Set(["--tone", "--tone-fg", "--tone-text", "--tone-soft", "--tone-soft-fg", "--tone-soft-border"]);
 var CUSTOM_PROPERTY = /(?<![\w-])(?:[a-z][a-z0-9-]*:)*(-?[a-z][a-z0-9-]*)-[[(](--[a-z0-9-]+)[\])]/g;
-var colorTokenOnly = {
+var colorTokenOnly = defineLintRule("forge-ui-color-token-only", {
   meta: {
     type: "problem",
     docs: { description: "A colour is resolved through a semantic token, so the theme \u2014 and every mode it has \u2014 decides what is painted." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-color-token-only");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const literals = /* @__PURE__ */ new Set();
       for (const match of found.text.matchAll(COLOR_LITERAL)) literals.add(match[0]);
@@ -1362,15 +1258,15 @@ var colorTokenOnly = {
       }
     });
   }
-};
+});
 
 // src/tooling/lint/rules/data-slot-before-spread.ts
-var dataSlotBeforeSpread = {
+var dataSlotBeforeSpread = defineLintRule("forge-data-slot-before-spread", {
   meta: {
     type: "problem",
     docs: { description: "A literal `data-slot` written before `{...rest}` loses to the spread, so the element ships the caller's token." }
   },
-  create(context) {
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         let slot;
@@ -1385,16 +1281,16 @@ var dataSlotBeforeSpread = {
           if (attribute.type !== "JSXSpreadAttribute" || slot === void 0) continue;
           const spread = spreadName(attribute);
           if (spread === void 0) continue;
-          context.report({
-            message: `\`<${openingTag(node)}>\` has a literal \`data-slot='${slot.value}'\` before \`{...${spread}}\` \u2014 the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot.value}", inherited)}\``,
-            loc: slot.loc
-          });
+          report(
+            `\`<${openingTag(node)}>\` has a literal \`data-slot='${slot.value}'\` before \`{...${spread}}\` \u2014 the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot.value}", inherited)}\``,
+            slot.loc
+          );
           return;
         }
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/exact-markup-assertion.ts
 var SEED_RENDERER = /^render(?:[A-Z]\w*)?$/;
@@ -1576,14 +1472,14 @@ function returnsMarkup(node, markup, resolve) {
   const returned = body.type === "BlockStatement" ? blockReturns(body) : [resultOf(body)];
   return returned.some((expression) => markup.responseText && readsText(expression) || reachesMarkup(expression, markup, resolve));
 }
-var exactMarkupAssertion = {
+var exactMarkupAssertion = defineLintRule("libs-testing-exact-match", {
   meta: {
     type: "problem",
     docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." },
     // `responseText: false` is for a tree whose responses are not all markup, where a 429's plain-text body is not.
     schema: [{ type: "object", properties: { responseText: { type: "boolean" } }, additionalProperties: false }]
   },
-  create(context) {
+  create(context, report) {
     const responseText = context.options?.[0]?.responseText ?? true;
     const markup = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set(), responseText };
     const lists = /* @__PURE__ */ new Set();
@@ -1645,27 +1541,26 @@ var exactMarkupAssertion = {
         }
         for (const { subject, matcher, loc } of candidates) {
           if (producesList(subject, isList) || !reachesMarkup(subject, markup, resolve)) continue;
-          context.report({
-            message: `\`${matcher}\` on rendered markup \u2014 assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that (TESTING.md \xA73b)`,
+          report(
+            `\`${matcher}\` on rendered markup \u2014 assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that`,
             loc
-          });
+          );
         }
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/focus-ring.ts
 var OUTLINE_SUPPRESSOR = /(?<![\w-])(outline-none|outline-hidden)(?![\w-])/;
 var FOCUS_VISIBLE_RING = /focus-visible[^\s]*:ring(?:-(?!0(?![\w-])|offset)[\w-]+)?(?![\w-])|(?<![\w-])focus-ring(?:-outset)?(?![\w-])/;
 var POINTER_TARGET = /(?<![\w-])cursor-pointer(?![\w-])/;
-var focusRing = {
+var focusRing = defineLintRule("forge-ui-focus-ring", {
   meta: {
     type: "problem",
     docs: { description: "An outline a class list suppresses is replaced by a `focus-visible:` ring, not simply removed." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-focus-ring");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       if (!POINTER_TARGET.test(found.text)) return;
       const suppressor = OUTLINE_SUPPRESSOR.exec(found.text);
@@ -1676,7 +1571,7 @@ var focusRing = {
       );
     });
   }
-};
+});
 
 // src/tooling/lint/rules/interaction-filter-group-required.ts
 function enclosingFilterTag(node) {
@@ -1687,13 +1582,12 @@ function enclosingFilterTag(node) {
   }
   return void 0;
 }
-var interactionFilterGroupRequired = {
+var interactionFilterGroupRequired = defineLintRule("forge-ui-interaction-filter-group-required", {
   meta: {
     type: "problem",
     docs: { description: "A filter chip sits in a `Filter.Group`, which is the element carrying the radiogroup and its name." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-interaction-filter-group-required");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         if (openingTag(node) !== "Filter.Item") return;
@@ -1702,30 +1596,28 @@ var interactionFilterGroupRequired = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/interaction-focus-visible.ts
 var BARE_FOCUS = /(?<![\w-])focus:(?=[a-z[])[a-z0-9#%[\]/.-]+/g;
-var interactionFocusVisible = {
+var interactionFocusVisible = defineLintRule("forge-ui-interaction-focus-visible", {
   meta: {
     type: "problem",
     docs: { description: "Focus styling is written with `focus-visible:`, so a pointer press does not paint a focus ring." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-interaction-focus-visible");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = /* @__PURE__ */ new Set();
       for (const match of found.text.matchAll(BARE_FOCUS)) hits.add(match[0]);
       for (const hit of hits) report(`\`${hit}\` styles every focus including pointer focus \u2014 use \`focus-visible:\``, found.loc);
     });
   }
-};
+});
 
 // src/tooling/lint/rules/no-inline-style.ts
-var noInlineStyle = {
+var noInlineStyle = defineLintRule("forge-ui-no-inline-style", {
   meta: { type: "problem", docs: { description: "A visual rule is expressed as a class; the renderer drops an inline `style` attribute." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-no-inline-style");
+  create(_context, report) {
     return {
       JSXAttribute(node) {
         if (node.name?.name !== "style") return;
@@ -1733,13 +1625,12 @@ var noInlineStyle = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/no-nested-card.ts
-var noNestedCard = {
+var noNestedCard = defineLintRule("forge-ui-no-nested-card", {
   meta: { type: "problem", docs: { description: "A card is not nested inside another card's content, where the two borders compound." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-no-nested-card");
+  create(_context, report) {
     return {
       JSXOpeningElement(node) {
         if (openingTag(node) !== "Card.Content") return;
@@ -1749,7 +1640,7 @@ var noNestedCard = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/optional-prop-undefined.ts
 function admitsUndefined(annotation) {
@@ -1758,15 +1649,14 @@ function admitsUndefined(annotation) {
   if (annotation.type !== "TSUnionType") return false;
   return (annotation.types ?? []).some((member) => admitsUndefined(member));
 }
-var optionalPropUndefined = {
+var optionalPropUndefined = defineLintRule("forge-ui-optional-prop-undefined", {
   meta: {
     type: "problem",
     docs: {
       description: "Under `exactOptionalPropertyTypes`, a bare `?:` forces a consumer into a guard-form spread that `jsx-a11y` cannot read."
     }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-optional-prop-undefined");
+  create(_context, report) {
     return {
       TSPropertySignature(node) {
         const property = node;
@@ -1777,7 +1667,7 @@ var optionalPropUndefined = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/platform-entry-motion.ts
 var CLASS_LIST_METHODS = /* @__PURE__ */ new Set(["add", "remove", "toggle"]);
@@ -1794,13 +1684,12 @@ function isClassListCall(node) {
 function isFrameCall(node) {
   return node.type === "CallExpression" && nameOf2(node.callee) === "requestAnimationFrame";
 }
-var platformEntryMotion = {
+var platformEntryMotion = defineLintRule("forge-ui-platform-entry-motion", {
   meta: {
     type: "problem",
     docs: { description: "An entry transition is declared with `@starting-style`, not started by adding a class on the next frame." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-entry-motion");
+  create(_context, report) {
     const reported = /* @__PURE__ */ new Set();
     return {
       CallExpression(node) {
@@ -1818,7 +1707,7 @@ var platformEntryMotion = {
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/platform-logical-spacing.ts
 var PHYSICAL_UTILITY = /(?<![\w-])(?:[a-z][a-z0-9-]*:)*-?(?:[mp][lr]-[a-z0-9./[\]()%-]+|(?:border|rounded)-[lr](?![a-z])[a-z0-9./[\]()%-]*|text-(?:left|right))(?![\w])/g;
@@ -1844,70 +1733,66 @@ function logicalUtility(token) {
   }
   return token;
 }
-var platformLogicalSpacing = {
+var platformLogicalSpacing = defineLintRule("forge-ui-platform-logical-spacing", {
   meta: {
     type: "problem",
     docs: { description: "Inline-axis spacing is written logically, so the layout mirrors with the writing mode instead of staying left-handed." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-logical-spacing");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = /* @__PURE__ */ new Set();
       for (const match of found.text.matchAll(PHYSICAL_UTILITY)) hits.add(match[0]);
       for (const hit of hits) report(`physical utility \`${hit}\` \u2014 use \`${logicalUtility(hit)}\``, found.loc);
     });
   }
-};
+});
 
 // src/tooling/lint/rules/platform-text-balance.ts
 var HEADING_SIZE = /(?<![\w-])text-[2-9]xl(?![\w-])/;
 var BALANCED = /(?<![\w-])text-balance(?![\w-])/;
-var platformTextBalance = {
+var platformTextBalance = defineLintRule("forge-ui-platform-text-balance", {
   meta: {
     type: "problem",
     docs: {
       description: "A display-sized heading balances its line breaks with `text-wrap: balance` rather than breaking wherever the width lands."
     }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-text-balance");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const heading = HEADING_SIZE.exec(found.text);
       if (heading === null || BALANCED.test(found.text)) return;
       report(`\`${heading[0]}\` heading with no \`text-balance\` \u2014 balance the line breaks with \`text-wrap: balance\``, found.loc);
     });
   }
-};
+});
 
 // src/tooling/lint/rules/platform-text-pretty.ts
 var PROSE_CLASS = /(?<![\w-])(?:prose|max-w-prose|leading-relaxed)(?![\w-])/;
 var PRETTY = /(?<![\w-])text-pretty(?![\w-])/;
-var platformTextPretty = {
+var platformTextPretty = defineLintRule("forge-ui-platform-text-pretty", {
   meta: {
     type: "problem",
     docs: { description: "A run of prose avoids the orphan with `text-wrap: pretty` rather than leaving the last line to the browser." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-text-pretty");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       const prose = PROSE_CLASS.exec(found.text);
       if (prose === null || PRETTY.test(found.text)) return;
       report(`\`${prose[0]}\` prose with no \`text-pretty\` \u2014 avoid the orphan with \`text-wrap: pretty\``, found.loc);
     });
   }
-};
+});
 
 // src/tooling/lint/rules/reduced-motion.ts
 var MOTION_BASE = /^(?:animate-|transition)/;
 var SETTLED = /* @__PURE__ */ new Set(["animate-none", "transition-none"]);
 var GATED = /(?<![\w-])motion-(?:safe|reduce):/;
-var reducedMotion = {
+var reducedMotion = defineLintRule("forge-ui-reduced-motion", {
   meta: {
     type: "problem",
     docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state or an opacity fade." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-reduced-motion");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       if (GATED.test(found.text)) return;
       const hits = /* @__PURE__ */ new Set();
@@ -1923,7 +1808,7 @@ var reducedMotion = {
       }
     });
   }
-};
+});
 
 // src/tooling/lint/rules/spacing-scale-only.ts
 var ROOTS2 = new Set(SPACING_ROOTS);
@@ -1943,13 +1828,12 @@ function stepFor(value) {
   const multiple = Math.abs(pixels) / unitPx;
   return STEPS.has(String(multiple)) ? { step: String(multiple), negative: pixels < 0 } : void 0;
 }
-var spacingScaleOnly = {
+var spacingScaleOnly = defineLintRule("forge-ui-spacing-scale-only", {
   meta: {
     type: "problem",
     docs: { description: "Spacing comes from the scale the design system declares, so one edit to `--spacing` moves the whole layout." }
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-spacing-scale-only");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const hits = /* @__PURE__ */ new Set();
       for (const match of found.text.matchAll(ARBITRARY)) {
@@ -1966,7 +1850,7 @@ var spacingScaleOnly = {
       }
     });
   }
-};
+});
 
 // src/tooling/lint/rules/sql-text.ts
 var LEADING_NOISE = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/;
@@ -1995,14 +1879,14 @@ function sqlStatementVerb(sql) {
 
 // src/tooling/lint/rules/sql-delete-authorised.ts
 var AUTHORISATION = /^\s*row-removal-authorised-by:\s*\S/;
-var sqlDeleteAuthorised = {
+var sqlDeleteAuthorised = defineLintRule("forge-sql-delete-authorised", {
   meta: {
     type: "problem",
     docs: {
       description: "An application DELETE removes rows for good, so each one names who authorised it on the line before the `sql` fragment that runs it."
     }
   },
-  create(context) {
+  create(context, report) {
     const authorisedLines = new Set(
       (context.sourceCode.getAllComments?.() ?? []).filter((comment) => comment.type === "Line" && AUTHORISATION.test(comment.value)).map((comment) => comment.loc.end.line)
     );
@@ -2011,38 +1895,38 @@ var sqlDeleteAuthorised = {
         const text = sqlTemplateText(node);
         if (text === void 0 || sqlStatementVerb(text) !== "DELETE") return;
         if (authorisedLines.has(node.loc.start.line - 1)) return;
-        context.report({
-          message: "a `sql` DELETE removes rows for good \u2014 say who authorised it in a `// row-removal-authorised-by: <who or why>` comment on the line before the fragment.",
-          loc: node.loc
-        });
+        report(
+          "a `sql` DELETE removes rows for good \u2014 say who authorised it in a `// row-removal-authorised-by: <who or why>` comment on the line before the fragment.",
+          node.loc
+        );
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/sql-explicit-transaction.ts
 var TRANSACTION_KEYWORD = /^(BEGIN|COMMIT|ROLLBACK|END|SAVEPOINT|RELEASE)\b/i;
-var sqlExplicitTransaction = {
+var sqlExplicitTransaction = defineLintRule("forge-sql-explicit-transaction", {
   meta: {
     type: "problem",
     docs: {
       description: "D1 runs every statement inside an implicit transaction and refuses a nested one, so a runtime `sql` fragment never opens or closes a transaction \u2014 `batch()` is the boundary."
     }
   },
-  create(context) {
+  create(_context, report) {
     return {
       TaggedTemplateExpression(node) {
         const text = sqlTemplateText(node);
         const keyword = text === void 0 ? void 0 : TRANSACTION_KEYWORD.exec(text)?.[1]?.toUpperCase();
         if (keyword === void 0) return;
-        context.report({
-          message: `\`sql\`${keyword} \u2026\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds \u2014 put the statements in one \`batch()\` instead (docs/STORAGE_BINDINGS.md \xA71g).`,
-          loc: node.loc
-        });
+        report(
+          `\`sql\`${keyword} \u2026\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds \u2014 put the statements in one \`batch()\` instead.`,
+          node.loc
+        );
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/sql-in-loop.ts
 var D1_CALL = /* @__PURE__ */ new Set(["query", "queryOne", "execute"]);
@@ -2067,107 +1951,107 @@ function repeatingScope(call) {
   }
   return void 0;
 }
-var sqlInLoop = {
+var sqlInLoop = defineLintRule("forge-sql-in-loop", {
   meta: {
     type: "problem",
     docs: {
       description: "A D1 call per item is the N+1 shape: each one is a round trip and counts toward the invocation's query cap, so the items' keys go to one `json_each` statement or a `createRowLoader` instead."
     }
   },
-  create(context) {
+  create(_context, report) {
     return {
       CallExpression(node) {
         const method = methodOf(node);
         if (method === void 0 || !D1_CALL.has(method)) return;
         const scope = repeatingScope(node);
         if (scope === void 0) return;
-        context.report({
-          message: `\`.${method}(\u2026)\` runs once per item ${scope === "loop" ? "of a loop" : "of a per-item callback"} \u2014 read every key in one statement through \`json_each\`, or load them through \`createRowLoader\` (docs/STORAGE_BINDINGS.md \xA71h).`,
-          loc: node.loc
-        });
+        report(
+          `\`.${method}(\u2026)\` runs once per item ${scope === "loop" ? "of a loop" : "of a per-item callback"} \u2014 read every key in one statement through \`json_each\`, or load them through \`createRowLoader\`.`,
+          node.loc
+        );
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/sql-tag-called-directly.ts
-var sqlTagCalledDirectly = {
+var sqlTagCalledDirectly = defineLintRule("forge-sql-tag-called-directly", {
   meta: {
     type: "problem",
     docs: {
       description: "`sql` called as a function takes its statement text from the caller rather than from a template literal, so every downstream call site trusts text nothing bound \u2014 map a choice onto fixed fragments instead."
     }
   },
-  create(context) {
+  create(_context, report) {
     return {
       CallExpression(node) {
         const callee = node.callee;
         if (callee?.type !== "Identifier" || callee.name !== "sql") return;
-        context.report({
-          message: "`sql(\u2026)` called as a function builds a fragment from caller text that no `?` binds \u2014 write the statement as a `sql`\u2026`` template, and map a column or direction onto fixed fragments (docs/STORAGE_BINDINGS.md \xA71b).",
-          loc: node.loc
-        });
+        report(
+          "`sql(\u2026)` called as a function builds a fragment from caller text that no `?` binds \u2014 write the statement as a `sql`\u2026`` template, and map a column or direction onto fixed fragments.",
+          node.loc
+        );
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/suppression-needs-reason.ts
 var named = (directive) => directive.value === "" ? "every rule" : `\`${directive.value}\``;
-var suppressionNeedsReason = {
+var suppressionNeedsReason = defineLintRule("forge-suppression-needs-reason", {
   meta: {
     type: "problem",
     docs: { description: "Every `oxlint-disable` directive states why, so a suppression can be judged rather than only counted." }
   },
-  create(context) {
+  create(context, report) {
     return {
       Program() {
         for (const directive of context.sourceCode.getDisableDirectives().directives) {
           if (directive.justification.trim() !== "") continue;
-          context.report({
-            message: `\`oxlint-${directive.type}\` for ${named(directive)} with no reason \u2014 append \` -- <why>\`, so the next reader can judge the suppression rather than only count it.`,
-            node: directive.node
-          });
+          report(
+            `\`oxlint-${directive.type}\` for ${named(directive)} with no reason \u2014 append \` -- <why>\`, so the next reader can judge the suppression rather than only count it.`,
+            { node: directive.node }
+          );
         }
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/type-import-external.ts
 var DECLARED = /* @__PURE__ */ new Set(["TSInterfaceDeclaration", "TSTypeAliasDeclaration"]);
 var kindOf = (type) => type === "TSInterfaceDeclaration" ? "interface" : "type";
-var typeImportExternal = {
+var typeImportExternal = defineLintRule("forge-type-import-external", {
   meta: {
     type: "problem",
     docs: {
       description: "A namespace's exported types are declared in one `types.ts` per directory, so a shape can be found from its name rather than from the file that happens to use it."
     }
   },
-  create(context) {
+  create(_context, report) {
     return {
       ExportNamedDeclaration(node) {
         const declaration = node.declaration;
         if (declaration === void 0 || declaration === null || !DECLARED.has(declaration.type)) return;
         const name = declaration.id?.name ?? "this type";
-        context.report({
-          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` \u2014 move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/FORGE_STRUCTURE.md \xA78).`,
-          loc: node.loc
-        });
+        report(
+          `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` \u2014 move it to the \`types.ts\` beside this file and import it with its own \`import type\` line.`,
+          node.loc
+        );
       }
     };
   }
-};
+});
 
 // src/tooling/lint/rules/type-import-separation.ts
-var typeImportSeparation = {
+var typeImportSeparation = defineLintRule("forge-type-import-separation", {
   meta: {
     type: "problem",
     docs: {
       description: "A type is imported on its own `import type` line, so what a file needs at runtime is legible from the import block alone."
     }
   },
-  create(context) {
+  create(_context, report) {
     return {
       ImportDeclaration(node) {
         const statement = node;
@@ -2175,14 +2059,47 @@ var typeImportSeparation = {
         const inline = (statement.specifiers ?? []).filter((specifier) => specifier.importKind === "type");
         if (inline.length === 0) return;
         const named2 = inline.map((specifier) => `\`${specifier.local?.name ?? "?"}\``).join(", ");
-        context.report({
-          message: `${named2} rides in on a value import as an inline \`type\` specifier \u2014 give the type its own \`import type { \u2026 }\` line, so what this file needs at runtime is legible from the import block alone (docs/FORGE_STRUCTURE.md \xA78).`,
-          loc: node.loc
-        });
+        report(
+          `${named2} rides in on a value import as an inline \`type\` specifier \u2014 give the type its own \`import type { \u2026 }\` line, so what this file needs at runtime is legible from the import block alone.`,
+          node.loc
+        );
       }
     };
   }
-};
+});
+
+// src/tooling/lint/rules/vouched-message-env-key.ts
+var ENV_KEY = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/;
+function literalText(node) {
+  if (node?.type === "Literal") {
+    const { value } = node;
+    return typeof value === "string" ? value : void 0;
+  }
+  if (node?.type === "TemplateLiteral") return node.quasis.map((quasi) => quasi.value.cooked ?? quasi.value.raw).join(" ");
+  return void 0;
+}
+var vouchedMessageEnvKey = defineLintRule("forge-vouched-message-env-key", {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "A `safeCheck` message names the requirement, not the env key that supplies the value: which key that is belongs to the consuming app, and the `<field>:` prefix already locates it."
+    }
+  },
+  create(_context, report) {
+    return {
+      CallExpression(node) {
+        const { callee, arguments: args } = node;
+        if (callee?.type !== "Identifier" || callee.name !== "safeCheck") return;
+        const key = ENV_KEY.exec(literalText(args?.[1]) ?? "")?.[0];
+        if (key === void 0) return;
+        report(
+          `\`safeCheck\` message names \`${key}\`, an env key \u2014 name the requirement, since the consuming app picks the key and the \`<field>:\` prefix already locates it`,
+          node.loc
+        );
+      }
+    };
+  }
+});
 
 // src/tooling/lint/plugin.ts
 var lintPlugin = {
@@ -2218,18 +2135,15 @@ var lintPlugin = {
     "sql-tag-called-directly": sqlTagCalledDirectly,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,
-    "type-import-separation": typeImportSeparation
+    "type-import-separation": typeImportSeparation,
+    "vouched-message-env-key": vouchedMessageEnvKey
   }
 };
 var plugin_default = lintPlugin;
 export {
   MODERN_CSS_CITED_RULES,
   MODERN_CSS_RULES,
-  RULE_CORPUS_PATH,
-  RULE_ENFORCER,
-  corpusIdOf,
   plugin_default as default,
-  lintKeyOf,
   lintPlugin,
   modernCssRule
 };

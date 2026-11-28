@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { BUNDLE_FIXER, BUNDLES } from "../../../../config/bundles";
-import { bundleSource, checkBundle, checkNodeExports, hasEsbuild, importEsbuild, nodeBundles } from "./bundle";
+import { BUNDLE_FIXER, bundleSource, checkBundle, checkNodeExports, hasEsbuild, importEsbuild, nodeBundles, writeBundles } from "./bundle";
+import { packedConsumer } from "./packed-consumer.fixture";
+import { collectFiles } from "./source-scan";
 import type { BundleCheckConfig, ExportsMap, NodeManifest } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
@@ -15,6 +17,7 @@ const PACKAGE = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8"))
 > &
   Required<NodeManifest>;
 const DECLARED = { ...PACKAGE.dependencies, ...PACKAGE.peerDependencies };
+const BUNDLES = nodeBundles(ROOT, PACKAGE);
 const CONFIGS: readonly BundleCheckConfig[] = BUNDLES.map(({ entry, bundle }) => ({ root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }));
 const PLUGIN_BUNDLE = "src/tooling/lint/plugin.node.mjs";
 const WRANGLER_BUNDLE = "src/tooling/cf/wrangler.node.mjs";
@@ -266,5 +269,51 @@ describe("checkBundle()", () => {
     const result = await checkBundle({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/gate/absent.mjs", fixer: "pnpm gen" });
 
     expect(result.findings[0]?.detail).toEqual(["run `pnpm gen`"]);
+  });
+});
+
+describe("writeBundles()", () => {
+  it("regenerates every row it is handed, each under the fixer the package script runs", async () => {
+    const written: BundleCheckConfig[] = [];
+    await writeBundles("/repo", BUNDLES, async (config) => {
+      written.push(config);
+    });
+    const scripts = (PACKAGE as unknown as { scripts: Record<string, string> }).scripts;
+
+    expect(written).toEqual(BUNDLES.map(({ entry, bundle }) => ({ root: "/repo", entry, bundle, fixer: BUNDLE_FIXER })));
+    expect([BUNDLE_FIXER, scripts["gen:bundles"]]).toEqual(["bun run gen:bundles", "bun run src/tooling/gate/checks/bundle.ts"]);
+  });
+});
+
+describe("this repository's `.mjs` files", () => {
+  it("are exactly the bundles `forge.node` derives, which is what lets lint and format ignore them by one pattern", () => {
+    expect(collectFiles(ROOT, "src", (name) => name.endsWith(".mjs"))).toEqual(BUNDLES.map(({ bundle }) => bundle).sort());
+  });
+
+  it("are each named `<stem>.node.mjs`, file and export condition alike, so no extensionless import reaches one in place of its `.ts`", () => {
+    const exports = (PACKAGE as unknown as { exports: Record<string, string | Record<string, string>> }).exports;
+    const targets = Object.values(exports).flatMap((entry) => (typeof entry === "string" ? [entry] : Object.values(entry)));
+
+    expect(collectFiles(ROOT, "src", (name) => name.endsWith(".mjs") && !name.endsWith(".node.mjs"))).toEqual([]);
+    expect(targets.filter((target) => target.endsWith(".mjs") && !target.endsWith(".node.mjs"))).toEqual([]);
+  });
+});
+
+describe("forge packed as `dev:forge` installs it, under node", () => {
+  it("imports `@y-core/forge/ui/contracts` from its node bundle, with the names and values of the source module", async () => {
+    const root = packedConsumer();
+    roots.push(root);
+    const probe = `const m = await import("@y-core/forge/ui/contracts");
+console.log(JSON.stringify([Object.keys(m).sort(), m.ANNOUNCER_REGION_SLOTS, m.ANNOUNCE_SETTLE_MS, m.ANNOUNCE_FAILURE_ATTR]));`;
+    const run = spawnSync("node", ["--input-type=module", "-e", probe], { cwd: root, encoding: "utf8" });
+    const source = await import("../../../ui/contracts/mod");
+
+    expect({ status: run.status, stderr: run.status === 0 ? "" : run.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(JSON.parse(run.stdout.trim())).toEqual([
+      Object.keys(source).sort(),
+      source.ANNOUNCER_REGION_SLOTS,
+      source.ANNOUNCE_SETTLE_MS,
+      source.ANNOUNCE_FAILURE_ATTR,
+    ]);
   });
 });

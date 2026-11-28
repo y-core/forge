@@ -8,8 +8,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 > This guide is the authoritative source for how `docs/` documents are written and structured. It governs form — numbering, frontmatter, size,
 > cross-references, and where a rule is allowed to live. It does not govern any domain; every domain rule belongs to the document that owns it.
 >
-> All new and updated documents in the canon and in `docs/` must follow these rules. Where a repository ships a documentation check, mechanically
-> checkable subsets of §2, §4, §5, §6a, and §9a are enforced by it; where it does not, they are enforced by review.
+> Every canon and `docs/` document follows these rules: a repository's documentation check enforces what it can mechanically, and review the rest.
 >
 > Defers to: [`PLAIN_LANGUAGE.md`][pl] for the quality of the prose inside that form — whether a heading says what is beneath it, and whether the
 > reader can act on what they find. This guide decides that a `## 0. Quick Reference` exists; that one decides that it orients.
@@ -39,7 +38,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §6d The Canon Versus This Repository's Docs: portable rule or local fact
 - §6e No Two Governing Documents Share a Filename: per-index uniqueness, and which side renames
 - §7 Quick Reference Convention: one line per `##` and `###`
-- §8 Single Home Rule and the Source-of-Truth Register: where each fact is allowed to live
+- §8 Single Home Rule and the Source-of-Truth Register: where each fact is allowed to live, and the rule register that holds a rule's sentence
 - §9 Content That Rots: the present state only — neither the history nor the inventory
 - §9a No Dated or Ticketed Content: no dates, task IDs, or changelog notes
 - §9b No Inventory Counts: write the list or name its owner, never the tally
@@ -49,8 +48,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 
 ## 1. Document Access Path
 
-**To look up a governing rule, search for it and then read it.** Do not infer a rule, and do not hunt for the document by hand. The two steps use
-the warden knowledge tools:
+**Look up a governing rule by searching and then reading it with the warden knowledge tools, never by inference or by hunting for the document:**
 
 1. **`knowledge_search`** — ask the question in the words you would use with a colleague. It ranks the governing corpus and returns chunk ids of the
    form `canon:CODE_RULES.md#5c`.
@@ -60,11 +58,9 @@ the warden knowledge tools:
 **`knowledge_outline`** takes a document path and lists every section with its one-line summary: the answer to "this file is 62 KB and I need one
 section". Outline, then read.
 
-**An empty result is an answer.** Search refuses a question the corpus does not cover rather than returning its least-bad matches, so nothing is
-governing a subject that comes back empty — write what the task needs and do not infer a rule from a near miss. That refusal is what makes the tool
-safe to trust, and it is why searching is instructed rather than merely permitted. The converse does not hold: a non-empty result is not proof of
-coverage, so when the hits come back but none of them addresses what was asked, that is no rule either — say so rather than stretching the nearest
-one to fit.
+**An empty result is an answer: no rule governs the subject, so write what the task needs rather than inferring one from a near miss.** Search
+refuses a question the corpus does not cover rather than returning its least-bad matches, which is what makes it safe to trust. Hits that do not
+address the question are no rule either — say so rather than stretching the nearest to fit.
 
 **The chunk id is the citation.** Cite the id you read — `CODE_RULES.md §5c` in prose, the full `canon:CODE_RULES.md#5c` where the corpus matters —
 so a later gate run can resolve the claim and fail if it has moved. An uncited rule is unfalsifiable.
@@ -88,8 +84,8 @@ domain. Prefer search when hunting one rule.
 
 ## 2. Section Numbering Convention
 
-Numbers are the stable citation anchor. Hundreds of cross-references across `docs/`, `CLAUDE.md`, and `.claude/agents/` cite sections by number, so
-a number is a public identifier, not a formatting choice. Titles may be reworded freely; numbers may not.
+**Titles may be reworded freely; numbers may not**, because cross-references across `docs/`, `CLAUDE.md`, and `.claude/agents/` cite sections by
+number, which makes a number a public identifier.
 
 A number is extracted by splitting the heading on its first `.`:
 
@@ -130,8 +126,7 @@ parsed as a real section.
 **Renumbering a section is legal only in a commit that also updates every referrer** across `docs/`, `CLAUDE.md`, and `.claude/agents/`. A renumber
 that lands without its referrers silently routes readers to the wrong rule, which is worse than a gap.
 
-When a pass deletes sections, **leave the gap**. Closing gaps is a separate, deliberate, self-contained commit — never a side effect of an edit that
-was about something else.
+When a pass deletes sections, **leave the gap**: closing one is a self-contained commit of its own, never a side effect of an unrelated edit.
 
 ---
 
@@ -232,10 +227,9 @@ The export validation rule (§3f) interacts with the barrel rules (§3a).
 registering it in a hand-maintained table would add a list that can disagree with the directory it describes, to solve a problem search already
 solves (§1).
 
-**The agents `CLAUDE.md` names are a different matter, and are reconciled.** It delegates the whole gate discipline to `cc-tester` by name and
-introduces the agents that route work to it, so an agent named with no definition behind it delegates to nothing, and an agent defined and never
-named is one no reader is told exists. `warden sync --check` reconciles the names in `CLAUDE.md` against `.claude/agents/` in both directions. It
-measures existence only: what an agent _does_ stays convention, enforced by the agent obeying its own stated boundaries.
+<!-- rule:agent-guide-agents-reconciled --> An agent named with no definition delegates to nothing, and one defined but never named is one no
+reader is told exists. The check measures existence only: what an agent _does_ stays convention, enforced by the agent obeying its own stated
+boundaries.
 
 **A code review starts at the `warden-review` skill, and `CLAUDE.md` says so.** The skill is the entry point that reaches `CODE_REVIEW.md` through
 the index — the blocking invariants, the tiered detection commands, the severity calibration — and holds a finding to the shape that document sets.
@@ -245,8 +239,8 @@ happened to remember.
 
 ### 5d. Crossing the Governance Boundary
 
-**Links run one way: implementation may cite governance; governance never cites implementation.** A governance document is byte-identical across
-every repository that clones this corpus, so a link into a repository's own `docs/` would resolve in one repo and dangle in the others.
+<!-- rule:agent-guide-governance-links-one-way --> A governance document is byte-identical across every repository that clones this corpus, so a
+link into a repository's own `docs/` would resolve in one repo and dangle in the others.
 
 An implementation document cites the portable rule it specialises and states only what is local to the repository. Where the canon is on disk the
 citation may carry a relative link; where it is not, the name and the section are the whole citation (§6d):
@@ -275,8 +269,7 @@ middle produces two documents nobody can predict the contents of.
 Prefer cutting to splitting. Most oversized documents are oversized because they restate things that live elsewhere (§8), not because they govern
 too much.
 
-**These bands govern `docs/` documents and the canon. A `README.md` is not held to them** — its length tracks the use it teaches, and what makes one
-long is the number of tasks, never the number of symbols (§6c).
+**These bands govern `docs/` and the canon, not a `README.md`**, whose length tracks the number of tasks it teaches, never of symbols (§6c).
 
 ### 6b. Subsection Citability Test
 
@@ -299,10 +292,8 @@ is not disambiguating anything.
 is the implementation's business, and it changes. Not what is forbidden — the governing document owns that. Prose that does not, in some shape, help
 a reader call the thing does not belong there.
 
-So a README is shaped by tasks, not by the export list. Sections are named for what a developer wants to _do_; a per-symbol catalogue of purpose,
-parameters and return values is the shape this rule rejects, because every one of those is in the signature already and the catalogue goes stale the
-first time one changes. Where an options bag needs explaining, explain the _choice_ the caller is making, never the field list. A ruling is a link
-to the document that owns it, not a paragraph restating it here.
+So a README's sections are named for what a developer wants to _do_, not for the export list: a per-symbol catalogue repeats the signatures and goes
+stale at the first change. Explain an options bag by the _choice_ the caller makes, never the field list, and a ruling by a link to its owner.
 
 **A README is not where the comment budget's evictions go to live.** Prose deleted from a source file under `CODE_RULES.md` §5 is deleted, not
 relocated: it failed the test of earning its place, and moving it to a different file does not change that. The routing table in `CODE_RULES.md` §5c
@@ -322,8 +313,8 @@ repository of the same kind?**
 A rule that names a real subpath, binding, table, or route belongs in `docs/` by construction, however principled it sounds. An inventory of them
 belongs in no document, because the code owns it (§8). A rule that would survive being pasted into a different repository belongs in the canon.
 
-**A local amendment to a canon rule is written in `docs/`.** The canon is not in this repository to edit: it is served from warden, and a rule that
-must genuinely change is changed in warden and released everywhere at once.
+**A local amendment to a canon rule is written in `docs/`**, because the canon is served from warden: a rule that must change is changed there and
+released everywhere at once.
 
 **Cite a canon document by whatever resolves where the citation lives.** A repository reading the canon from the installed package cites it by name
 and section — `CODE_RULES.md §5c` — because a path would dangle there. The repository that houses the canon on disk may link it relatively instead:
@@ -332,9 +323,8 @@ one is written, is a convenience for the reader who can follow it.
 
 ### 6e. No Two Governing Documents Share a Filename
 
-Because the name and the section _are_ the citation (§6d), **two governing documents reachable from one repository may not share a filename.** With
-two `TESTING.md` in reach, `TESTING.md §2a` names two different rules, and no amount of tooling fixes that: the ambiguity is in the reader's head,
-not in the index.
+<!-- rule:agent-guide-unique-filename --> The name and the section _are_ the citation (§6d), so with two `TESTING.md` in reach, `TESTING.md §2a`
+names two different rules, and no amount of tooling fixes that: the ambiguity is in the reader's head, not in the index.
 
 **Uniqueness is per index, not global.** One repository's `ARCHITECTURE.md` and another's cost nothing while neither can see the other's documents.
 What matters is the set one reader has in front of them at once — the canon they are subject to, this repository's own `docs/`, and the
@@ -343,8 +333,7 @@ consumer-facing documents of any library installed here.
 **`canon/libs/X.md` and `canon/apps/X.md` are exempt**, and only those. A repository takes one kind or the other, so the two are never in one index
 and no citation can mean both.
 
-**The specialising side renames; the canon never does.** The canon's name is what every other repository already cites, and an installed library's
-name is what its own readers cite. The document free to move is the local one.
+**The specialising side renames; the canon never does**, since every other repository cites the canon's name and a library's readers cite its own.
 
 **Where the local document only restates the one it collides with, the answer is to delete it rather than to rename it.** A rename preserves a
 second copy of a rule that already has a home, which §8's single-home rule forbids on its own.
@@ -376,7 +365,7 @@ and the duplication will drift. Add sections here as they are written — a stal
 **A rule lives in exactly one file. Everywhere else is a link.** When the content you are about to write already exists in another document, in
 `CLAUDE.md`, or in a source file, cite it and stop. Prefer deleting a duplicate over syncing it.
 
-**Never put in prose what drifts** — function signatures, constant values, step counts, file inventories. Name the file that owns them.
+**Never put in prose what drifts** — signatures, constant values, step counts, file inventories — but name the file that owns it.
 
 **Each repository keeps a source-of-truth register at `docs/SOURCE_OF_TRUTH.md`**: a two-column table of _fact owned_ against _file that owns it_. A
 source file named there is authoritative over any prose about it anywhere in `docs/` or `CLAUDE.md`, and a governing document contradicting one is
@@ -389,6 +378,13 @@ properties of a good row are worth stating, because both are routinely got wrong
   naming an entry point and sending half of its readers to the wrong place.
 - **A row may name a _data_ file as authoritative over prose.** Where a config declares a graph, a table, or a set, the governing document cites it
   and enumerates none of it — a second copy of a list is indistinguishable from an amendment the moment the two disagree.
+
+<!-- rule:agent-guide-rule-in-register --> `RuleEntry`'s types and TSDoc own an entry's shape; its statement is a must or a never, and a rebuttable
+one keeps its `Default: … unless …` form. The prose opens the paragraph, list item or table cell arguing the rule with `<!-- rule:<id> -->` and the
+rationale after it. Nothing else is declared: the marker's section is the rule's rationale, and the canon tree or repository holding it the rule's
+scope. Warden serves each section with the statement in bold at its marker, so it reads whole. Canon rules live in
+`warden/src/rules/canon/<tree>/<DOC>.ts`, a repository's own in its `config/rules.config.ts`. A finding names its rule by id, never by `§`, and an
+id is permanent.
 
 **A repository that keeps no `docs/` at all states the register's absence and why, in `CLAUDE.md`.** A repository whose position is that it holds no
 governing prose of its own has nowhere to put the register, and growing a `docs/` for one file would contradict the position. What it owes the
@@ -412,9 +408,9 @@ A rule that needs a date to make sense is not a rule yet. `CHANGELOG.md` and git
 
 ### 9b. No Inventory Counts
 
-**A governing document records that a thing exists, not how many exist.** The reader needs the thing and what it is for; the tally is a second copy
-of a fact the code already owns, and it is wrong as soon as one is added. §8 already forbids putting a step count or a file inventory into prose —
-this is that rule stated as the writer meets it.
+<!-- rule:agent-guide-no-tally --> The reader needs the thing and what it is for; the tally is a second copy of a fact the code already owns, and it
+is wrong as soon as one is added. §8 already forbids putting a step count or a file inventory into prose — this is that rule stated as the writer
+meets it.
 
 Forbidden: a spelled-out count standing in for the things counted — "five agents", "three runners", "the same seven flags", "Four namespaces sit
 below the split" — and the "there are N" and "one of the N" constructions. Write the list, or name the file that owns it.
@@ -433,20 +429,19 @@ every turn in the repository rather than on every read of one file.
 
 **What earns a line — the non-obvious:**
 
-- A command that cannot be found from `package.json`, or one whose obvious spelling is wrong.
+- A command not findable from `package.json`, or whose obvious spelling is wrong.
 - A convention a competent reader would otherwise violate, because nothing in the tree signals it.
 - A gotcha with a real cost — a thing that looks safe, is not, and fails in a way that is expensive to discover.
-- The placement rules that decide where new code goes, which is the question an agent asks first and the one the tree cannot answer.
+- The placement rules for new code: the first question an agent asks, and one the tree cannot answer.
 
 **What does not:**
 
 - Anything a filename or a class name already says. A reader who can open the file does not need the line.
 - Anything a linter, a type checker or the gate already enforces. A mechanically enforced rule needs no prose copy; the failure is the notice.
 - Anything a governing document owns. §8 applies to `CLAUDE.md` exactly as it applies to `docs/`: carry the one-line imperative and the citation,
-  never the rule's body. A second copy of a rule is an amendment the moment the two disagree.
+  never the rule's body.
 - Generic engineering advice. "Write tests", "handle errors", "use meaningful names" — true everywhere, and therefore about nothing here.
-- A table of governing documents. The catalogue is served (§1) and a hand-maintained list beside it can disagree with it, which is the one failure a
-  reader cannot detect from the list itself (§5c).
+- A table of governing documents: the catalogue is served (§1), and a hand-maintained list can disagree with it undetectably (§5c).
 
 **A stale line is worse than an absent one.** An absent rule is looked up; a wrong one is believed and acted on. When a command, a path or a
 convention changes, the `CLAUDE.md` line naming it changes in the same commit, or it is deleted.

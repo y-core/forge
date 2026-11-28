@@ -94,8 +94,7 @@ row runs whole.
 The pending changes are the working tree against `HEAD`, read as `--affected` reads them (below). **A run that leaves a row untouched is still the
 gate**, not a scoped run, and it records a receipt.
 
-**Leave `watches` off a Playwright row**: a spec reaches your app through the server it starts, never through an import, so a hand-kept list can
-only drop a row that `--affected` should have run.
+**Leave `watches` off a Playwright row** ([`TEST_RUNNERS.md`][testing-6] §6).
 
 **Every `watches` glob must match a file in the work tree**, tracked or untracked. A glob that matches nothing — usually a directory you renamed —
 fails the gate before any row runs, naming the row, the field and the glob. A glob with no `/` is exempt, because it may name a root-level config
@@ -142,12 +141,10 @@ lives under `src/`, and nothing there may import warden.
 
 ## Starting from a preset
 
-Presets compose the tables this fleet shares, so a repository names its policy rather than its rows. **Each returns a complete table by tier**:
-all four tiers, each above `static` leading with `tier()` naming the one below. A preset alone is a whole gate, `tiers: cloudflareWorkerSteps()`.
-`mergeTiers(preset, yours)` adds your rows after the preset's in each tier you name, and keeps every tier either table declares.
+Presets compose the tables this fleet shares, so a repository names its policy rather than its rows. **Each returns a complete table by tier**, so a
+preset alone is a whole gate, `tiers: cloudflareWorkerSteps()`; `mergeTiers(preset, yours)` adds your rows, in the order its TSDoc gives.
 
-**A merged row runs after the preset's rows of its tier, and before every row of the tiers above.** To put a row earlier in a tier, write that
-tier's list yourself. A tier's key is optional, so a preset's list is spread through `?? []`:
+To put a row earlier in a tier than a merge would, write that tier's list yourself:
 
 ```ts
 const preset = cloudflareWorkerSteps();
@@ -181,12 +178,9 @@ Most rows are opt-in, and each option is a question about your repository rather
 | D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` | The prerequisite-bearing rows: the database rows close `static` and follow `tier("unit")` in `runtime`, and `test:browser` and `test:workerd` close `scheduled` |
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
-that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
-app's own needs no option: name it `*.dev.ts`, and the row fails a production module importing it, a type import included, while a `*.dev.ts` may
-import another. Code the shared path does call goes behind the app's `#app/relax` alias instead ([`src/relax/README.md`][relax-readme]); the row
-fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. It also fails
-any `imports` entry other than `#app/relax` that carries `forge-dev`, reported on `package.json`. The bundle row below still proves the built
-Worker.
+that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Name the app's own
+dev-only code `*.dev.ts`, and put code the shared path calls behind the app's `#app/relax` alias ([`src/relax/README.md`][relax-readme]);
+[`NAMESPACES.md`][namespaces-5i] §5i owns what the row fails.
 
 **`validate-consumer-css-sources` fails a stylesheet entry that would render forge's markup unstyled.** Your non-test source requires
 `@import "@y-core/forge/<ns>/sources.css";`, verbatim in a `css[].input` of your assets config, when it imports a namespace's markup: when a
@@ -288,8 +282,8 @@ modernCssStep({
 whose path does not violate its rule, both fail. Naming it replaces forge's own list rather than adding to it.
 
 Every rule id, its tier, its severity and the feature that replaces it are owned by `MODERN_CSS_RULES` in
-[`@y-core/forge/tooling/lint`][lint-readme]; the rule each finding cites is explained for readers in forge's design corpus at
-`src/ui/design/reference/16-platform.md`.
+[`@y-core/forge/tooling/lint`][lint-readme]; the rule each finding cites is explained for readers in forge's design corpus, at
+`src/ui/design/floor.md` for a Tier A rule and at `src/ui/design/reference/16-platform.md` for the rest.
 
 ---
 
@@ -335,8 +329,7 @@ summary as scoped, so a scoped green never reads as a green gate.
 **`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only lint` runs the check and writes nothing; `--fix`
 writes and checks nothing, and closes by naming the run that confirms it. Script them as `lint` and `fix` so the distinction shows at the call site.
 
-**`createGateCommand` stays published** for the case the binary cannot serve. It takes the same flags minus `--config` and `--root`, because the bin
-command delegates to it as soon as the table is loaded:
+**`createGateCommand` stays published** for the case the binary cannot serve, taking the bin's flags minus `--config` and `--root`:
 
 ```ts
 import { execute, resolveAppRoot } from "@y-core/forge/tooling/cli";
@@ -462,10 +455,9 @@ prints a hint naming its cause:
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; `@playwright/test` cannot be resolved (Cannot find package '@playwright/test'); add it as a devDependency at the server's Playwright version
 ```
 
-**`browserStep` spawns `playwright test --project=chromium` and `workerdStep` spawns `playwright test --project=workerd` — the installed binary
-off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry when it resolves nothing locally, and not under bun, where a
-`webServer` playwright spawns binds somewhere a sandboxed browser cannot reach and `createTestHarness` answers no request. Your
-`playwright.config.ts` declares both projects, and your `test:browser` and `test:workerd` scripts match the same commands so the two cannot diverge.
+**`browserStep` and `workerdStep` spawn the installed `playwright test` off `binDir`, under node** — never `bunx`, which may install from the
+registry, and never bun, where a sandboxed browser cannot reach the `webServer` and `createTestHarness` answers no request. Declare both projects in
+your `playwright.config.ts`, and make your `test:browser` and `test:workerd` scripts run the same commands so the two cannot diverge.
 
 ---
 
@@ -627,9 +619,8 @@ formatSemVer(bumpSemVer(parseSemVer("v1.2.3")!, "minor")); // "1.3.0"
 
 ## Gotchas
 
-**Tools that both claim markdown undo each other.** `bun fmt` pads every table cell to the widest column and has no option to stop, so a project
-running `validate-markdown` must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool reverses the other on every
-`bun run fix`.
+**Tools that both claim markdown undo each other**, so a project running `validate-markdown` puts `**/*.md` in `.oxfmtrc.json`'s `ignorePatterns`
+([`BUILD_TOOLING.md`][bt-2g] §2g).
 
 **A types-only assets artifact passes a `static` run alone.** `gen types` maps every logical name to itself and those files deliberately do not
 exist, which is what lets `bun check` run on a clean checkout — so `validate-asset-manifest` lets it through on `static` and fails it on every tier
@@ -639,8 +630,7 @@ above, where passing on an artifact nobody built is exactly the 404 the check ex
 read in `sw.inputs.json`, beside the emitted module. The row fails on every tier once one of those files has changed since that build, so run
 your `build:assets` before a test reads the built `sw.js`. With no build recorded, it passes on `static` and nowhere else, as the manifest row does.
 
-**A `playwright.config.ts` reaches forge only through a `forge.node` subpath, never a barrel.** Node refuses to strip types from a file under
-`node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a module node loads must be a prebuilt `.mjs` at a `forge.node` subpath. Your
+**A `playwright.config.ts` reaches forge only through a `forge.node` subpath, never a barrel** ([`TEST_RUNNERS.md`][testing-7f] §7f). Your
 own package's Node-reached subpaths follow the same rule, and `nodeExportsStep` holds them to it ([`BUILD_TOOLING.md`][bt-2n] §2n).
 
 **A value your table imports from outside `config/` is an input no builder can see.** `--affected` reads a builder's `watches` from its config
@@ -667,6 +657,7 @@ and reading it as "select no steps" would refuse every unscoped run.
 [bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
 [bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
+[bt-2g]: ../../../docs/BUILD_TOOLING.md#2g-cloudflareworkersteps--the-fleet-preset
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cb-6]: ../../../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
@@ -679,5 +670,6 @@ and reading it as "select no steps" would refuse every unscoped run.
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../../../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
 [testing-6e]: ../../../warden/canon/libs/TESTING.md#6e-what-the-runner-promises
+[testing-7f]: ../../../docs/TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [testing-apps-6a]: ../../../warden/canon/apps/TESTING.md#6a-one-command-nested-tiers
 [testing-apps-6e]: ../../../warden/canon/apps/TESTING.md#6e-one-tier-per-moment

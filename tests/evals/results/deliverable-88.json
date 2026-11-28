@@ -1,0 +1,230 @@
+{
+  "claudeVersion": "2.1.311 (Claude Code)",
+  "forgeSha": "14a5637d19960268e29d72207cc6cae5eaa305d3",
+  "round": "deliverable-88",
+  "schema": 2,
+  "settingSources": ["user", "project"],
+  "tasks": {
+    "consumer-contact-form": {
+      "calibration": [
+        {
+          "invalid": null,
+          "rep": 1,
+          "review": {
+            "assistantMessages": 11,
+            "docReads": {
+              "bashMdReads": 0,
+              "chunks": [
+                "canon:APP_ARCHITECTURE.md#3a",
+                "canon:BOUNDARIES.md#2c",
+                "canon:CODE_REVIEW.md#1",
+                "canon:CODE_REVIEW.md#4",
+                "canon:CODE_REVIEW.md#6",
+                "canon:ERROR_HANDLING.md#3a",
+                "canon:TESTING.md#3a",
+                "dependency:forge/INPUT_VALIDATION.md#1d",
+                "dependency:forge/ROUTING_AND_MIDDLEWARE.md#3e"
+              ],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 9, "related": 0, "search": 4 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 38475, "cacheRead": 370751, "input": 22, "output": 7512 },
+            "toolCalls": 23,
+            "toolsByName": {
+              "Bash": 7,
+              "ToolSearch": 1,
+              "mcp__warden__knowledge_read": 9,
+              "mcp__warden__knowledge_search": 4,
+              "mcp__warden__warden_check": 1,
+              "mcp__warden__warden_query": 1
+            }
+          },
+          "reviewParseFailed": false,
+          "timedOut": false,
+          "traps": { "issue-message": "caught", "raw-env": "caught", "strict-object": "caught", "substring-markup-assertion": "caught" }
+        }
+      ],
+      "model": "opus",
+      "runs": [
+        {
+          "accepted": true,
+          "author": {
+            "assistantMessages": 24,
+            "docReads": {
+              "bashMdReads": 2,
+              "chunks": [
+                "canon:APP_ARCHITECTURE.md#5a",
+                "canon:BOUNDARIES.md#2",
+                "canon:TESTING.md#3a",
+                "dependency:forge/INPUT_VALIDATION.md#1d",
+                "dependency:forge/ROUTING_AND_MIDDLEWARE.md#2"
+              ],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 5, "related": 0, "search": 2 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 66634, "cacheRead": 1317490, "input": 48, "output": 13467 },
+            "toolCalls": 34,
+            "toolsByName": {
+              "Bash": 19,
+              "Edit": 2,
+              "ToolSearch": 1,
+              "Write": 5,
+              "mcp__warden__knowledge_read": 5,
+              "mcp__warden__knowledge_search": 2
+            }
+          },
+          "findings": 4,
+          "invalid": null,
+          "rep": 1,
+          "review": {
+            "assistantMessages": 16,
+            "docReads": {
+              "bashMdReads": 0,
+              "chunks": [
+                "canon:APP_ARCHITECTURE.md#5a",
+                "canon:BOUNDARIES.md#2",
+                "canon:CODE_REVIEW.md#1",
+                "canon:CODE_REVIEW.md#2",
+                "canon:CODE_REVIEW.md#3",
+                "canon:CODE_REVIEW.md#6",
+                "canon:ERROR_HANDLING.md#3a",
+                "canon:TESTING.md#3e",
+                "canon:TESTING.md#5a",
+                "dependency:forge/HTMX.md#10",
+                "dependency:forge/INPUT_VALIDATION.md#1d",
+                "dependency:forge/INPUT_VALIDATION.md#3a"
+              ],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 12, "related": 0, "search": 4 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 57102, "cacheRead": 756887, "input": 32, "output": 8887 },
+            "toolCalls": 28,
+            "toolsByName": {
+              "Bash": 10,
+              "ToolSearch": 1,
+              "mcp__warden__knowledge_read": 12,
+              "mcp__warden__knowledge_search": 4,
+              "mcp__warden__warden_check": 1
+            }
+          },
+          "reviewParseFailed": false,
+          "timedOut": false,
+          "traps": { "issue-message": "clean", "raw-env": "clean", "strict-object": "clean", "substring-markup-assertion": "clean" },
+          "verifyUnit": true
+        }
+      ],
+      "specHash": "113be9ba9573999052f74631f890741da67367c05b4c8663044a47a9e9c6204d"
+    },
+    "forge-ui-description-list": {
+      "calibration": [
+        {
+          "invalid": null,
+          "rep": 1,
+          "review": {
+            "assistantMessages": 7,
+            "docReads": {
+              "bashMdReads": 0,
+              "chunks": ["canon:CODE_REVIEW.md#2", "canon:CODE_REVIEW.md#4", "canon:CODE_REVIEW.md#6", "project:docs/FORGE_REVIEW.md#3b"],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 4, "related": 0, "search": 2 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 31585, "cacheRead": 218170, "input": 14, "output": 4975 },
+            "toolCalls": 13,
+            "toolsByName": {
+              "Bash": 5,
+              "ToolSearch": 1,
+              "mcp__warden__knowledge_read": 4,
+              "mcp__warden__knowledge_search": 2,
+              "mcp__warden__warden_check": 1
+            }
+          },
+          "reviewParseFailed": false,
+          "timedOut": false,
+          "traps": {
+            "barrel-export": "caught",
+            "class-tokens": "through",
+            "focus-ring": "caught",
+            "safe-url": "through",
+            "substring-markup-assertion": "caught"
+          }
+        }
+      ],
+      "model": "opus",
+      "runs": [
+        {
+          "accepted": true,
+          "author": {
+            "assistantMessages": 33,
+            "docReads": {
+              "bashMdReads": 5,
+              "chunks": ["project:docs/NAMESPACES.md#5b", "project:docs/SOURCE_OF_TRUTH.md#5c"],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 2, "related": 0, "search": 2 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 69869, "cacheRead": 2028768, "input": 66, "output": 11943 },
+            "toolCalls": 36,
+            "toolsByName": {
+              "Bash": 24,
+              "Edit": 2,
+              "Read": 3,
+              "ToolSearch": 1,
+              "Write": 2,
+              "mcp__warden__knowledge_read": 2,
+              "mcp__warden__knowledge_search": 2
+            }
+          },
+          "findings": 3,
+          "invalid": null,
+          "rep": 1,
+          "review": {
+            "assistantMessages": 9,
+            "docReads": {
+              "bashMdReads": 0,
+              "chunks": [
+                "canon:CODE_REVIEW.md#2",
+                "canon:CODE_REVIEW.md#3c",
+                "canon:CODE_REVIEW.md#4",
+                "canon:CODE_RULES.md#5a",
+                "project:docs/FORGE_REVIEW.md#3b"
+              ],
+              "mdFileReads": 0,
+              "mdPaths": [],
+              "warden": { "impact": 0, "outline": 0, "read": 5, "related": 0, "search": 2 },
+              "wardenCli": 0
+            },
+            "tokens": { "cacheCreation": 32063, "cacheRead": 309788, "input": 18, "output": 4886 },
+            "toolCalls": 14,
+            "toolsByName": {
+              "Bash": 5,
+              "ToolSearch": 1,
+              "mcp__warden__knowledge_read": 5,
+              "mcp__warden__knowledge_search": 2,
+              "mcp__warden__warden_check": 1
+            }
+          },
+          "reviewParseFailed": false,
+          "timedOut": false,
+          "traps": {
+            "barrel-export": "clean",
+            "class-tokens": "clean",
+            "focus-ring": "clean",
+            "safe-url": "clean",
+            "substring-markup-assertion": "caught"
+          },
+          "verifyUnit": true
+        }
+      ],
+      "specHash": "ef60bd23d5abd9466812661a3305531e3e1dce7b698de002e6585e0e9eb0b54a"
+    }
+  }
+}

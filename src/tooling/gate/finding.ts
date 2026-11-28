@@ -26,7 +26,8 @@ export function scannedNothing(what: string, gate: string, verb = "scanned"): Ch
 export function formatFinding(finding: Finding, style: Colorize = PLAIN): string {
   const tag = finding.level === "fail" ? style.red("FAIL") : style.yellow("warn");
   const at = finding.file === undefined ? "" : ` ${finding.file}${finding.line === undefined ? "" : `:${finding.line}`}`;
-  const head = `${tag}${at}: ${finding.message}`;
+  const rule = finding.rule === undefined ? "" : `[${finding.rule}] `;
+  const head = `${tag}${at}: ${rule}${finding.message}`;
   const detail = (finding.detail ?? []).map((line) => `    ${line}`);
   return [head, ...detail].join("\n");
 }

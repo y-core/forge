@@ -212,13 +212,12 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 | `version-mismatch`: another version is already written, or committed and untagged | Run the release again with that version to finish it, then release the next one |
 | The release commit changed a path it never staged, or none | `git reset HEAD^`, which the error names; no tag is cut — no flag reaches this one |
 
-**Run the release again after any failure.** Every run re-derives the release from the working tree and never promotes the changelog twice
-([Finishing a release over several runs](#finishing-a-release-over-several-runs)). When the version is already tagged and a reachable remote
-lacks the tag, the run prints `git push --tags` rather than refusing.
+**Run the release again after any failure**: every run re-derives the release from the working tree and never promotes the changelog twice
+([Finishing a release over several runs](#finishing-a-release-over-several-runs)).
 
 **Every refusal except the clean-tree check, the branch check and the gate fires under `--dry` too**, so a preview never hides the refusal it is
-previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and
-non-fatal.
+previewing, since they protect writes a dry run never
+makes.
 
 **A gate that could not be run is refused differently from a gate that failed**, because every package runner reports a missing script the same way
 a failing one exits. The refusal names `gateCommand` rather than telling you to fix what nothing reported.

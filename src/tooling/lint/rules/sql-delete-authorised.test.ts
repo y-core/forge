@@ -5,7 +5,7 @@ import type { AstNode } from "../types.ts";
 import { sqlDeleteAuthorised } from "./sql-delete-authorised.ts";
 
 const MESSAGE =
-  "a `sql` DELETE removes rows for good — say who authorised it in a `// row-removal-authorised-by: <who or why>` comment on the line before the fragment.";
+  "[forge-sql-delete-authorised] a `sql` DELETE removes rows for good — say who authorised it in a `// row-removal-authorised-by: <who or why>` comment on the line before the fragment.";
 
 /** Lints one `tag\`…\`` on line 10, with the given comments ending on the given lines. */
 function lint(tag: string, chunks: string[], comments: { line: number; value: string; type?: string }[] = []): string[] {

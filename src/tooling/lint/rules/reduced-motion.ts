@@ -1,6 +1,5 @@
 import { classExpressionVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 const MOTION_BASE = /^(?:animate-|transition)/;
 
@@ -11,13 +10,12 @@ const SETTLED = new Set(["animate-none", "transition-none"]);
 const GATED = /(?<![\w-])motion-(?:safe|reduce):/;
 
 /** An `animate-*` or `transition*` utility in a class expression that names neither `motion-safe:` nor `motion-reduce:`. */
-export const reducedMotion: LintRule = {
+export const reducedMotion = defineLintRule("forge-ui-reduced-motion", {
   meta: {
     type: "problem",
     docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state or an opacity fade." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-reduced-motion");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       if (GATED.test(found.text)) return;
       const hits = new Set<string>();
@@ -33,4 +31,4 @@ export const reducedMotion: LintRule = {
       }
     });
   },
-};
+});

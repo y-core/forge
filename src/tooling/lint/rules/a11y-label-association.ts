@@ -1,6 +1,6 @@
 import { attributeNamed, containsTag, enclosingElement, openingTag } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 const LABEL_CONTROLS = new Set([
   "input",
@@ -19,10 +19,9 @@ const LABEL_CONTROLS = new Set([
 ]);
 
 /** A `<label>` that neither carries `for` nor wraps its control — styled text that focuses nothing. */
-export const a11yLabelAssociation: LintRule = {
+export const a11yLabelAssociation = defineLintRule("forge-ui-a11y-label-association", {
   meta: { type: "problem", docs: { description: "A label names a control, by `for` or by wrapping it; otherwise it labels nothing." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-label-association");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         if (openingTag(node) !== "label") return;
@@ -34,4 +33,4 @@ export const a11yLabelAssociation: LintRule = {
       },
     };
   },
-};
+});

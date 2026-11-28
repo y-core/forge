@@ -1,0 +1,144 @@
+diff --git a/src/controllers/hello.ts b/src/controllers/hello.ts
+new file mode 100644
+index 00000000..166ceed9
+--- /dev/null
++++ b/src/controllers/hello.ts
+@@ -0,0 +1,11 @@
++import { renderPage } from "@y-core/forge/render/jsx";
++
++import { definePage } from "../app/handlers";
++import { greetingFor } from "../model/greeting";
++import { routes } from "../routes";
++import { HelloView } from "../views/hello";
++
++export const helloPage = definePage(routes.hello, {
++  loader: (c, config) => ({ siteName: config.siteName, greeting: greetingFor(config.siteName, c.params.name) }),
++  view: (_c, _config, state) => renderPage(HelloView(state.data)),
++});
+diff --git a/src/controllers/home.ts b/src/controllers/home.ts
+index a01df52c..626b6b22 100644
+--- a/src/controllers/home.ts
++++ b/src/controllers/home.ts
+@@ -1,16 +1,11 @@
+ import { renderPage } from "@y-core/forge/render/jsx";
+ 
+ import { definePage } from "../app/handlers";
++import { greetingFor } from "../model/greeting";
+ import { routes } from "../routes";
+ import { siteSummary } from "../services/site";
+ import { HomeView } from "../views/home";
+ 
+-/** How the site greets a visitor: by name, or as a friend when it has none. */
+-export function greetingFor(siteName: string, visitor: string): string {
+-  const name = visitor.trim();
+-  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
+-}
+-
+ export const homePage = definePage(routes.home, {
+   loader: async (c, config) => ({ site: await siteSummary(c.env.DB, config.siteName), greeting: greetingFor(config.siteName, "") }),
+   view: (_c, _config, state) => renderPage(HomeView({ site: state.data.site, greeting: state.data.greeting })),
+diff --git a/src/model/greeting.ts b/src/model/greeting.ts
+new file mode 100644
+index 00000000..6c2e44cb
+--- /dev/null
++++ b/src/model/greeting.ts
+@@ -0,0 +1,5 @@
++/** How the site greets a visitor: by name, or as a friend when it has none. */
++export function greetingFor(siteName: string, visitor: string): string {
++  const name = visitor.trim();
++  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
++}
+diff --git a/src/router.ts b/src/router.ts
+index dcb03340..38fad93f 100644
+--- a/src/router.ts
++++ b/src/router.ts
+@@ -2,9 +2,10 @@ import type { Forge } from "@y-core/forge/app";
+ import { createController } from "@y-core/forge/router";
+ 
+ import type { Bindings } from "./app/types";
++import { helloPage } from "./controllers/hello";
+ import { homePage } from "./controllers/home";
+ import { routes } from "./routes";
+ 
+ export function registerRoutes(app: Forge<Bindings>): void {
+-  app.map(routes, createController(routes, { actions: { home: homePage } }));
++  app.map(routes, createController(routes, { actions: { home: homePage, hello: helloPage } }));
+ }
+diff --git a/src/routes.ts b/src/routes.ts
+index dbe528b1..cf9b8d34 100644
+--- a/src/routes.ts
++++ b/src/routes.ts
+@@ -1,3 +1,3 @@
+ import { get, route } from "@y-core/forge/router";
+ 
+-export const routes = route({ home: get("/") });
++export const routes = route({ home: get("/"), hello: get("/hello/:name") });
+diff --git a/src/views/hello.tsx b/src/views/hello.tsx
+new file mode 100644
+index 00000000..a1d938b2
+--- /dev/null
++++ b/src/views/hello.tsx
+@@ -0,0 +1,15 @@
++export function HelloView({ siteName, greeting }: { siteName: string; greeting: string }) {
++  return (
++    <html lang='en'>
++      <head>
++        <meta charset='utf-8' />
++        <title>{siteName}</title>
++      </head>
++      <body>
++        <main>
++          <h1>{greeting}</h1>
++        </main>
++      </body>
++    </html>
++  );
++}
+diff --git a/tests/hello.test.ts b/tests/hello.test.ts
+new file mode 100644
+index 00000000..ca8030c8
+--- /dev/null
++++ b/tests/hello.test.ts
+@@ -0,0 +1,42 @@
++import { afterEach, beforeEach, describe, expect, it } from "bun:test";
++
++import { openBunD1 } from "@y-core/forge/testing/d1/bun";
++import type { TestD1 } from "@y-core/forge/testing/d1/bun";
++
++import { greetingFor } from "../src/model/greeting";
++import { createWorker } from "../src/worker";
++import { testEnv } from "./env";
++
++let d1: TestD1;
++
++beforeEach(async () => {
++  d1 = await openBunD1();
++});
++
++afterEach(async () => {
++  await d1.dispose();
++});
++
++describe("the hello page", () => {
++  it("greets the visitor its path names, as the home page greets", async () => {
++    const res = await createWorker({ scriptSrc: ["'self'"] }).request("/hello/Ada", {}, testEnv(d1));
++
++    expect(res.status).toBe(200);
++    expect((await res.text()).split(/<[^>]+>/).filter(Boolean)).toEqual(["Forge Eval", "Welcome to Forge Eval, Ada."]);
++  });
++
++  it("escapes a name that carries markup", async () => {
++    const res = await createWorker({ scriptSrc: ["'self'"] }).request("/hello/%3Cb%3EAda%3C%2Fb%3E", {}, testEnv(d1));
++
++    expect(/<h1>(.*)<\/h1>/.exec(await res.text())?.[1]).toBe("Welcome to Forge Eval, &lt;b&gt;Ada&lt;/b&gt;.");
++  });
++});
++
++describe("greetingFor", () => {
++  it("names the visitor, or calls one with no name a friend", () => {
++    expect([greetingFor("Forge Eval", " Ada "), greetingFor("Forge Eval", "  ")]).toEqual([
++      "Welcome to Forge Eval, Ada.",
++      "Welcome to Forge Eval, friend.",
++    ]);
++  });
++});

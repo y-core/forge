@@ -53,7 +53,7 @@ escaped. For a fragment, `renderToString` returns `SafeHtml` that `fragmentRespo
 import { fragmentResponse } from "@y-core/forge/http";
 import { renderToString } from "@y-core/forge/render/jsx";
 
-return fragmentResponse(await renderToString(<CartRow item={item} />));
+const response = fragmentResponse(await renderToString(<CartRow item={item} />));
 ```
 
 ---

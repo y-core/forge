@@ -1,0 +1,59 @@
+diff --git a/src/controllers/hello.ts b/src/controllers/hello.ts
+index 166ceed9..8ddf67e8 100644
+--- a/src/controllers/hello.ts
++++ b/src/controllers/hello.ts
+@@ -1,7 +1,7 @@
+ import { renderPage } from "@y-core/forge/render/jsx";
+ 
+ import { definePage } from "../app/handlers";
+-import { greetingFor } from "../model/greeting";
++import { greetingFor } from "./home";
+ import { routes } from "../routes";
+ import { HelloView } from "../views/hello";
+ 
+diff --git a/src/controllers/home.ts b/src/controllers/home.ts
+index 626b6b22..a01df52c 100644
+--- a/src/controllers/home.ts
++++ b/src/controllers/home.ts
+@@ -1,11 +1,16 @@
+ import { renderPage } from "@y-core/forge/render/jsx";
+ 
+ import { definePage } from "../app/handlers";
+-import { greetingFor } from "../model/greeting";
+ import { routes } from "../routes";
+ import { siteSummary } from "../services/site";
+ import { HomeView } from "../views/home";
+ 
++/** How the site greets a visitor: by name, or as a friend when it has none. */
++export function greetingFor(siteName: string, visitor: string): string {
++  const name = visitor.trim();
++  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
++}
++
+ export const homePage = definePage(routes.home, {
+   loader: async (c, config) => ({ site: await siteSummary(c.env.DB, config.siteName), greeting: greetingFor(config.siteName, "") }),
+   view: (_c, _config, state) => renderPage(HomeView({ site: state.data.site, greeting: state.data.greeting })),
+diff --git a/src/model/greeting.ts b/src/model/greeting.ts
+deleted file mode 100644
+index 6c2e44cb..00000000
+--- a/src/model/greeting.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-/** How the site greets a visitor: by name, or as a friend when it has none. */
+-export function greetingFor(siteName: string, visitor: string): string {
+-  const name = visitor.trim();
+-  return `Welcome to ${siteName}, ${name === "" ? "friend" : name}.`;
+-}
+diff --git a/tests/hello.test.ts b/tests/hello.test.ts
+index ca8030c8..523c4c69 100644
+--- a/tests/hello.test.ts
++++ b/tests/hello.test.ts
+@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+ import { openBunD1 } from "@y-core/forge/testing/d1/bun";
+ import type { TestD1 } from "@y-core/forge/testing/d1/bun";
+ 
+-import { greetingFor } from "../src/model/greeting";
++import { greetingFor } from "../src/controllers/home";
+ import { createWorker } from "../src/worker";
+ import { testEnv } from "./env";
+ 

@@ -25,9 +25,8 @@ function run(root: string, extra: Partial<ModernCssCheckConfig> = {}) {
   return checkModernCss({ root, sources: ["src/ui"], deferred: [], ...extra });
 }
 
-const messages = (root: string, extra: Partial<ModernCssCheckConfig> = {}) => run(root, extra).findings.map((finding) => finding.message);
-
-const CORPUS = "src/ui/design/reference/16-platform.md";
+const messages = (root: string, extra: Partial<ModernCssCheckConfig> = {}) =>
+  run(root, extra).findings.map((finding) => (finding.rule === undefined ? finding.message : `[${finding.rule}] ${finding.message}`));
 
 /** A fixture stylesheet with the layer declared after it, so Tier C's adoption rule stays silent. */
 const LAYERED = (css: string): string => `${css}@layer base;\n`;
@@ -70,9 +69,7 @@ describe("checkModernCss() — the tree it walks", () => {
   it("scans the excluded subtree when nothing excludes it", () => {
     const root = fixtureRoot({ "src/ui/design/sample.css": LAYERED(".a {\n  margin-left: 1rem;\n}\n") });
 
-    expect(messages(root)).toEqual([
-      `forge-ui-platform-logical-spacing: physical property \`margin-left\` — use \`margin-inline-start\` (${CORPUS})`,
-    ]);
+    expect(messages(root)).toEqual([`[forge-ui-platform-logical-spacing] physical property \`margin-left\` — use \`margin-inline-start\``]);
   });
 
   it("reads neither a test file nor a browser file", () => {
@@ -93,7 +90,8 @@ describe("checkModernCss() — the tree it walks", () => {
         level: "fail",
         file: "src/ui/a.css",
         line: 2,
-        message: `forge-ui-platform-isolation: \`z-index: -1\` escapes the parent's paint order — create a stacking context with \`isolation: isolate\` (${CORPUS})`,
+        message: "`z-index: -1` escapes the parent's paint order — create a stacking context with `isolation: isolate`",
+        rule: "forge-ui-platform-isolation",
       },
     ]);
   });
@@ -109,7 +107,7 @@ describe("checkModernCss() — the tree it walks", () => {
 
 describe("checkModernCss() — a cross-document navigation", () => {
   const NAVIGATE = 'export function go(win: Window): void {\n  win.location.replace("/next");\n}\n';
-  const WARNING = `forge-ui-platform-view-transition: a cross-document navigation with no \`@view-transition { navigation: auto; }\` in the stylesheets — opt the navigation into a view transition in CSS (${CORPUS})`;
+  const WARNING = `[forge-ui-platform-view-transition] a cross-document navigation with no \`@view-transition { navigation: auto; }\` in the stylesheets — opt the navigation into a view transition in CSS`;
 
   it("raises no warning when the app stylesheet opts into a view transition", () => {
     const root = fixtureRoot({ "src/ui/main.ts": NAVIGATE, "src/ui/app.css": LAYERED("@view-transition {\n  navigation: auto;\n}\n") });
@@ -154,7 +152,7 @@ describe("checkModernCss() — the deferral list", () => {
     const root = fixtureRoot({ "src/ui/a.css": LAYERED(".a {\n  z-index: -1;\n  margin-left: 1rem;\n}\n") });
 
     expect(messages(root, { deferred: [deferral] })).toEqual([
-      `forge-ui-platform-logical-spacing: physical property \`margin-left\` — use \`margin-inline-start\` (${CORPUS})`,
+      `[forge-ui-platform-logical-spacing] physical property \`margin-left\` — use \`margin-inline-start\``,
     ]);
   });
 
@@ -170,7 +168,7 @@ describe("checkModernCss() — the deferral list", () => {
     const root = fixtureRoot({ "src/ui/a.css": LAYERED(".a {\n  z-index: -1;\n}\n") });
 
     expect(messages(root, { deferred: [{ path: "src/ui/gone.css", ruleId: "forge-ui-platform-isolation", owner: "task-1" }] })).toEqual([
-      `forge-ui-platform-isolation: \`z-index: -1\` escapes the parent's paint order — create a stacking context with \`isolation: isolate\` (${CORPUS})`,
+      `[forge-ui-platform-isolation] \`z-index: -1\` escapes the parent's paint order — create a stacking context with \`isolation: isolate\``,
       "`src/ui/gone.css` defers `forge-ui-platform-isolation`, which it no longer violates — delete the entry, the list only shrinks",
     ]);
   });
@@ -179,7 +177,7 @@ describe("checkModernCss() — the deferral list", () => {
     const root = fixtureRoot({ "src/ui/a.css": LAYERED(".a {\n  z-index: -1;\n}\n") });
 
     expect(messages(root, { deferred: [{ ...deferral, owner: "  " }] })).toEqual([
-      `forge-ui-platform-isolation: \`z-index: -1\` escapes the parent's paint order — create a stacking context with \`isolation: isolate\` (${CORPUS})`,
+      `[forge-ui-platform-isolation] \`z-index: -1\` escapes the parent's paint order — create a stacking context with \`isolation: isolate\``,
       "`src/ui/a.css` defers `forge-ui-platform-isolation` with no owner — a deferral names the task that closes it",
     ]);
   });

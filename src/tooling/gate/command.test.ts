@@ -1354,3 +1354,53 @@ describe("createGateCommand() — --report", () => {
     });
   }
 });
+
+describe("createGateCommand() — --json", () => {
+  // A failed command step keeps its full log under the system temp, so the suite points that at a directory it removes.
+  const saved = process.env.TMPDIR;
+  let systemTmp = "";
+  beforeEach(() => {
+    systemTmp = mkdtempSync(join(tmpdir(), "forge-json-tmp-"));
+    process.env.TMPDIR = systemTmp;
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    rmSync(systemTmp, { recursive: true, force: true });
+  });
+  const located: Step = {
+    label: "validate-thing",
+    run: () => checkResult([fail("never do a", { file: "src/a.ts", line: 3, rule: "forge-a" }), { level: "warn", message: "only a warning" }], ""),
+  };
+
+  it("prints nothing but the failures, each with its step, rule, file and line, and exits 1", async () => {
+    const { logs, code } = await run([passing("lint"), located], { json: true });
+
+    expect(code).toBe(1);
+    expect(logs).toHaveLength(1);
+    expect(JSON.parse(logs[0] ?? "")).toEqual([{ step: "validate-thing", rule: "forge-a", file: "src/a.ts", line: 3, message: "never do a" }]);
+  });
+
+  it("prints an empty array for a green run", async () => {
+    const { logs, code } = await run([passing("lint")], { json: true });
+
+    expect(code).toBeUndefined();
+    expect(logs).toEqual(["[]"]);
+  });
+
+  it("names a command step's located errors, read from its output", async () => {
+    const tsc: CommandStep = {
+      label: "typecheck",
+      tail: 5,
+      cmd: ["sh", "-c", "echo 'src/a.ts(4,2): error TS2322: Type string is not number.'; exit 2"],
+    };
+    const { logs } = await run([tsc], { json: true });
+
+    expect(JSON.parse(logs[0] ?? "")).toEqual([{ step: "typecheck", file: "src/a.ts", line: 4, message: "TS2322: Type string is not number." }]);
+  });
+
+  it("refuses --fix and --list, which print no run's failures", async () => {
+    expect((await run([passing("lint")], { json: true, fix: true })).logs).toEqual(["--json prints a run's failures, so it takes no --fix."]);
+    expect((await run([passing("lint")], { json: true, list: true })).code).toBe(1);
+  });
+});

@@ -62,8 +62,8 @@ Each namespace's README says which tier it is on; this section owns only the rul
 client entry.** The two halves share a declared DOM contract — attribute names, scope names, selectors — published as pure data that both tiers
 import, so neither hand-writes a string the other has to match.
 
-**Never inline a browser-only import in a `.tsx` file outside the client directory.** That is precisely the mistake the path convention exists to
-make visible: it typechecks, it passes a unit test that never renders in a Worker, and it fails in production on the first request.
+<!-- rule:libs-boundaries-client-import --> Such an import typechecks, passes a unit test that never renders in a Worker, and fails in production on
+the first request.
 
 ### 1c. Why It Is a Path Convention and Not a Guard
 
@@ -123,10 +123,10 @@ questions.
 ### 3a. The Boundary Rule
 
 **All untrusted input is validated at the boundary — the handler — before it reaches services, domain logic, or storage.** Raw `FormData`, query
-strings, headers, and unvalidated strings must not be passed into a service function. **Services receive typed domain objects.**
+strings, headers, and unvalidated strings never reach a service function: **services receive typed domain objects.**
 
-The corollary is what makes the rule enforceable: a service signature that accepts `FormData` or `Record<string, string>` is a defect on its face,
-because it makes the boundary unlocatable. Type the parameter to the domain shape and the validation has nowhere to hide.
+The corollary makes the rule enforceable: a service signature that accepts `FormData` or `Record<string, string>` is a defect on its face, because
+it makes the boundary unlocatable.
 
 ### 3b. Ordered Validation Steps
 
@@ -159,8 +159,7 @@ trust is a silent spoofing surface in every deployment that has not thought abou
 
 ### 4a. The Prohibited Field Classes
 
-**A log record must never contain user-identifiable or credential data**, on any channel — console output is retained and searchable exactly as a
-persisted channel is.
+<!-- rule:libs-boundaries-log-pii --> Console output is retained and searchable exactly as a persisted channel is, so no channel is exempt.
 
 Never present in a log record:
 
@@ -174,18 +173,17 @@ Where a handler must reference a user for debugging, use an **opaque internal id
 A persisting channel additionally strips stack traces by default — a stack embeds argument values and file paths, and a persisted log is a
 longer-lived artifact than a console line.
 
-**Redact every channel by default, and make the relaxation the visible thing.** A per-channel redaction opt-in is the shape that produced the leak
-this rule exists to stop: it is configuration nobody has to write, so console output goes unredacted beside a redacted store while §4a bans the
-field classes on both. Apply the policy once, logger-wide, before the channel fan-out, so no channel can be dirtier than another and an internal
-logger the application never configures is covered too. Give an application two controls — add a field class, and allow a specific one back — and
-one greppable literal that turns the pass off. A per-channel wrapper may still **tighten** what one sink keeps; it must not be able to relax the
-floor.
+**Redact every channel by default, and make the relaxation the visible thing.** A per-channel opt-in is the shape that produced the leak this rule
+exists to stop, because it is configuration nobody has to write. Apply the policy once, logger-wide, before the channel fan-out, so no channel is
+dirtier than another and an internal logger the application never configures is covered too; give an application two controls — add a field class,
+allow a specific one back — and one greppable literal that turns the pass off. A per-channel wrapper may **tighten** what one sink keeps, never
+relax the floor.
 
 ### 4b. Structured Fields Over String Interpolation
 
-Pass data as discrete key-value fields on the record, never interpolated into the message string. The message is a static, grep-friendly label;
-variable data belongs in the fields object where it can be filtered independently. The rule is also a PII control: interpolation is how a sensitive
-value ends up adjacent to a benign one inside a single opaque string that no redaction pass can reach into.
+<!-- rule:libs-boundaries-log-fields --> The message is a static, grep-friendly label; variable data belongs in the fields object where it can be
+filtered independently. The rule is also a PII control: interpolation is how a sensitive value ends up adjacent to a benign one inside a single
+opaque string that no redaction pass can reach into.
 
 ---
 
@@ -193,8 +191,7 @@ value ends up adjacent to a benign one inside a single opaque string that no red
 
 ### 5a. Fail Closed on Missing Critical Context
 
-**When a security-critical dependency is absent, return an error response immediately.** Silent continuation with degraded behaviour is never
-acceptable.
+**When a security-critical dependency is absent, return an error response immediately**, never a silent degraded continuation.
 
 ```ts
 // BAD — the guard is skipped entirely when the signing key is absent
@@ -205,7 +202,7 @@ if (!signingKey) return new Response("Service Unavailable", { status: 503 });
 await verifyRequest(c, signingKey);
 ```
 
-This covers authentication tokens, signing keys, and origin validation secrets: absent binding → `503`, never a degraded unauthenticated mode.
+This covers authentication tokens, signing keys, and origin validation secrets: absent binding → `503`.
 
 The same posture governs startup: a missing or malformed binding is a **deployment defect**, not a runtime condition to degrade around, so a binding
 resolver throws rather than returning a `Result` ([`ERROR_HANDLING.md`][eh-5d] §5d).
@@ -215,10 +212,9 @@ resolver throws rather than returning a `Result` ([`ERROR_HANDLING.md`][eh-5d] �
 A storage resolver accepts a `required: false` option for graceful degradation. **It is scoped to non-security features only** — a log store, say,
 whose absence drops one log channel rather than any check.
 
-**Never acceptable with `required: false`:** CSRF verification, authentication middleware, origin and Referer checks, signature validation.
-
-The asymmetry is deliberate: a dropped log channel is an observability gap, bypassed CSRF is an integrity breach. A single option name spanning
-both would make the difference invisible at the call site, which is exactly where it needs to be visible.
+<!-- rule:libs-boundaries-required-false --> The asymmetry is deliberate: a dropped log channel is an observability gap, bypassed CSRF is an
+integrity breach. A single option name spanning both would make the difference invisible at the call site, which is exactly where it needs to be
+visible.
 
 ### 5c. Recording a Fail-Open Exception
 
@@ -229,7 +225,7 @@ refuse, and refusing would break every consumer for a token it merely did not kn
 authorisation; and the exception is written into the owning `docs/` document and listed in [`CODE_REVIEW.md`][cr-6] §6 so a reviewer meets it as a
 known pattern rather than as a finding.
 
-**An exception that is not written down does not exist.** The next reviewer is right to flag it, and the argument gets had again from scratch.
+**An exception that is not written down does not exist**: the next reviewer is right to flag it.
 
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
 [eh-1]: ./ERROR_HANDLING.md#1-result-monad

@@ -46,17 +46,16 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 Every namespace has exactly one barrel — a single `mod.ts` at the namespace root — and it is the only file listed in `package.json` `exports` for
 that subpath. All public API flows through it.
 
-- **A barrel uses named exports only** — never `export * from …` (§1b).
+- <!-- rule:namespace-design-named-exports --> A star re-export hides what the barrel publishes (§1b).
 - **Every new public symbol in the namespace is added to the barrel.**
 - **A barrel imports from concrete files, never from another barrel** (§2).
 
-The barrel is the namespace's published surface. It is not a convenience index, and it is not a place to shorten an import path — those are what a
-barrel means inside an _application_, and the inversion is the single most common mistake carried in from app work.
+The barrel is the namespace's published surface, not a convenience index for shorter import paths — that is what a barrel means inside an
+_application_, and the inversion is the most common mistake carried in from app work.
 
 ### 1b. Export Star Ban
 
-**`export * from "./foo"` is banned.** It leaks internal symbols into the public surface, risks circular dependencies, and makes the public API
-ungreppable — the harms are independent, and any one of them is sufficient.
+**`export * from "./foo"` is banned**: it leaks internal symbols, risks circular dependencies, and makes the public API ungreppable.
 
 **Every spelling is banned**, not just the bare one:
 
@@ -66,20 +65,14 @@ ungreppable — the harms are independent, and any one of them is sufficient.
 | `export * as ns from "./foo"` | yes | the same leak behind one extra token |
 | `export type * from "./foo"` | yes | leaks every internal type, and is equally ungreppable |
 
-The type-only form is erased at emit, so it cannot create a runtime cycle — but the other harms still apply, and a barrel's job is to _state_
-its surface. Name the types.
+The type-only form cannot create a runtime cycle, but the other harms still apply: name the types.
 
 ### 1c. What the Export Gate Proves
 
-A gate step is the enforcement authority for everything in §1a–§1b, and it proves more than a reader would check by hand: that each subpath resolves
-to a real, published file; that no barrel uses `export *`; that every symbol marked public reaches its barrel; that every barrel in the source tree
-is either exported or explicitly sealed; and that every published-files entry exists on disk.
+`checkExports`, the `validate-exports` step, owns §1a–§1b's enforcement and its passes; read the check, not a prose copy that will disagree with it.
 
-**Read the check, not this section, for the current rule set.** The check is the source of truth, and a prose copy of its rules is a second copy
-that will disagree with it.
-
-**A sealed-internal barrel is legitimate and must be declared.** A namespace with no export subpath is valid only when it appears on the gate's
-sealed allowlist — a barrel is valid if it is exported _or_ explicitly sealed, and never merely by existing.
+<!-- rule:namespace-design-sealed-barrel --> A sealed-internal barrel is legitimate: a barrel is valid if it is exported _or_ explicitly sealed, and
+never merely by existing.
 
 ---
 
@@ -92,21 +85,19 @@ the concrete file instead.
 
 ### 2b. Why Sibling Barrels Are Forbidden
 
-When one namespace imports another's barrel, any future import in _that_ barrel which reaches back creates a cycle — and the cycle is invisible at
-both ends, because neither file names the module that closes it. **Importing the concrete file makes the dependency explicit and bounded**: it names
-one module, and a reviewer can see exactly what was taken.
+When one namespace imports another's barrel, any later import in _that_ barrel which reaches back creates a cycle neither file names. **Importing
+the concrete file makes the dependency explicit and bounded**: it names one module, and a reviewer sees exactly what was taken.
 
-This is the inverse of the rule an application repository would use. Inside a library, the barrel is the _published surface_, not a convenience;
-consuming your own published surface from within is how a namespace ends up depending on its own export map.
+Inside a library the barrel is the _published surface_, so consuming it from within makes a namespace depend on its own export map — the inverse of
+an application's rule.
 
 ### 2c. Granting an Exemption
 
 An exemption is warranted only where the barrel _is_ the abstraction — a facade whose whole point is that every consumer takes the same single
 symbol from it, or a sealed-internal utility module several namespaces need.
 
-**Every exemption is a §3c foundational primitive**, and that is not a coincidence: the property that makes a barrel safe to import everywhere is
-the same closure property that makes a namespace a primitive. The repository's `docs/` docs name the current exemptions; this section owns only the
-test for granting one.
+**Every exemption is a §3c foundational primitive**, because the closure property that makes a namespace a primitive is what makes its barrel safe
+to import everywhere. The repository's `docs/` docs name the current exemptions.
 
 ---
 
@@ -117,60 +108,51 @@ test for granting one.
 A namespace is **leaf** when it imports only from its own directory, external packages, Web APIs, and the foundational primitives of §3c — **zero
 other cross-namespace imports.**
 
-**Which namespaces are leaf is declared in a config file, not in prose.** That file is authoritative for the graph and the documentation enumerates
-none of it: a second copy of a graph is indistinguishable from an amendment the moment the two disagree. What stays in prose is _why_ a
-classification holds, which is the part prose is better at.
+**Which namespaces are leaf is declared in a config file, not in prose**, because a second copy of a graph is indistinguishable from an amendment
+once the two disagree; prose keeps only _why_ a classification holds.
 
 ### 3b. Integration Namespace Rules
 
 A namespace is **integration** when it composes across namespaces. **Every edge is declared as source, target, and kind**; an undeclared
 cross-namespace import is a defect, and so is a declared edge no source file makes. Imports of §3c primitives are not edges and are not declared.
 
-A gate step walks the source tree, builds the observed graph, and diffs it against the declaration, so an undeclared import, a stale declaration,
-and a leaf that quietly gained an edge each fail rather than passing unnoticed. These properties of that walk are load-bearing and not self-evident:
+A gate step diffs the observed import graph against the declaration, so an undeclared import, a stale declaration and a leaf that gained an edge
+each fail. These properties of that walk are load-bearing:
 
-- **Test files are excluded.** Counting them would reclassify most declared leaves as integration and invent edges into test-fixture namespaces no
-  consumer can reach. A fixture import is not a layering claim.
-- **The §3c exemption is target-only.** An edge _into_ a primitive is exempt; an edge _out of_ one is a reported violation. That is §3c's closure
-  property, enforced rather than trusted.
-- **An edge's kind is the AND across its import sites.** One value import anywhere makes the whole edge a value edge, so declaring an edge type-only
-  is a claim about every site, not the first one a reader happens to open.
+- **Test files are excluded.** Counting them would reclassify most leaves as integration and invent edges into test-fixture namespaces; a fixture
+  import is not a layering claim.
+- **The §3c exemption is target-only.** An edge _into_ a primitive is exempt; an edge _out of_ one is a violation — §3c's closure, enforced.
+- **An edge's kind is the AND across its import sites.** One value import anywhere makes the whole edge a value edge.
 
-**A type-only import still counts as an edge.** It is erased at emit and so cannot create a runtime cycle (§2), but it is a coupling a rename
-breaks, so it is declared with its kind rather than left out. A namespace whose every edge is type-only is integration all the same.
+<!-- rule:namespace-design-type-edge --> It cannot create a runtime cycle (§2), but a rename breaks it, and a namespace whose every edge is
+type-only is integration all the same.
 
-**A type-only edge is what lets two namespaces name each other.** A mutually-naming pair is legal exactly while one direction stays type-only;
-flipping it to a value import closes a real cycle. Kind is therefore a rule, not an annotation.
+**A type-only edge is what lets two namespaces name each other**: the pair is legal exactly while one direction stays type-only, since a value
+import closes a real cycle.
 
 ### 3c. Foundational Primitives
 
 A small, **closed** set of namespaces sits below the leaf/integration split: any namespace may import them without that import counting as a
 layering violation.
 
-**The test for membership is arithmetic, not taste: how many namespaces reach for it independently.** A namespace a dozen others need is a
-primitive; declaring twelve edges instead would describe the same graph while implying a choice each consumer made, and none of them did.
+**The test for membership is arithmetic, not taste: how many namespaces reach for it independently.** Declaring a dozen edges instead would imply a
+choice each consumer made, and none of them did.
 
-**The set must stay closed — no primitive may reach back into a consumer.** Every edge out of a primitive lands inside the set. That is what makes
-the carve-out safe, and it is the property to re-check before admitting a new member: a primitive that imported a leaf would put every consumer of
-the primitive behind that leaf.
+<!-- rule:namespace-design-closed-primitives --> That is the property to re-check before admitting a member: a primitive that imported a leaf would
+put every consumer of the primitive behind that leaf.
 
 ### 3d. A Directory Is a Namespace Only With a Subpath
 
-**Classify by published subpath, never by directory.** A subdirectory with no export entry is part of its parent namespace, and its imports are the
-_parent's_ edges.
-
-Classifying by directory reports namespaces the package does not have and edges nobody can import — a graph that is both larger and less true than
-the real one.
+<!-- rule:namespace-design-subpath-namespace --> A subdirectory with no export entry is part of its parent namespace, and its imports are the
+_parent's_ edges. Classifying by directory reports namespaces the package does not have and edges nobody can import.
 
 ### 3e. Duplication Across a Leaf Boundary
 
-**Duplicated markup or constants across a leaf boundary are an accepted cost, not an oversight.** Where sharing a class string or a small literal
-would add an edge the graph rejects, and would put every consumer of the lower tier behind the higher one for the sake of that literal, the two
-copies are correct.
+**Duplicated markup or constants across a leaf boundary are an accepted cost, not an oversight**, where sharing a literal would add an edge the
+graph rejects.
 
-The test is what the copies actually couple to: two class strings that resolve through the same design token drift only in appearance, and the
-coupling that matters lives in the token. Where the copies encode a _behaviour_ rather than a presentation, this argument does not apply and the
-edge should be declared.
+The test is what the copies couple to: two class strings resolving through one design token drift only in appearance, but copies that encode a
+_behaviour_ get a declared edge instead.
 
 ---
 
@@ -196,8 +178,7 @@ Exported option and shape types take a suffix chosen by what the type _is_:
 | `*Definition` | **Declarative handler or component shape** consumed by a builder | `EndpointDefinition`, `WidgetDefinition` |
 | `*Descriptor` / `*Def` | Fine-grained declarative **member shapes** within a definition | `ColumnDescriptor`, `SlotDef` |
 
-**A declarative shape must not be named `*Config`** — that suffix implies validated env or data — and **behaviour knobs must not be named `*Config`
-or `*Definition`.** The suffix is how a caller predicts whether a value was validated, and getting it wrong is a documentation defect that the type
+<!-- rule:namespace-design-behaviour-suffix --> `*Config` implies validated env or data, so a wrong suffix misleads a caller in a way the type
 system cannot catch.
 
 ---
@@ -213,8 +194,7 @@ Add one when **all** hold:
 - An existing namespace would _become_ an integration namespace if the feature were added to it.
 - Its concern is bounded enough to describe in five words.
 
-The third test is the one that decides most cases. A feature that would turn a leaf into an integration namespace is a feature that does not belong
-in that leaf.
+The third test decides most cases: a feature that would turn a leaf into an integration namespace does not belong in that leaf.
 
 ### 5b. Checklist Before Merge
 
@@ -235,9 +215,8 @@ recur:
 - **A third variant of a builder or client family** — two is a pair, three is a category, and a category deserves its own namespace.
 - **A component or symbol count** past which the barrel stops being scannable; introduce sub-barrels while keeping the export path stable.
 
-**A trigger counts published entry points, not modules.** Factoring a shared sequence out of two builders is an implementation seam and leaves the
-count at two; it does not fire the rule. Where the trigger is ambiguous, that ambiguity means the threshold was stated in the wrong unit — fix the
-threshold rather than arguing the instance.
+**A trigger counts published entry points, not modules**: factoring a shared sequence out of two builders leaves the count at two. An ambiguous
+trigger means the threshold was stated in the wrong unit — fix the threshold rather than arguing the instance.
 
 [cr]: ../shared/CODE_RULES.md
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive

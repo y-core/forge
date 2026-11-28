@@ -1,0 +1,9 @@
+diff --git a/src/auth/schema.sql b/src/auth/schema.sql
+index ee5c90d8..46a283cf 100644
+--- a/src/auth/schema.sql
++++ b/src/auth/schema.sql
+@@ -80,3 +80,3 @@ CREATE TABLE IF NOT EXISTS auth_access_tokens (
+   CHECK (length(token_hash) = 32 AND length(label) BETWEEN 1 AND 100)
+-) STRICT;
++);
+ 

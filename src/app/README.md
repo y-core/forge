@@ -158,11 +158,9 @@ applyMiddlewareChain(app, {
 The hook picks the representation, never the outcome: it has no `next`, and it never writes `refusal.reason` into the response
 ([`FORGE_ERRORS.md`][eh-3e] §3e).
 
-**forge ships one hook per medium.** `refuseAsProblem()` answers RFC 9457 `application/problem+json` — `type` `about:blank`, the status
-phrase as `title`, and the `status` — for a JSON client. `refuseAsFragment({ target, swap, render })` answers the panel `render` returns,
-wrapped in an element carrying `ANNOUNCE_FAILURE_ATTR` with its `message`, so the announcer speaks it; under htmx it sets `HX-Retarget` to
-`target` and `HX-Reswap` to `swap` (default `innerHTML`), since the request's own target is the form it submitted. The panel needs no live
-region of its own. A hook may branch on `isHxRequest` to pick between a fragment and a page, never to decide whether to refuse:
+**forge ships one hook per medium**: `refuseAsProblem()` answers problem+json for a JSON client, and `refuseAsFragment({ target, swap, render })`
+answers an announced panel, retargeted under htmx because the request's own target is the form it submitted ([`FORGE_ERRORS.md`][eh-3e] §3e). A hook
+may branch on `isHxRequest` to pick between a fragment and a page, never to decide whether to refuse:
 
 ```tsx
 import { applyMiddlewareChain, refuseAsFragment, refuseAsProblem, type RefusalPanel } from "@y-core/forge/app";
@@ -263,10 +261,10 @@ export function registerRoutes(app: Forge<Bindings>): void {
 }
 ```
 
-The `actions` keys must match the route names exactly, so a missing or misspelled handler is a compile error, and so is a page mapped to a route
-whose params differ from the one it was built for. Per-route middleware goes in the controller entry and nowhere else — neither `definePage` nor
-`defineAction` accepts a `middleware` field ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b] §1b). It holds only the checks that need the route matched; a
-content-type check, an origin check or an address-keyed rate limit goes on a guard group covering the route ([§3f][ram-3f]).
+A missing or misspelled handler is a compile error, and so is a page mapped to a route whose params differ from the one it was built for. Per-route
+middleware goes in the controller entry and nowhere else — neither `definePage` nor `defineAction` accepts a `middleware` field
+([`ROUTING_AND_MIDDLEWARE.md`][ram-1b] §1b). It holds only the checks that need the route matched; a content-type check, an origin check or an
+address-keyed rate limit goes on a guard group covering the route ([§3f][ram-3f]).
 
 **A route pattern has a size ceiling, and `app.map` throws `MatcherResourceError` at registration when one exceeds it** — the same ceiling applies
 to an `app.use` path. Nothing a hand-written pattern reaches; a generated one can, and it fails at startup rather than on a request
@@ -313,6 +311,11 @@ export const taskPage = definePage(routes.task, {
 **A `query` schema validates the query string before the loader runs**, on every method, and the loader receives its output as a third argument:
 
 ```tsx
+import { renderPage } from "@y-core/forge/render/jsx";
+import { v } from "@y-core/forge/validation";
+
+import { listTasks } from "./tasks";
+
 export const tasksPage = definePage(routes.tasks, {
   query: v.object({ page: v.pipe(v.string(), v.digits(), v.transform(Number)) }),
   loader: async (c, _config, query) => ({ tasks: await listTasks(c.env.TASKS, query.page) }),
@@ -436,7 +439,7 @@ One shell, registered on the app, is the document every mounted page renders int
 takes no chrome options of its own, and the reasoning is [`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6's.
 
 ```tsx
-import { mergeMeta, metaTags } from "@y-core/forge/app";
+import { createApp, mergeMeta, metaTags } from "@y-core/forge/app";
 import { getNonce } from "@y-core/forge/security";
 
 const SITE_META = { title: "Acme", description: "…", og: { type: "website", image: "https://cdn.acme.com/og.png" } } as const;
@@ -470,12 +473,17 @@ createApp<Bindings>({ shell: pageShell({ stylesheet: "/assets/app.css", script: 
 **Render your own pages through the same shell** with `renderShell`, naming the slot yourself:
 
 ```tsx
-view: (c, _config, state) => renderShell(c, <Home data={state.data} />, { mount: "app", page: "home", meta: { title: "Home" } }),
+import { renderShell } from "@y-core/forge/app";
+
+import { Home } from "./views/home";
+
+export const homePage = definePage(routes.home, {
+  view: (c, _config, state) => renderShell(c, <Home data={state.data} />, { mount: "app", page: "home", meta: { title: "Home" } }),
+});
 ```
 
 Meta is a typed descriptor, not a tag array: `mergeMeta` merges a page over the site base one level deep for `og` and `twitter`, and `metaTags`
-renders it. `canonical` and `og.image` must be absolute, `canonical` is not rendered beside `noindex`, `jsonLd` needs the request nonce to
-render at all, and every page forge mounts states `robots: "noindex"` — all of it [`ROUTING_AND_MIDDLEWARE.md`][ram-6d] §6d's. A fragment never
+renders it. What `canonical`, `og.image`, `jsonLd` and `robots` require is [`ROUTING_AND_MIDDLEWARE.md`][ram-6d] §6d's. A fragment never
 reaches the shell ([§6c][ram-6c]).
 
 ---
@@ -487,8 +495,9 @@ same rule applies — **after every `app.map` call**, or it shadows them.
 
 ```tsx
 import { applyAssets, createApp } from "@y-core/forge/app";
+import { renderPage } from "@y-core/forge/render/jsx";
 
-const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound site={config.site} />) });
+const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound site={(config as AppConfig).site} />) });
 app.map(routes, controller);
 applyAssets(app); // or applyAssets(app, "/static/*") for a narrower pattern
 ```
@@ -501,6 +510,8 @@ hardened plain-text `404` that does not echo the request path ([`ROUTING_AND_MID
 API wants and rarely what a page surface does:
 
 ```tsx
+import { createApp } from "@y-core/forge/app";
+
 const app = createApp<Bindings>({ methodMismatch: "advertise" });
 ```
 

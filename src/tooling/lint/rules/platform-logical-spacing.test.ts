@@ -3,9 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, literal, other, runRule } from "../lint.fixture.ts";
 import { logicalUtility, platformLogicalSpacing } from "./platform-logical-spacing.ts";
 
-const CORPUS = "(forge-ui-platform-logical-spacing — src/ui/design/reference/16-platform.md)";
+const PREFIX = "[forge-ui-platform-logical-spacing] ";
 
-const detail = (physical: string, logical: string): string => `physical utility \`${physical}\` — use \`${logical}\` ${CORPUS}`;
+const detail = (physical: string, logical: string): string => `${PREFIX}physical utility \`${physical}\` — use \`${logical}\``;
 
 describe("logicalUtility()", () => {
   const swaps: [string, string][] = [

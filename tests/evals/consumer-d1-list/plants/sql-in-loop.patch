@@ -1,0 +1,31 @@
+diff --git a/src/services/guestbook.ts b/src/services/guestbook.ts
+index 87cebc30..ee955a70 100644
+--- a/src/services/guestbook.ts
++++ b/src/services/guestbook.ts
+@@ -12,15 +12,19 @@ interface EntryRow {
+ 
+ /** One page of the guestbook, newest first, and whether a later page exists. */
+ export async function guestbookPage(db: D1Database, page: number): Promise<GuestbookPage | null> {
++  const client = createD1Client(db);
+   const offset = (page - 1) * GUESTBOOK_PAGE_SIZE;
+-  const rows = await createD1Client(db).query<EntryRow>(
+-    sql`SELECT id, name, message, created_at FROM guestbook_entries
++  const ids = await client.query<{ id: number }>(
++    sql`SELECT id FROM guestbook_entries
+         ORDER BY created_at DESC, id DESC
+         LIMIT ${GUESTBOOK_PAGE_SIZE + 1} OFFSET ${offset}`,
+   );
+-  if (!rows.ok) return null;
+-  const entries: GuestbookEntry[] = rows.data
+-    .slice(0, GUESTBOOK_PAGE_SIZE)
+-    .map((row) => ({ id: row.id, name: row.name, message: row.message, createdAt: row.created_at }));
+-  return { page, entries, hasNext: rows.data.length > GUESTBOOK_PAGE_SIZE };
++  if (!ids.ok) return null;
++  const entries: GuestbookEntry[] = [];
++  for (const { id } of ids.data.slice(0, GUESTBOOK_PAGE_SIZE)) {
++    const row = await client.queryOne<EntryRow>(sql`SELECT id, name, message, created_at FROM guestbook_entries WHERE id = ${id}`);
++    if (!row.ok) return null;
++    if (row.data !== null) entries.push({ id: row.data.id, name: row.data.name, message: row.data.message, createdAt: row.data.created_at });
++  }
++  return { page, entries, hasNext: ids.data.length > GUESTBOOK_PAGE_SIZE };
+ }

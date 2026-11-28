@@ -33,38 +33,23 @@ put a surface back underneath the text, so the pair being measured is a pair the
 
 ### 1a. Scrims and treated images
 
-Default: text laid over a photograph sits above an `absolute inset-0` scrim carrying a background token at reduced opacity — `bg-background/70`
-under dark text, `bg-foreground/60` under light — so the ratio is once again token against token, unless the text sits beside the image rather than
-on it, which is the composition that needs no scrim at all. <!-- rule:forge-ui-media-text-scrim -->
+<!-- rule:forge-ui-media-text-scrim --> The opacity here is the carve-out `forge-ui-color-scale-no-adhoc-tint` already names: a scrim is genuinely
+translucent over content it must not hide, which is the one case where an opacity modifier is the right instrument rather than a faked intermediate
+shade.
 
-The opacity here is the carve-out `forge-ui-color-scale-no-adhoc-tint` already names: a scrim is genuinely translucent over content it must not
-hide, which is the one case where an opacity modifier is the right instrument rather than a faked intermediate shade.
-
-Default: where a scrim would flatten detail the image is there to show, the _image_ is treated instead — `grayscale`, or a `mix-blend-multiply`
-against a token surface behind it — and never the text, which keeps its token colour, unless the image is decorative enough to crop the text off it
-entirely. <!-- rule:forge-ui-media-no-text-shadow -->
-
-The move this rule exists to refuse is a wide, offsetless shadow behind the text, which is the usual answer elsewhere. It is unavailable twice over
-here: it can only be written as an arbitrary `shadow-[…]` value, which `forge-ui-spacing-scale-only` refuses, and a large soft halo is the opposite
-of the tight, low shadow `forge-ui-depth-soft-shadow` describes. Treating the image keeps the decision in the layer that caused the problem.
+<!-- rule:forge-ui-media-no-text-shadow --> The move this rule exists to refuse is a wide, offsetless shadow behind the text, which is the usual
+answer elsewhere. It is unavailable twice over here: it can only be written as an arbitrary `shadow-[…]` value, which `forge-ui-spacing-scale-only`
+refuses, and a large soft halo is the opposite of the tight, low shadow `forge-ui-depth-soft-shadow` describes. Treating the image keeps the
+decision in the layer that caused the problem.
 
 ### 1b. Fixed boxes, clipped corners and `alt`
 
-Default: an image whose proportions the surface does not control — an upload, an avatar, a third-party thumbnail — renders into a fixed box,
-`aspect-square` or `aspect-video` with `object-cover` and `overflow-hidden` on the container, rather than at whatever ratio the file happens to
-carry, unless the image _is_ the content and its proportion is information, as a chart or a screenshot under review is.
-<!-- rule:forge-ui-media-fixed-crop -->
+<!-- rule:forge-ui-media-fixed-crop --> A row of cards fed by uploads is the case that makes this concrete: without a fixed box, every card in the
+row is a different height, and the grid reads as broken rather than as varied.
 
-A row of cards fed by uploads is the case that makes this concrete: without a fixed box, every card in the row is a different height, and the grid
-reads as broken rather than as varied.
-
-Default: an image's corners come from `overflow-hidden` on its container, never from a radius utility on the image itself, so `forge-ui-one-radius`
-still decides the shape — as it does for `Avatar`, whose root carries `rounded-full` and `overflow-hidden` while `Avatar.Image` carries neither —
-unless the image is a standalone element with no container, in which case it takes the same `--radius` step it would have inherited.
 <!-- rule:forge-ui-media-container-clip -->
 
-Default: every hand-written `<img>` carries an `alt`, empty only when the image is decorative and the surrounding text already says everything it
-says, matching the contract `Avatar.Image` enforces by typing `alt` as required rather than optional. <!-- rule:forge-ui-media-alt-required -->
+Whether an image carries an `alt` is Floor: `forge-ui-media-alt-required`, in `floor.md`.
 
 ### 1c. Before / after — a caption over a hero image
 
@@ -92,37 +77,24 @@ upload was, and the corner comes from the container.
 
 ## 2. A carousel is the last resort
 
-`Carousel` shows one slide and hides the rest, and asks the reader to operate it to see any other. Everything it hides is content the reader has not
-read. That is a fair trade for a set of same-kind media — product photographs, screenshots of one screen — where the reader is choosing between
-slides rather than reading through them, and no trade at all for content that must be read.
-
-Default: `Carousel` holds only a set of same-kind media the reader chooses between, never content that must be read — features, testimonials,
-announcements — which is a list or a grid, unless the brief fixes a single-slide viewport and every slide is reachable by its own `Carousel.Dots`
-anchor. <!-- rule:forge-ui-media-carousel-last-resort -->
+<!-- rule:forge-ui-media-carousel-last-resort --> `Carousel` shows one slide and hides the rest, and asks the reader to operate it to see any other.
+Everything it hides is content the reader has not read. That is a fair trade for a set of same-kind media — product photographs, screenshots of one
+screen — where the reader is choosing between slides rather than reading through them, and no trade at all for content that must be read.
 
 The dots are what keep the platform honest: each is an anchor to a slide's `id`, so a slide is addressable, bookmarkable, and reachable by keyboard
 with no script — the same argument `forge-ui-pagination-vs-scroll` makes for a paged list.
 
 ## 3. Glyphs at the size they were drawn
 
-An icon in the sprite was drawn at a small size, with a stroke weight chosen for it. Scaled to four times that, the stroke thins visibly against
-every other line on the surface and the shape reads as an illustration that lost its detail.
+<!-- rule:forge-ui-media-icon-intended-size --> An icon in the sprite was drawn at a small size, with a stroke weight chosen for it. Scaled to four
+times that, the stroke thins visibly against every other line on the surface and the shape reads as an illustration that lost its detail.
 
 This is orthogonal to `forge-ui-real-icons`, which is a Floor rule about _provenance_ — that a glyph comes from `Icon` or a `createIcon` binding
 rather than from an inline `<svg>` or an emoji. That rule is satisfied by a sprite icon at any size at all. Size is the separate question, and it is
 a Default because a brief can rebut it.
 
-Default: a sprite glyph renders at `size-4`, the 16px that `Accordion.Trigger` and `Collapsible.Trigger` set and that `Select` gives its chevron, or
-one step up to `size-5` where it carries more weight, unless the icon set is drawn for display sizes and states the size it was drawn at.
-<!-- rule:forge-ui-media-icon-intended-size -->
-
-Default: where a glyph has to anchor a large slot, the _enclosure_ grows and the glyph does not — a `size-10` or `size-12` `rounded-full bg-muted`
-shape with a `size-4` or `size-5` `Icon` centred in it — which is the composition `Avatar` already ships and the trade `Button shape='icon'` makes
-at 40 pixels around a 16-pixel glyph, unless the slot is a decorative illustration carrying no control and no state.
-<!-- rule:forge-ui-media-icon-enclosure -->
-
-Sizing an icon _button_ is a different rule and it is `forge-ui-hierarchy-icon-button-size`: that one fixes which `shape` and `size` an icon-only
-`Button` takes. This one is about the glyph inside whatever box was chosen.
+<!-- rule:forge-ui-media-icon-enclosure --> Sizing an icon _button_ is a different rule and it is `forge-ui-hierarchy-icon-button-size`: that one
+fixes which `shape` and `size` an icon-only `Button` takes. This one is about the glyph inside whatever box was chosen.
 
 ### 3a. Before / after — an empty-state mark
 

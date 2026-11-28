@@ -58,7 +58,7 @@ See [`NAMESPACE_DESIGN.md`][nd-3] §3 for the leaf/integration split. forge's me
 
 ### 3a. No Build Step in the Gate
 
-**There is no build step in `bun run verify`** — the library is always consumed as raw TS. [`TEST_RUNNERS.md`][testing-6] §6 owns the gate.
+<!-- rule:forge-gate-no-build-step --> [`TEST_RUNNERS.md`][testing-6] §6 owns the gate.
 
 ### 3b. TypeScript Configuration Constraints
 
@@ -71,30 +71,22 @@ reach `bun:test` through a hand-written stub instead of a package — [`TEST_RUN
 The packages the `tooling/assets` pipeline needs are **optional peer dependencies** (`package.json`'s `peerDependenciesMeta`). None is in the main
 dependency tree — only apps that build assets need them, and none is ever imported by runtime source, so none reaches a Worker bundle.
 
-**An optional peer is reached lazily or it is not optional.** `src/tooling/assets/peers.ts` is the one door: `peer()` dynamic-imports the module
-and `peerFile()` resolves a file the package ships, both failing with the config key that demanded it and the command that installs it. A
-**static** import at the top of a module the barrel re-exports defeats the whole arrangement — `tooling/assets/mod.ts` is loaded by every consumer
-that reads an asset config, so the package becomes required for apps that configure no fonts, no images and no bundle at all.
+**An optional peer is reached lazily or it is not optional**: `src/tooling/assets/peers.ts` is the one door, and a static import in a module the
+barrel re-exports makes the package required for every app that reads an asset config.
 
-**A subpath that exists only to use a peer may import it statically.** `@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport and
-nothing else, so an app that imports it has chosen CodeMirror, and one that does not never loads a module naming it. The `@codemirror/*` packages
-are optional peers for that reason, and the editor's modules import them at the top like any dependency: a lazy door would only defer the same
-requirement to the first mount. The exemption is the subpath, never a module a wider barrel re-exports — that is the case the paragraph above
-forbids.
+**A subpath that exists only to use a peer may import it statically**: an app importing `@y-core/forge/render/markdown/editor/client` has chosen
+CodeMirror, so a lazy door would only defer the requirement to the first mount. The exemption is the subpath, never a module a wider barrel
+re-exports.
 
-**A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs `execFileSync("tailwindcss", …)` exactly as `buildJS` runs
-`esbuild` and the image step runs `sharp`; they are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a requirement
-escapes declaration — but an undeclared requirement does not stop being one, it only stops being checked, and it surfaces as a `command not found`
-mid-build where `bun install` should have warned.
+**A tool the pipeline shells out to is a peer dependency, declared** — `tailwindcss` as much as `esbuild` and `sharp` — because an undeclared
+requirement surfaces as a `command not found` mid-build where `bun install` should have warned.
 
-**A file a peer ships is resolved through it, never addressed by path.** The subsetter's `.wasm` lives inside `harfbuzzjs`, and a literal
-`node_modules/harfbuzzjs/dist/…` assumes both a flat install and a process started at the project root; `peerFile()` uses `import.meta.resolve`, so
-the lookup runs from forge's own module and follows the install wherever it landed.
+<!-- rule:forge-peer-file-resolved --> The subsetter's `.wasm` lives inside `harfbuzzjs`, and a literal `node_modules/harfbuzzjs/dist/…` assumes
+both a flat install and a process started at the project root; `peerFile()` uses `import.meta.resolve`, so the lookup runs from forge's own module
+and follows the install wherever it landed.
 
-Declaring it also makes forge's own palette **readable**. Tailwind v4 ships its default theme as CSS (`tailwindcss/theme.css`,
-`--color-red-700: oklch(…)`), which is what lets the contrast audit resolve the status hues rather than pinning a human's measurement of them
-(`src/tooling/gate/checks/contrast.ts`, pointed at that stylesheet by `config/steps.config.ts`). That capability is a consequence of the
-declaration, not its justification — the declaration was owed either way.
+Declaring it also makes Tailwind's default theme CSS readable to the contrast audit (`src/tooling/gate/checks/contrast.ts`), which resolves the
+status hues rather than pinning a measurement of them — a consequence of the declaration, not its justification.
 
 ### 3d. CSS Source Scanning Stops at `ui/`
 
@@ -113,12 +105,11 @@ staying hidden, and the gate catches it before that: `src/tooling/gate/checks/cs
 namespace's barrel, its `@source "./";` covers every class-declaring file beneath it, and the namespace's README carries the `@import` line an app
 that mounts the surface adds to its own stylesheet.
 
-**The scope is enforced in both directions, and the coverage direction is the one that catches drift.** A directory under `src/ui/` whose files
-declare a utility class must be scanned or explicitly registered as class-free — a new component directory added without either fails the gate
-rather than shipping classes no consumer build generates. The other direction refuses an `@source` path in `forge.css`'s directory that resolves
-outside `src/ui/`. A class-declaring file outside `ui/` fails unless the nearest `sources.css` at or above it covers it, `package.json` exports that
-file at its own subpath, and the namespace's README carries its `@import` line verbatim. `src/tooling/gate/checks/css-sources.ts` owns them all,
-derived from disk, so none is a list to keep in step.
+<!-- rule:forge-css-source-coverage --> **The scope is enforced in both directions, and the coverage direction is the one that catches drift**: a
+component directory left out would ship classes no consumer build generates. The other direction refuses an `@source` path in `forge.css`'s
+directory that resolves outside `src/ui/`. A class-declaring file outside `ui/` fails unless the nearest `sources.css` at or above it covers it,
+`package.json` exports that file at its own subpath, and the namespace's README carries its `@import` line verbatim.
+`src/tooling/gate/checks/css-sources.ts` owns them all, derived from disk, so none is a list to keep in step.
 
 ---
 
@@ -129,10 +120,10 @@ derived from disk, so none is a list to keep in step.
 When a namespace wraps a third-party package:
 
 - **Export only what consumers actually need.**
-- **Never re-export the entire third-party namespace.**
 - **Name exports by forge convention**, not the third party's naming quirks.
 
-`src/validation/mod.ts` reaches valibot only through `v`, beside forge's own helpers — never as the raw valibot surface spread across the barrel.
+<!-- rule:forge-facade-no-namespace-reexport --> `src/validation/mod.ts` reaches valibot only through `v`, beside forge's own helpers, rather than
+spreading the raw valibot surface across the barrel.
 
 These facades are deliberately **thin pass-throughs**:
 
@@ -185,9 +176,9 @@ migration path is open on its own merits. Until then, the absence of shims is wh
 
 ## 8. Type Declarations Live in `types.ts`
 
-**Every exported interface and type alias is declared in the `types.ts` of its own directory.** The declaration is the shape; the file beside it is
-one of the places the shape is used. Putting the shape in the file that happens to use it first makes it findable only from that reference, so a
-reader who has the name and not the reference has nowhere to start.
+<!-- rule:forge-type-import-external --> The declaration is the shape; the file beside it is one of the places the shape is used. Putting the shape
+in the file that happens to use it first makes it findable only from that reference, so a reader who has the name and not the reference has nowhere
+to start.
 
 **One `types.ts` per directory, not per namespace.** `src/auth/passkey/types.ts` and `src/auth/web/types.ts` are two files, because `passkey` and
 `web` are two subjects; a single `src/auth/types.ts` holding both would be a list rather than a place. A directory with no exported type needs no
@@ -197,14 +188,14 @@ reader who has the name and not the reference has nowhere to start.
 file can reach is the file's own business, and moving it would widen the directory's internal surface for nothing. The exception is a local type a
 moved declaration is written in terms of: it follows the declaration, because that is now where it is used.
 
-**`types.ts` declares and never runs.** The co-location check reserves the name — a `types.ts` needs no co-located test, and the same check fails
-one that grows a callable export ([`TEST_RUNNERS.md`][testing-2] §2).
+<!-- rule:forge-types-file-declares-only --> The co-location check reserves the name: a `types.ts` needs no co-located test, and the same check
+fails one that grows a callable export ([`TEST_RUNNERS.md`][testing-2] §2).
 
 ### 8a. A Type Is Imported on Its Own Line
 
-**A type is imported with `import type`, as its own statement.** Not as an inline `type` specifier inside a value import:
+<!-- rule:forge-type-import-separation --> The two forms side by side:
 
-```ts
+```ts nocheck
 // no — what this file needs at runtime is not legible from the import block
 import { parseEnv, type EnvMapping } from "./parse-env";
 
@@ -218,20 +209,14 @@ two into one statement means every reader asking what a file costs at runtime ha
 
 ### 8b. What Enforces It
 
-**Forge's own plugin carries the rules.** `forge/type-import-external` reports an exported interface or type alias declared anywhere but a
-`types.ts`; `forge/type-import-separation` reports a `type` specifier riding inside a value import. Both are scoped to `src/` in `.oxlintrc.json`,
-with the declaration rule off for `types.ts` itself and for specs — a fixture type is local by definition.
+**Forge's own plugin carries the rules** — `forge/type-import-external` and `forge/type-import-separation`, scoped in `.oxlintrc.json`.
 
-**A file that is itself a published subpath is its own `types.ts`.** `src/testing/snapshot.ts` and `src/testing/harness.ts` are
-`@y-core/forge/testing/snapshot` and `@y-core/forge/testing/harness`, deliberately off the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f]
-§7f); moving their option and outcome types into `src/testing/types.ts` would put them on that barrel, which is the one place they must not be. The
-exemption is one `overrides` entry naming the files, not a general escape —
-every other file in the namespace obeys the rule.
+**A file that is itself a published subpath is its own `types.ts`**: `src/testing/snapshot.ts` and `src/testing/harness.ts` are
+`@y-core/forge/testing/snapshot` and `@y-core/forge/testing/harness`, off the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f), and moving
+their types into `src/testing/types.ts` would put them on it. The exemption is one `overrides` entry naming the files.
 
-Neither half is available off the shelf. `bun fmt` is a formatter and judges no structure at all; oxlint's builtin
-`typescript/consistent-type-imports` only reports a type reached through a value import, which `verbatimModuleSyntax` already makes a compile error,
-and it accepts the inline specifier this rule exists to forbid. The lint plugin is where a rule of forge's own belongs ([`BUILD_TOOLING.md`][bt-1]
-§1).
+Neither half is off the shelf: `bun fmt` judges no structure, and oxlint's `typescript/consistent-type-imports` accepts the inline specifier this
+rule forbids, so the rule is the lint plugin's ([`BUILD_TOOLING.md`][bt-1] §1).
 
 ---
 
@@ -240,9 +225,9 @@ and it accepts the inline specifier this rule exists to forbid. The lint plugin 
 **A module that exists only for tests carries `.fixture` before its extension** — `coverage.fixture.ts`, `dom.fixture.ts`. The suffix is the
 whole convention: a reader knows from the name that nothing a consumer imports reaches it, and the tarball excludes the class rather than the file.
 
-**The `files` array names the class, never a path.** Its negations are suffix classes, plus `src/tooling/dev/` — the tree of commands for
-developing forge itself, which a consumer has no use for. A per-file
-exclusion is what the convention exists to make unnecessary: the list stops growing, and nothing has to be remembered when a fixture is added.
+<!-- rule:forge-files-array-by-class --> Its negations are suffix classes, plus `src/tooling/dev/` — the tree of commands for developing forge
+itself, which a consumer has no use for. A per-file exclusion is what the convention exists to make unnecessary: the list stops growing, and nothing
+has to be remembered when a fixture is added.
 
 **A fixture is not a place to put production code.** It is reached by tests and by nothing else, so a helper the library itself needs belongs in a
 module a subpath reaches — and the packaging gate below is what notices when that stops being true in either direction.
@@ -253,12 +238,12 @@ module a subpath reaches — and the packaging gate below is what notices when t
 from each `exports` entry and each `bin` script, and fails any module the tarball carries that only a test reaches. Its remedy is the file's
 `*.fixture.ts` spelling, not a `files` entry, so the fix is always the same fix.
 
-**Further checks read the same suffix, from one list.** `isTestSource` is where that list lives, and a check that must not judge a test calls it
-rather than spelling the suffixes again. Each takes the same exemption in its own terms: the co-location check asks no test of a `*.fixture.ts`, on
-the terms a `types.ts` is excused on (§8); the namespace graph classifies one as test source, so a fixture's imports raise no cross-namespace edge;
-and the boundary checks do not scan one, so a fixture may reach `src/testing`, a build-time module, or the browser runtime that a deployable module
-may not. The CSS source scan skips one, so a class string written to exercise the parser is not read as a declaration the stylesheet must cover; and
-the JSX pragma check skips one, because the pragma pair exists for a file compiling under a _consumer's_ tsconfig and a fixture reaches none.
+<!-- rule:forge-test-suffix-one-list --> `isTestSource` is where that list lives. Each takes the same exemption in its own terms: the co-location
+check asks no test of a `*.fixture.ts`, on the terms a `types.ts` is excused on (§8); the namespace graph classifies one as test source, so a
+fixture's imports raise no cross-namespace edge; and the boundary checks do not scan one, so a fixture may reach `src/testing`, a build-time module,
+or the browser runtime that a deployable module may not. The CSS source scan skips one, so a class string written to exercise the parser is not read
+as a declaration the stylesheet must cover; and the JSX pragma check skips one, because the pragma pair exists for a file compiling under a
+_consumer's_ tsconfig and a fixture reaches none.
 
 ---
 
@@ -270,16 +255,16 @@ forge's local extension of it to stylesheets.
 **A stylesheet has one prose form: at most two lines carrying a form-3 why** — a browser or spec quirk a reader would otherwise "fix", in a
 block comment. A stylesheet exports no symbol, so it has no TSDoc form, and a header at the top of the file is held to the same two lines.
 
-**A directive is tooling input, and no form limits it.** That is a comment shaped `/* <marker>: <rule> — <reason> */`, such as a
-`modern-css-allow:` waiver, and its reason must read on its own ([`CODE_RULES.md`][cr-5a] §5a).
+<!-- rule:forge-css-directive-reason --> **A directive is tooling input, and no form limits it**: a comment shaped
+`/* <marker>: <rule> — <reason> */`, such as a `modern-css-allow:` waiver ([`CODE_RULES.md`][cr-5a] §5a).
 
 **Everything [`CODE_RULES.md`][cr-5b] §5b forbids is forbidden here too** — banners, a file index, history, counts, commented-out rules, and usage
 that belongs in a README.
 
 ### 10a. What Enforces It
 
-**`validate-comment-budget` walks `.css` beside `.ts` and `.tsx`.** `isBudgetedSource` decides which files it reads, and `config/steps.test.ts`
-checks every tracked file the step's sources cover against that function, so a stylesheet left unscanned fails a test.
+**`validate-comment-budget` walks `.css` beside `.ts` and `.tsx`.** `isBudgetedSource` picks the files, and under `coverTracked` the step fails one
+its sources leave out.
 
 **The stylesheet lexer reads block comments only.** CSS has no line comment, so the `//` in `url(//…)` is data and never a finding.
 

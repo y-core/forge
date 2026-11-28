@@ -32,7 +32,10 @@ including ones swapped in later, so mount the form or the page region rather tha
 ```
 
 ```ts
-const dispose = mountMarkdownTextarea(form, { onSubmit: (textarea) => textarea.form?.requestSubmit() });
+import { mountMarkdownTextarea } from "@y-core/forge/render/markdown/editor/textarea/client";
+
+const form = document.getElementById("comment");
+const dispose = form === null ? null : mountMarkdownTextarea(form, { onSubmit: (textarea) => textarea.form?.requestSubmit() });
 ```
 
 A textarea without `data-markdown` keeps its plain keys. Mounting the same element again returns the first disposer, so setup that runs twice

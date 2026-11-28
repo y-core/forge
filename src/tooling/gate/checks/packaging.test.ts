@@ -58,15 +58,15 @@ describe("checkPackaging()", () => {
     ).toEqual(["src/ui/fixture.ts"]);
   });
 
-  it("passes the same module once the `files` array excludes it", () => {
+  it("passes the same module once the `files` array excludes its tree", () => {
     expect(
       files(
         {
           "src/ui/mod.ts": "export const nothing = 1;",
-          "src/ui/fixture.ts": "export const fixture = 1;",
-          "src/ui/fixture.test.ts": `import { fixture } from "./fixture";`,
+          "src/ui/dev/fixture.ts": "export const fixture = 1;",
+          "src/ui/dev/fixture.test.ts": `import { fixture } from "./fixture";`,
         },
-        { files: [...FILES, "!src/ui/fixture.ts"] },
+        { files: [...FILES, "!src/ui/dev/"] },
       ),
     ).toEqual([]);
   });
@@ -168,6 +168,43 @@ describe("checkPackaging()", () => {
     ]);
   });
 
+  describe("the `files` negations", () => {
+    const TREE = { "src/ui/mod.ts": "export const nothing = 1;" };
+
+    it("fails a negation naming a single file, at the manifest", () => {
+      const result = run(TREE, { files: [...FILES, "!src/ui/gen.ts"] });
+      expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+        ["package.json", "the `files` array negates `src/ui/gen.ts`, a single file"],
+      ]);
+    });
+
+    it("passes a negated suffix class, at any depth or at the root, and a negated tree", () => {
+      expect(files(TREE, { files: [...FILES, "!**/*.fixture.ts", "!*.md", "!src/ui/dev/"] })).toEqual([]);
+    });
+  });
+
+  describe("the manifest's scripts and Bun floor", () => {
+    const TREE = { "src/ui/mod.ts": "export const nothing = 1;" };
+    const messages = (overrides: Partial<PackagingCheckConfig>) => run(TREE, overrides).findings.map((finding) => finding.message);
+
+    it("fails a script reaching outside the checkout, and passes one that stays inside", () => {
+      expect(messages({ scripts: { sync: "bun run ../forge/src/tooling/dev/sync.ts", test: "bun test ./src" } })).toEqual([
+        "script `sync` reaches outside the checkout through `../`",
+      ]);
+    });
+
+    it("passes a Bun floor equal to the pinned Bun, and fails one below it, one unset and a pin that is not exact", () => {
+      expect(messages({ packageManager: "bun@1.4.5", engines: { bun: ">=1.4.5" } })).toEqual([]);
+      expect(messages({ packageManager: "bun@1.4.5", engines: { bun: ">=1.3.0" } })).toEqual([
+        "`engines.bun` is `>=1.3.0`, not `>=1.4.5`, the Bun `packageManager` pins",
+      ]);
+      expect(messages({ packageManager: "bun@1.4.5" })).toEqual(["`engines.bun` is `unset`, not `>=1.4.5`, the Bun `packageManager` pins"]);
+      expect(messages({ packageManager: "bun@^1.4.5", engines: { bun: ">=1.4.5" } })).toEqual([
+        "`packageManager` is `bun@^1.4.5`, not an exact `bun@x.y.z`",
+      ]);
+    });
+  });
+
   describe("required", () => {
     const TREE = { "src/ui/mod.ts": "export const nothing = 1;", "CHANGELOG.md": "# Changelog" };
 
@@ -226,7 +263,7 @@ describe("checkPackaging() — namespace READMEs", () => {
   });
 
   it("fails a found README the `files` array leaves out, naming the entry to add", () => {
-    const result = bare({ "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui" }, { files: ["src/ui/", "!**/README.md"] });
+    const result = bare({ "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui" }, { files: ["src/ui/", "!**/*.md"] });
 
     expect(result.findings.map((finding) => [finding.file, finding.detail])).toEqual([["src/ui/README.md", ["add `src/ui/README.md` to `files`"]]]);
   });

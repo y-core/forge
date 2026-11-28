@@ -5,8 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { fail } from "../../../src/tooling/gate/finding";
-import { lintKeyOf } from "../../../src/tooling/lint/design-rules";
-import plugin from "../../../src/tooling/lint/plugin";
+import type { Finding } from "../../../src/tooling/gate/types";
 import { checkDesign, checkDocFences } from "./design";
 
 const roots: string[] = [];
@@ -14,78 +13,19 @@ afterAll(() => {
   for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
 });
 
-/** Every rule the plugin registers, turned on — so nothing but the parse itself can fail the config. */
-function oxlintConfig(trailing: string): string {
-  const rules = Object.keys(plugin.rules)
-    .map((key) => `    "forge/${key}": "error"${trailing}`)
-    .join("\n");
-  return `{\n  "rules": {\n${rules.replace(/,$/, "")}\n  }\n}\n`;
-}
-
-function scopedConfig(scoped: string, override: boolean): string {
-  const rules = Object.fromEntries(
-    Object.keys(plugin.rules)
-      .filter((key) => key !== scoped)
-      .map((key) => [`forge/${key}`, "error"]),
-  );
-  const overrides = override ? [{ files: ["**/*.tsx"], rules: { [`forge/${scoped}`]: "error" } }] : [];
-  return JSON.stringify({ rules, overrides });
-}
-
-const SCOPED = lintKeyOf("forge-ui-no-inline-style");
-
-/** A throwaway root carrying only the oxlint config the check reads. */
-function root(config: string): string {
+/** A throwaway root holding a one-file corpus and a one-file source walk. */
+function root(): string {
   const dir = mkdtempSync(join(tmpdir(), "forge-design-check-"));
   roots.push(dir);
   mkdirSync(join(dir, "design"), { recursive: true });
   mkdirSync(join(dir, "css"), { recursive: true });
   mkdirSync(join(dir, "src"), { recursive: true });
-  // The corpus may not be empty, or the check refuses before it ever reads the config.
+  // The corpus may not be empty, or the check refuses before it reads anything else.
   writeFileSync(join(dir, "design", "floor.md"), "# Floor\n\nOne rule, stated in prose.\n", "utf-8");
-  // Nor may the source walk: the check refuses an empty `src` too, and would then report no config
-  // finding at all, making every case below pass without reading a config.
+  // Nor may the source walk, which the check refuses as well.
   writeFileSync(join(dir, "src", "ok.tsx"), "export const Ok = () => null;\n", "utf-8");
-  writeFileSync(join(dir, ".oxlintrc.json"), config, "utf-8");
   return dir;
 }
-
-/** Only the findings the oxlint config itself is blamed for. */
-function configFindings(source: string): string[] {
-  const result = checkDesign({
-    root: root(source),
-    packageName: "@y-core/forge",
-    exports: {},
-    designDir: "design",
-    cssDir: "css",
-    sourceDir: "src",
-  });
-  return result.findings.filter((finding) => finding.file === ".oxlintrc.json").map((finding) => finding.message);
-}
-
-describe("checkDesign() — reading the oxlint config", () => {
-  it("resolves the enabled rules from a config with no comments", () => {
-    expect(configFindings(oxlintConfig(","))).toEqual([]);
-  });
-
-  it("resolves them from a config carrying a trailing `//` comment, which is JSONC and not JSON", () => {
-    expect(configFindings(oxlintConfig(", // the rule this repo cares about"))).toEqual([]);
-  });
-
-  it("reports a config that is genuinely unparseable rather than guessing at its rules", () => {
-    expect(configFindings("{ not json")).toEqual(["could not be read, so no plugin rule could be held against it"]);
-  });
-
-  it("counts a rule enabled only inside an `overrides` block as enabled", () => {
-    expect(configFindings(scopedConfig(SCOPED, true)).filter((message) => message.includes("is not enabled"))).toEqual([]);
-  });
-
-  it("reports the same rule as not enabled when no block turns it on", () => {
-    expect(configFindings(scopedConfig(SCOPED, false))).toContain(
-      `\`forge/${SCOPED}\` is not enabled — a registered rule that no config turns on reports nothing`,
-    );
-  });
-});
 
 describe("checkDesign() — the two vacuity refusals", () => {
   /** The same throwaway root, minus whichever half the case is about. */
@@ -97,7 +37,6 @@ describe("checkDesign() — the two vacuity refusals", () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     if (options.corpus) writeFileSync(join(dir, "design", "floor.md"), "# Floor\n", "utf-8");
     if (options.sources) writeFileSync(join(dir, "src", "ok.tsx"), "export const Ok = () => null;\n", "utf-8");
-    writeFileSync(join(dir, ".oxlintrc.json"), oxlintConfig(","), "utf-8");
     return dir;
   }
 
@@ -119,42 +58,6 @@ describe("checkDesign() — the two vacuity refusals", () => {
   });
 });
 
-describe("checkDesign() — the plugin rules that state no corpus rule", () => {
-  /** Every finding blaming the plugin for a rule no register routes to. */
-  function unroutedRules(): string[] {
-    const result = checkDesign({
-      root: root(oxlintConfig(",")),
-      packageName: "@y-core/forge",
-      exports: {},
-      designDir: "design",
-      cssDir: "css",
-      sourceDir: "src",
-    });
-    return result.findings.filter((finding) => finding.file === "lint.ts").map((finding) => finding.message);
-  }
-
-  it("routes every registered rule, so the two contract rules are exempt by name rather than by accident", () => {
-    expect(unroutedRules()).toEqual([]);
-  });
-});
-
-describe("checkDesign() — rule markers", () => {
-  it("fails a marker split across lines, which the line-by-line reader would drop from the defined set", () => {
-    const dir = root(oxlintConfig(","));
-    writeFileSync(join(dir, "design", "floor.md"), "# Floor\n\nProse. <!--\nrule:forge-ui-focus-ring --> Override never.\n", "utf-8");
-    const result = checkDesign({ root: dir, packageName: "@y-core/forge", exports: {}, designDir: "design", cssDir: "css", sourceDir: "src" });
-
-    expect(result.ok).toBe(false);
-    expect(result.findings.filter((finding) => finding.file?.endsWith("floor.md")).map(({ message, line }) => ({ message, line }))).toEqual([
-      {
-        message:
-          "rule marker `forge-ui-focus-ring` is split across lines — keep `<!-- rule:… -->` on one line, or the id drops out of the defined set",
-        line: 3,
-      },
-    ]);
-  });
-});
-
 describe("checkDesign() — tsx fences compile against the exports", () => {
   const forgeFile = (path: string): string => fileURLToPath(new URL(`../../../src/${path}`, import.meta.url));
   const fenceExports = { "./ui/core": forgeFile("ui/core/mod.ts"), "./render/jsx/jsx-runtime": forgeFile("render/jsx/jsx-runtime.ts") };
@@ -166,7 +69,7 @@ describe("checkDesign() — tsx fences compile against the exports", () => {
     files: Record<string, string>,
     fencedDocs: readonly string[] = [],
   ): { file: string | undefined; line: number | undefined; message: string }[] {
-    const dir = root(oxlintConfig(","));
+    const dir = root();
     for (const [path, source] of Object.entries(files)) writeFileSync(join(dir, path), source, "utf-8");
     const result = checkDesign({
       root: dir,
@@ -301,6 +204,48 @@ describe("checkDesign() — tsx fences compile against the exports", () => {
   });
 });
 
+describe("checkDesign() — a Floor rule sits in the Floor document", () => {
+  const statements = new Map([
+    ["forge-ui-floor-rule", "Give every image an `alt`."],
+    ["forge-ui-default-rule", "Default: pad a card with `p-6` — unless the card is dense."],
+  ]);
+
+  function floorFindings(files: Record<string, string>): readonly Finding[] {
+    const dir = root();
+    mkdirSync(join(dir, "design", "reference"), { recursive: true });
+    for (const [path, source] of Object.entries(files)) writeFileSync(join(dir, path), source, "utf-8");
+    return checkDesign({
+      root: dir,
+      packageName: "@y-core/forge",
+      exports: {},
+      designDir: "design",
+      cssDir: "css",
+      sourceDir: "src",
+      floor: { file: "floor.md", statements },
+    }).findings;
+  }
+
+  it("fails a marker outside the Floor document whose statement does not open `Default:`", () => {
+    const findings = floorFindings({ "design/reference/media.md": "# Media\n\n<!-- rule:forge-ui-floor-rule --> Why it matters.\n" });
+
+    expect(findings).toEqual([
+      fail(
+        "rule marker `forge-ui-floor-rule` is a Floor rule outside `design/floor.md` — move it into the Floor's Verify or Refuse half and cite its id here, or open its statement `Default:` with an `unless …` clause",
+        { file: "design/reference/media.md", line: 3 },
+      ),
+    ]);
+  });
+
+  it("passes the same marker in the Floor document, and a Default marker anywhere", () => {
+    const findings = floorFindings({
+      "design/floor.md": "# Floor\n\n<!-- rule:forge-ui-floor-rule --> Why it matters.\n",
+      "design/reference/cards.md": "# Cards\n\n<!-- rule:forge-ui-default-rule --> Why it reads.\n",
+    });
+
+    expect(findings).toEqual([]);
+  });
+});
+
 describe("checkDocFences() — README `ts` fences compile against the exports", () => {
   const forgeFile = (path: string): string => fileURLToPath(new URL(`../../../src/${path}`, import.meta.url));
   const consumerTsconfig = fileURLToPath(new URL("../../../tests/fixtures/workers-consumer/tsconfig.json", import.meta.url));
@@ -334,7 +279,7 @@ describe("checkDocFences() — README `ts` fences compile against the exports", 
     fence("ts", 'import { nothing } from "@y-core/forge/nope";'),
   ].join("\n");
 
-  const dir = root(oxlintConfig(","));
+  const dir = root();
   writeFileSync(join(dir, "README.md"), readme, "utf-8");
   const result = checkDocFences({
     root: dir,
@@ -382,7 +327,7 @@ describe("checkDocFences() — README `ts` fences compile against the exports", 
   });
 
   it("imports an untyped subpath as `any`, so a fence of a node-only subpath compiles, and still fails one the package does not export", () => {
-    const nodeDir = root(oxlintConfig(","));
+    const nodeDir = root();
     const nodeReadme = [
       fence("ts", 'import { openTestD1 } from "@y-core/forge/testing/d1";', "", "const db = await openTestD1({ migrations: [] });"),
       "",

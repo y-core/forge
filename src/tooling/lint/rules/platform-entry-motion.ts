@@ -1,5 +1,5 @@
-import { reporter } from "../report.ts";
-import type { AstNode, CallNode, IdentifierNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, CallNode, IdentifierNode } from "../types.ts";
 
 const CLASS_LIST_METHODS = new Set(["add", "remove", "toggle"]);
 
@@ -29,13 +29,12 @@ function isFrameCall(node: AstNode): boolean {
 }
 
 /** A class added inside `requestAnimationFrame` to start an entry transition. */
-export const platformEntryMotion: LintRule = {
+export const platformEntryMotion = defineLintRule("forge-ui-platform-entry-motion", {
   meta: {
     type: "problem",
     docs: { description: "An entry transition is declared with `@starting-style`, not started by adding a class on the next frame." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-platform-entry-motion");
+  create(_context, report) {
     const reported = new Set<AstNode>();
 
     return {
@@ -54,4 +53,4 @@ export const platformEntryMotion: LintRule = {
       },
     };
   },
-};
+});

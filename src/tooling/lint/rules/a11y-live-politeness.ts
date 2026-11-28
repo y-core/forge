@@ -1,12 +1,11 @@
 import { attributeNamed, statedString } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 /** An `aria-live` that is not `polite`, or an `assertive` that has not stated why it interrupts. */
-export const a11yLivePoliteness: LintRule = {
+export const a11yLivePoliteness = defineLintRule("forge-ui-a11y-live-politeness", {
   meta: { type: "problem", docs: { description: "A live region announces politely unless it has stated why it interrupts the reader." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-live-politeness");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         // Only a stated literal is judgeable; a `{expr}` value is resolved at render time.
@@ -21,4 +20,4 @@ export const a11yLivePoliteness: LintRule = {
       },
     };
   },
-};
+});

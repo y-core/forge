@@ -1,12 +1,11 @@
 import { attributeNamed, openingTag, statedString } from "../jsx.ts";
-import { reporter } from "../report.ts";
-import type { AstNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode } from "../types.ts";
 
 /** `aria-readonly` on a `<button>` or a `role="button"` element, which supports no such state. */
-export const a11yNoAriaReadonlyOnButton: LintRule = {
+export const a11yNoAriaReadonlyOnButton = defineLintRule("forge-ui-a11y-no-aria-readonly-on-button", {
   meta: { type: "problem", docs: { description: "The button role carries no readonly state, so the attribute states nothing a reader hears." } },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-no-aria-readonly-on-button");
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         if (attributeNamed(node, "aria-readonly") === undefined) return;
@@ -19,4 +18,4 @@ export const a11yNoAriaReadonlyOnButton: LintRule = {
       },
     };
   },
-};
+});

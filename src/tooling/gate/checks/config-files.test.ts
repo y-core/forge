@@ -2,9 +2,11 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { DB_LAYOUT } from "../../../storage/db/migrations";
 import type { CheckResult } from "../types";
 import { checkConfigFiles, OXLINT_BASE, TSCONFIG_BASE } from "./config-files";
 import { gateFixtureRoot } from "./gate.fixture";
+import type { ConfigFileCheckConfig } from "./types";
 
 const roots: string[] = [];
 
@@ -12,10 +14,10 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-function check(files: Record<string, string>): CheckResult {
+function check(files: Record<string, string>, options: Omit<ConfigFileCheckConfig, "root"> = {}): CheckResult {
   const root = gateFixtureRoot(files, "forge-config-files-");
   roots.push(root);
-  return checkConfigFiles({ root });
+  return checkConfigFiles({ root, ...options });
 }
 
 function findingsOf(source: string): [string | undefined, number | undefined, string][] {
@@ -204,16 +206,13 @@ describe("checkConfigFiles() — what it scans", () => {
     ]);
   });
 
-  it("ignores a plain module, a spec named like a config, a nested config directory and a config file outside `config/`", () => {
-    const BROKEN = "if (import.meta.main) run();\nexport const A = 1;\n";
+  it("holds only `*.config.ts` to the module shape, and never a config file outside `config/`", () => {
+    const BROKEN = "export const A = 1;\n";
 
     expect(
       check({
-        "config/x.config.ts": PASSING,
+        "config/x.config.ts": 'import { A } from "./paths";\nimport { defineX } from "x";\n\nexport default defineX({ A });\n',
         "config/paths.ts": BROKEN,
-        "config/bundles.ts": BROKEN,
-        "config/x.config.test.ts": BROKEN,
-        "config/db/inner.config.ts": BROKEN,
         "playwright.config.ts": BROKEN,
       }),
     ).toEqual({ ok: true, findings: [], summary: "1 config module(s)" });
@@ -233,6 +232,108 @@ describe("checkConfigFiles() — what it scans", () => {
       });
     });
   }
+});
+
+describe("checkConfigFiles() — what `config/` holds", () => {
+  const ENTRY = 'import { A } from "./data";\nimport { defineX } from "x";\n\nexport default defineX({ A });\n';
+  const DATA = 'import { B } from "./more.ts";\n\nexport const A = B;\n';
+  const TREE = { "config/x.config.ts": ENTRY, "config/data.ts": DATA, "config/more.ts": "export const B = 1;\n" };
+  const found = (files: Record<string, string>, options: Omit<ConfigFileCheckConfig, "root"> = {}) =>
+    check({ ...TREE, ...files }, options).findings.map((finding) => [finding.file, finding.message]);
+
+  it("passes the entry points, the modules they import directly or through another, and the default state files", () => {
+    expect(found({ "config/changelog-sections.json": "{}", "config/rules-baseline.json": "{}" })).toEqual([]);
+  });
+
+  it("fails a test file", () => {
+    expect(found({ "config/x.test.ts": "" })).toEqual([
+      ["config/x.test.ts", "is a test — a config gets no test; test the code that reads it, beside that code"],
+    ]);
+  });
+
+  it("fails a script, at its `import.meta.main`, though an entry point imports it", () => {
+    expect(
+      check({ ...TREE, "config/data.ts": `${DATA}if (import.meta.main) run();\n` }).findings.map((finding) => [
+        finding.file,
+        finding.line,
+        finding.message,
+      ]),
+    ).toEqual([["config/data.ts", 4, "runs code when executed directly (`import.meta.main`) — a script belongs beside the code it serves"]]);
+  });
+
+  it("fails a `.ts` nothing imports", () => {
+    expect(found({ "config/orphan.ts": "export const C = 1;\n" })).toEqual([
+      ["config/orphan.ts", "is a module no `*.config.ts` imports — fold it into the code that uses it, or delete it"],
+    ]);
+  });
+
+  it("fails an undeclared `.json`, and passes it once `stateFiles` declares it", () => {
+    const message = "is neither a module a `*.config.ts` imports nor a declared state file — move it, or declare it in `stateFiles`";
+
+    expect(found({ "config/cache.json": "{}" })).toEqual([["config/cache.json", message]]);
+    expect(found({ "config/cache.json": "{}" }, { stateFiles: ["config/cache.json"] })).toEqual([]);
+  });
+
+  it("passes `forge db`'s files at their `DB_LAYOUT` defaults, and fails any other subdirectory unless `stateDirs` declares it", () => {
+    const db = {
+      "config/db.config.ts": 'import { defineDb } from "x";\n\nexport default defineDb({});\n',
+      [`${DB_LAYOUT.migrations}/0001_x.sql`]: "",
+      [DB_LAYOUT.snapshot]: "{}",
+      [DB_LAYOUT.types]: "export interface Row {}\n",
+    };
+    const message = "is a directory no tool is declared to write — move what it holds to the code it serves, or declare it in `stateDirs`";
+
+    expect(found(db)).toEqual([]);
+    expect(found({ ...db, "config/extra/x.json": "{}" })).toEqual([["config/extra", message]]);
+    expect(found({ "config/extra/x.json": "{}" }, { stateDirs: ["config/extra/"] })).toEqual([]);
+    expect(found(db, { stateDirs: [] })).toEqual([["config/db", message]]);
+  });
+});
+
+describe("checkConfigFiles() — markdown off the formatter", () => {
+  it("passes an `.oxfmtrc.json` ignoring `**/*.md`, and fails one that does not", () => {
+    const formatter = (ignorePatterns: string[]) => ({ "config/x.config.ts": PASSING, ".oxfmtrc.json": JSON.stringify({ ignorePatterns }) });
+
+    expect(check(formatter(["**/*.md"]), { markdown: true }).findings).toEqual([]);
+    expect(check(formatter([]), { markdown: true }).findings.map((finding) => [finding.file, finding.message])).toEqual([
+      [
+        ".oxfmtrc.json",
+        "`ignorePatterns` leaves out `**/*.md` while the table runs `validate-markdown` — the formatter and the check would own the same bytes",
+      ],
+    ]);
+  });
+
+  it("holds nothing to it without `markdown`", () => {
+    expect(check({ "config/x.config.ts": PASSING, ".oxfmtrc.json": "{}" }).findings).toEqual([]);
+  });
+});
+
+describe("checkConfigFiles() — the Playwright config's forge imports", () => {
+  const playwright = (body: string) => ({ "config/x.config.ts": PASSING, "playwright.config.ts": body });
+
+  it("passes a listed subpath, by specifier or by its source directory, and any import outside forge", () => {
+    const body = [
+      'import { defineConfig } from "@playwright/test";',
+      'import { a } from "@y-core/forge/tooling/playwright";',
+      'import { b } from "./src/tooling/playwright/config.ts";',
+      'import { c } from "./tests/setup.ts";',
+    ].join("\n");
+
+    expect(check(playwright(body), { nodeSubpaths: ["./tooling/playwright"] }).findings).toEqual([]);
+  });
+
+  it("fails an unlisted subpath and a source module outside every listed one, at its line", () => {
+    const body = ['import { a } from "@y-core/forge/ui/core";', 'import { b } from "./src/ui/core/mod.ts";'].join("\n");
+
+    expect(check(playwright(body), { nodeSubpaths: ["./tooling/playwright"] }).findings.map((finding) => [finding.file, finding.line])).toEqual([
+      ["playwright.config.ts", 1],
+      ["playwright.config.ts", 2],
+    ]);
+  });
+
+  it("passes a root with no Playwright config", () => {
+    expect(check({ "config/x.config.ts": PASSING }, { nodeSubpaths: [] }).findings).toEqual([]);
+  });
 });
 
 describe("checkConfigFiles() — baseline", () => {

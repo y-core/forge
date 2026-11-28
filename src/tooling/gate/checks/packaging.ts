@@ -84,6 +84,52 @@ export function fixtureName(file: string): string {
   return `${base.slice(0, -ext.length)}.fixture${ext}`;
 }
 
+const NEGATION_CLASS = /^!(?:\*\*\/)?\*\.[\w.]+$/;
+
+/** A finding for each `files` negation naming one file rather than a suffix class or a whole tree. */
+function singleFileNegations(files: readonly string[]): Finding[] {
+  return files
+    .filter((pattern) => pattern.startsWith("!") && !pattern.endsWith("/") && !NEGATION_CLASS.test(pattern))
+    .map((pattern) =>
+      fail(`the \`files\` array negates \`${pattern.slice(1)}\`, a single file`, {
+        file: "package.json",
+        detail: [
+          "negate a suffix class such as `!**/*.fixture.ts` or a whole tree such as `!src/tooling/dev/`, and give the file a home one already covers",
+        ],
+      }),
+    );
+}
+
+// A release gate or a consumer's install would otherwise depend on a sibling checkout the tarball cannot carry.
+/** A finding for each script reaching outside the checkout. */
+function outsideScripts(scripts: Readonly<Record<string, string>>): Finding[] {
+  return Object.entries(scripts)
+    .filter(([, command]) => command.includes("../"))
+    .map(([name]) =>
+      fail(`script \`${name}\` reaches outside the checkout through \`../\``, {
+        file: "package.json",
+        detail: ["a gate or release run would then depend on a sibling checkout — run the command from inside this repository"],
+      }),
+    );
+}
+
+const BUN_PIN = /^bun@(\d+\.\d+\.\d+)$/;
+
+/** A finding when `engines.bun` is not the floor the `packageManager` pin names. */
+function bunFloor(packageManager: string | undefined, engines: Readonly<Record<string, string>> | undefined): Finding[] {
+  if (packageManager === undefined) return [];
+  const version = BUN_PIN.exec(packageManager)?.[1];
+  if (version === undefined) return [fail(`\`packageManager\` is \`${packageManager}\`, not an exact \`bun@x.y.z\``, { file: "package.json" })];
+  const floor = `>=${version}`;
+  if (engines?.["bun"] === floor) return [];
+  return [
+    fail(`\`engines.bun\` is \`${engines?.["bun"] ?? "unset"}\`, not \`${floor}\`, the Bun \`packageManager\` pins`, {
+      file: "package.json",
+      detail: ["the release workflow installs the pinned Bun, so a lower floor claims support nothing has run on"],
+    }),
+  ];
+}
+
 /** A finding for each required file that is missing on disk or that the `files` array leaves out. */
 function missingRequired(config: PackagingCheckConfig): Finding[] {
   return (config.required ?? []).flatMap((file) => {
@@ -124,7 +170,7 @@ function namespaceReadmeCandidates(dir: string, ns: string): string[] {
   return candidates;
 }
 
-/** Reports every module only a test reaches that the published tarball would still carry, and every required file or namespace README it would lack. @public */
+/** Reports every module only a test reaches that the published tarball would still carry, every required file or namespace README it would lack, every `files` negation naming a single file, every script reaching outside the checkout, and a Bun floor off the pinned Bun. @public */
 export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const walked = sources.flatMap((dir) => collectFiles(config.root, dir, (name) => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))));
@@ -150,6 +196,9 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
 
   const findings: Finding[] = [
     ...missingRequired(config),
+    ...singleFileNegations(config.files),
+    ...outsideScripts(config.scripts ?? {}),
+    ...bunFloor(config.packageManager, config.engines),
     ...missingNamespaceReadmes(config),
     ...walked
       .filter((file) => !isTestSource(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)

@@ -1,0 +1,172 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a192ccd..8cdcfc8 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -36,6 +36,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
+ 
+ - **`Finding.rule`, in `@y-core/forge/tooling/gate`**: the id of the rule a finding breaks. `formatFinding` prints it as `[rule] ` before
+   the message when it is set, and a finding without one prints as before.
++- **`DescriptionList` in `@y-core/forge/ui/core` renders term and description pairs as a `<dl>`**, with `.Term` and `.Details`. A
++  `.Term` given `href` wraps its text in a link carrying the `focus-ring` recipe.
+ 
+ ---
+ 
+diff --git a/src/ui/conformance.test.tsx b/src/ui/conformance.test.tsx
+index b9ba9aff..6850b0c7 100644
+--- a/src/ui/conformance.test.tsx
++++ b/src/ui/conformance.test.tsx
+@@ -68,6 +68,7 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
+   Carousel: { slot: "carousel" },
+   CheckboxGroup: { props: { name: "cg" }, stateProps: MESSAGE_INVALID, slot: "checkbox-group", stateAttr: "data-orientation" },
+   Collapsible: { slot: "collapsible" },
++  DescriptionList: { slot: "description-list" },
+   Dialog: { props: { id: "d1" }, slot: "dialog" },
+   Drawer: { props: { id: "dr1" }, slot: "drawer", stateAttr: "data-side" },
+   EmptyState: { slot: "empty-state" },
+diff --git a/src/ui/core/description-list.test.tsx b/src/ui/core/description-list.test.tsx
+new file mode 100644
+index 00000000..64d36bd4
+--- /dev/null
++++ b/src/ui/core/description-list.test.tsx
+@@ -0,0 +1,68 @@
++/** @jsxRuntime automatic */
++/** @jsxImportSource @y-core/forge/render/jsx */
++import { describe, expect, it } from "bun:test";
++
++import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
++import { render } from "../../testing/render";
++import { DescriptionList } from "./description-list";
++
++describe("DescriptionList", () => {
++  it("renders the whole list exactly, its own slot token ahead of an inherited one and a forwarded value escaped", async () => {
++    expect(await render(<DescriptionList data-slot='facts' data-note={`R&D's "n" <x>`} />)).toBe(
++      '<dl data-slot="description-list facts" class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"' +
++        ' data-note="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;"></dl>',
++    );
++  });
++
++  it("lets a caller gap evict its own rather than sitting behind it", async () => {
++    expect(variantClasses(await render(<DescriptionList class='gap-y-4' />), await render(<DescriptionList />))).toEqual({
++      added: ["gap-y-4"],
++      dropped: ["gap-y-2"],
++    });
++  });
++});
++
++describe("DescriptionList.Term", () => {
++  it("renders a plain term with no link inside it", async () => {
++    const html = await render(<DescriptionList.Term>Owner</DescriptionList.Term>);
++
++    expect(attrsOf(html)).toEqual({ "data-slot": "description-list-term" });
++    expect(tagOf(html, 'data-slot="description-list-link"')).toBe("");
++  });
++
++  it("wraps the term's text in a link when given an href, leaving the term itself a dt", async () => {
++    const html = await render(<DescriptionList.Term href='/people/ada'>Owner</DescriptionList.Term>);
++
++    expect(tagOf(html).startsWith("<dt ")).toBe(true);
++    expect(attrOf(html, "href", 'data-slot="description-list-link"')).toBe("/people/ada");
++    expect(html.split(/<[^>]+>/).filter(Boolean)).toEqual(["Owner"]);
++  });
++
++  it("paints the forge focus ring on the link, so keyboard focus shows", async () => {
++    const html = await render(<DescriptionList.Term href='/a'>A</DescriptionList.Term>);
++
++    expect(classesOf(html, 'data-slot="description-list-link"')).toEqual([
++      "focus-ring",
++      "rounded-sm",
++      "underline",
++      "underline-offset-4",
++      "hover:text-primary",
++    ]);
++  });
++
++  it("collapses a script-scheme href to a fragment, as the renderer does for every URL attribute", async () => {
++    const html = await render(<DescriptionList.Term href='javascript:alert(1)'>A</DescriptionList.Term>);
++
++    expect(attrOf(html, "href", 'data-slot="description-list-link"')).toBe("#");
++  });
++});
++
++describe("DescriptionList.Details", () => {
++  it("renders a dd under its slot, muted against the term", async () => {
++    const html = await render(<DescriptionList.Details>Ada</DescriptionList.Details>);
++
++    expect(tagOf(html).startsWith("<dd ")).toBe(true);
++    expect(attrsOf(html)).toEqual({ "data-slot": "description-list-details" });
++    expect(classesOf(html)).toEqual(["text-muted-foreground"]);
++  });
++});
+diff --git a/src/ui/core/description-list.tsx b/src/ui/core/description-list.tsx
+new file mode 100644
+index 00000000..a8dd5f36
+--- /dev/null
++++ b/src/ui/core/description-list.tsx
+@@ -0,0 +1,43 @@
++/** @jsxRuntime automatic */
++/** @jsxImportSource @y-core/forge/render/jsx */
++import type { FC, JSX, JSXNode } from "../../render/jsx/types";
++import { slotToken } from "./utils/as-child";
++import { cn } from "./utils/cn";
++
++type DescriptionListProps = JSX.IntrinsicElements["dl"];
++
++interface DescriptionListTermProps extends Omit<JSX.IntrinsicElements["dt"], "children"> {
++  href?: string | undefined;
++  children?: JSXNode | undefined;
++}
++
++type DescriptionListDetailsProps = JSX.IntrinsicElements["dd"];
++
++const TERM_LINK = "focus-ring rounded-sm underline underline-offset-4 hover:text-primary";
++
++const DescriptionListRoot: FC<DescriptionListProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
++  <dl data-slot={slotToken("description-list", inherited)} class={cn("grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm", cls)} {...rest}>
++    {children}
++  </dl>
++);
++
++const DescriptionListTerm: FC<DescriptionListTermProps> = ({ href, class: cls, children, "data-slot": inherited, ...rest }) => (
++  <dt data-slot={slotToken("description-list-term", inherited)} class={cn("font-medium text-foreground", cls)} {...rest}>
++    {href === undefined ? (
++      children
++    ) : (
++      <a data-slot='description-list-link' href={href} class={TERM_LINK}>
++        {children}
++      </a>
++    )}
++  </dt>
++);
++
++const DescriptionListDetails: FC<DescriptionListDetailsProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
++  <dd data-slot={slotToken("description-list-details", inherited)} class={cn("text-muted-foreground", cls)} {...rest}>
++    {children}
++  </dd>
++);
++
++/** Term and description pairs as a `<dl>`, with `Term` — a link when given `href` — and `Details` subcomponents. @public */
++export const DescriptionList = Object.assign(DescriptionListRoot, { Term: DescriptionListTerm, Details: DescriptionListDetails });
+diff --git a/src/ui/core/mod.ts b/src/ui/core/mod.ts
+index 33d1cc1a..8bac9836 100644
+--- a/src/ui/core/mod.ts
++++ b/src/ui/core/mod.ts
+@@ -13,6 +13,7 @@ export { Carousel } from "./carousel";
+ export type { CarouselSnap } from "./types";
+ export { CheckboxGroup } from "./checkbox-group";
+ export { Collapsible } from "./collapsible";
++export { DescriptionList } from "./description-list";
+ export { Dialog } from "./dialog";
+ export { Drawer } from "./drawer";
+ export { EmptyState } from "./empty-state";
+diff --git a/src/ui/design/catalog.md b/src/ui/design/catalog.md
+index 393a7532..951c20d7 100644
+--- a/src/ui/design/catalog.md
++++ b/src/ui/design/catalog.md
+@@ -117,6 +117,7 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
+ | Show rows of a record set with columns that align | `Table` | `@y-core/forge/ui/core` |
+ | Say what to do when a list or table is empty | `EmptyState` | `@y-core/forge/ui/core` |
+ | Lead with a single headline number | `Stat` | `@y-core/forge/ui/core` |
++| Show a record's fields as labelled pairs | `DescriptionList` (`.Term` takes `href`) | `@y-core/forge/ui/core` |
+ | Show how far through a known sequence of steps the user is | `Steps` (`.Step` takes `state`) | `@y-core/forge/ui/core` |
+ | Show a dated record of events that already happened | `Timeline` (`.Item` takes `state`) | `@y-core/forge/ui/core` |
+ | Send the reader somewhere else | `Link` | `@y-core/forge/ui/core` |

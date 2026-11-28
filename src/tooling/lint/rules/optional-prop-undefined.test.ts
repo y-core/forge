@@ -4,7 +4,7 @@ import { nextLoc, runRule } from "../lint.fixture.ts";
 import type { AstNode } from "../types.ts";
 import { optionalPropUndefined } from "./optional-prop-undefined.ts";
 
-const CORPUS = "(forge-ui-optional-prop-undefined — src/ui/design/reference/10-accessibility.md)";
+const PREFIX = "[forge-ui-optional-prop-undefined] ";
 
 function keyword(type: string): AstNode {
   return { type, loc: nextLoc() } as AstNode;
@@ -25,7 +25,7 @@ function property(name: string, annotation: AstNode | undefined, optional = true
 }
 
 const message = (name: string) =>
-  `\`${name}?:\` omits \`| undefined\` — a consumer must then spread it conditionally, which no a11y rule can see through ${CORPUS}`;
+  `${PREFIX}\`${name}?:\` omits \`| undefined\` — a consumer must then spread it conditionally, which no a11y rule can see through`;
 
 describe("optional-prop-undefined", () => {
   it("reports an optional property whose type is a bare keyword", () => {

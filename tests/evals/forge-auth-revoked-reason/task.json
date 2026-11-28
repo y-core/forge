@@ -1,0 +1,30 @@
+{
+  "id": "forge-auth-revoked-reason",
+  "tree": "forge",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "bait": [],
+  "accept": ["src/auth/revoked-reason.accept.ts"],
+  "traps": [
+    {
+      "id": "strict-kept",
+      "rules": ["project:docs/SCHEMA_COMPOSITION.md#4"],
+      "detector": { "kind": "rg", "pattern": "^\\s*\\)\\s*(WITHOUT\\s+ROWID\\s*)?;", "paths": ["src/auth/schema.sql"] }
+    },
+    {
+      "id": "migration-lint",
+      "rules": ["project:docs/DATABASE_MANAGEMENT.md#5", "project:docs/DATABASE_MANAGEMENT.md#7a", "project:docs/SCHEMA_COMPOSITION.md#4"],
+      "detector": { "kind": "test", "file": "src/auth/revoked-reason-migration.accept.ts" }
+    },
+    {
+      "id": "no-shim",
+      "rules": ["project:docs/FORGE_STRUCTURE.md#7"],
+      "detector": { "kind": "rg", "pattern": "@deprecated|\\brevoke\\w*\\s*\\([^)]*\\breason\\w*\\s*(\\?\\s*:|=)", "paths": ["src"], "pcre": true }
+    },
+    {
+      "id": "upgrade-note",
+      "rules": ["project:src/auth/README.md#~applying-the-auth-schema-to-your-database", "project:docs/FORGE_STRUCTURE.md#7"],
+      "detector": { "kind": "test", "file": "src/auth/revoked-reason-note.accept.ts" }
+    }
+  ]
+}

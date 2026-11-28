@@ -1,0 +1,4 @@
+{
+  "extends": "./node_modules/@y-core/forge/src/tooling/config/tsconfig.app.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", ".types/**/*.d.ts"]
+}

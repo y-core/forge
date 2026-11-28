@@ -64,6 +64,12 @@ describe("checkCoLocation()", () => {
 });
 
 describe("checkCoLocation() — the filename conventions", () => {
+  it("fails an exemption for a module its filename convention already exempts", () => {
+    expect(messages(fixtureRoot("src/ui/types.ts"), new Map([["src/ui/types.ts", "declarations only"]]))).toEqual([
+      "`src/ui/types.ts` is exempt from the co-location check, which its filename convention already does — delete the entry",
+    ]);
+  });
+
   it("asks no test of a `types.ts` or a `bin.ts`, without an entry in the map", () => {
     expect(messages(fixtureRoot("src/ui/types.ts", "src/ui/bin.ts"))).toEqual([]);
   });

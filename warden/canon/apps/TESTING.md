@@ -80,8 +80,8 @@ rather than an ambient setup step.
 
 ### 1c. What Is Still a Unit Test
 
-Pure functions, schemas, and formatters are tested directly, with no app and no request. **Do not route a pure-function test through the app** — the
-request adds nothing but a slower failure message.
+**Pure functions, schemas, and formatters are tested directly, never routed through the app** — the request adds nothing but a slower failure
+message.
 
 The dividing question: _does the behaviour depend on the middleware chain, the route map, or the environment?_ If no, test the function.
 
@@ -94,15 +94,15 @@ The dividing question: _does the behaviour depend on the middleware chain, the r
 **Whether tests sit beside their source or in a dedicated directory is a per-repository choice, recorded in that repository's `docs/` docs, and it
 is not re-argued per file.**
 
-What this document requires is that the choice be **uniform and stated**. A repository with some tests co-located and some in a test directory has
-neither convention, and a reader cannot tell whether a missing neighbour means missing coverage.
+**The choice is uniform and stated**: a repository with tests both co-located and in a test directory has neither convention, and a reader cannot
+tell whether a missing neighbour means missing coverage.
 
 Where the choice is a dedicated directory, the reason is usually that tests are grouped by the _question they answer_ — unit, integration,
 end-to-end — rather than by the file they cover. That is a legitimate taxonomy, and it is the one thing co-location cannot express.
 
 **Whichever directory the repository chooses, a test file's name matches the name of the source file it covers** — `headers.ts` is tested by
-`headers.test.ts`, wherever that file sits. Grouping by question is a choice about _placement_; it is not a licence to name a test after the
-question instead, which leaves the source file with no test findable from its own name.
+`headers.test.ts`, wherever that file sits. Grouping by question governs _placement_, not names: a test named after its question leaves the source
+file with no test findable from its own name.
 
 **Where a repository does dedicate a directory to the browser set, it is named `browser/`** — the same word as the `test:browser` verb that runs it,
 so the directory and the command a reader types are one name. That is a naming rule for a directory that exists, not a requirement to grow one.
@@ -110,13 +110,11 @@ so the directory and the command a reader types are one name. That is a naming r
 ### 2b. The Browser-Spec Suffix Is `*.browser.ts`
 
 **A browser spec is named `*.browser.ts`, and this is fleet-wide rather than a repository's choice.** The unit runner collects `*.test.*`,
-`*_test.*`, `*.spec.*` and `*_spec.*` — never `*.browser.ts`. A browser spec named `.spec.ts` is therefore collected by a bare unit run, inside
-which it cannot execute, and every repository that hits this reaches for the same workaround: hand-scoping the gate's test paths around its own
-specs. With `.browser.ts` the collision is impossible by construction rather than avoided by configuration.
+`*_test.*`, `*.spec.*` and `*_spec.*` — never `*.browser.ts`. A browser spec named `.spec.ts` is therefore collected by a bare unit run, which
+cannot execute it; `.browser.ts` makes that collision impossible by construction rather than avoided by hand-scoping the gate's test paths.
 
-**A repository consequently never narrows the preset's `tests` option to dodge the unit collector.** Narrowing it for a deliberate tier split — a
-set whose every spec starts a real runtime, held to its own step — stays legitimate; those specs keep the `.test.ts` suffix, because their own
-runner has to collect them.
+**A repository never narrows the preset's `tests` option to dodge the unit collector**; narrowing it for a deliberate tier split — a set whose
+every spec starts a real runtime, held to its own step — stays legitimate, and those specs keep `.test.ts` because their own runner collects them.
 
 The suffix also makes a helper safe to keep beside the specs it serves: a driver or a fixture module under the browser directory is collected by
 neither runner, where the same file beside a `.spec.ts` would be.
@@ -140,8 +138,8 @@ These properties make it useful rather than ceremonial:
 - **A field is present only because its absence breaks the boot.** A fixture that lists every binding the app has ever had stops telling a reader
   what is required.
 
-**The fixture's required fields are documented in `docs/`** with what each one must satisfy — a key length, a URL scheme — because those constraints
-are real and a wrong value produces a confusing failure rather than a clear one.
+**The fixture's required fields are documented in `docs/`** with what each one must satisfy — a key length, a URL scheme — because a wrong value
+produces a confusing failure rather than a clear one.
 
 ### 2d. Optional Bindings Are Deliberately Absent
 
@@ -151,7 +149,7 @@ are real and a wrong value produces a confusing failure rather than a clear one.
 A rate limiter is not one of them: outside `forge cf dev` its absence answers `503`, so leaving it out asserts the refusal rather than a
 degradation ([`WORKERS_PLATFORM.md`][wp-3b] §3b).
 
-Add such a binding only in the specific test that exercises it, never to the shared fixture. Adding it globally silently deletes the coverage.
+Add such a binding only in the test that exercises it, never to the shared fixture, where it silently deletes the coverage.
 
 ### 2e. A Configuration File Gets No Test
 
@@ -176,8 +174,8 @@ expect(html).toContain("O'Brien");
 expect(html).toBe("<td>O&#39;Brien &amp; Associates</td>");
 ```
 
-**If an assertion string is too long, extract the relevant element and assert exactly on that.** Never shorten an assertion by switching to a
-substring match. Substring matching stays legitimate on non-markup strings — an error message, a log line, a query fragment.
+**An assertion string too long to write is shortened by extracting the relevant element and asserting exactly on that, never by switching to a
+substring match.** Substring matching stays legitimate on non-markup strings — an error message, a log line, a query fragment.
 
 ### 3b. Nondeterministic Output
 
@@ -206,13 +204,12 @@ A correct renderer escapes **every** string child, static and interpolated alike
 | `>` (greater-than) | `&gt;` |
 | `"` in attributes | `&#34;` or `&quot;` |
 
-**Never assert a raw `&`, `<`, `>`, `'` or `"` on the strength of a literal having been written that way in the source.** URL-bearing attributes are
-a further exception: a renderer routes them through a sanitizer, so a hostile scheme renders as a safe placeholder — assert the sanitized form.
+**Never assert a raw `&`, `<`, `>`, `'` or `"` on the strength of a literal having been written that way in the source.** A URL-bearing
+attribute goes through a sanitizer, so a hostile scheme renders as a safe placeholder — assert the sanitized form.
 
 ### 3d. Headers and Status Are Always Exact
 
-Security headers are deterministic strings and HTTP status is an integer constant. **Use exact equality for both** — never a substring match on a
-header, never a range comparison on a status.
+<!-- rule:apps-testing-exact-header-status --> Security headers are deterministic strings and HTTP status is an integer constant.
 
 ```ts
 expect(res.headers.get("x-content-type-options")).toBe("nosniff");
@@ -226,22 +223,21 @@ exists to keep.
 
 **Both checks are applied before a test is counted as written, and each catches what the other misses.**
 
-**The deletion check: delete the mechanism the test names; a test that still passes was never testing it.** The failure shape is always the same —
-the subject is a _mechanism_, and the assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual
-second mechanism: an early return at the top of a callback makes "nothing visibly happened" true whether or not the thing that calls it was ever
-there. **Pin the mechanism, and pin that it was armed**: "the timer never fired" is worth nothing without "a timer was scheduled", and both halves
-in one assertion is the cheapest form. A negative assertion over an optional path — `expect(probe?.[0]).not.toBe("x")` — passes when `probe` is
-absent outright, so it asserts nothing at all.
+**The deletion check: delete the mechanism the test names; a test that still passes was never testing it.** Such a test
+reads an _outcome_ that a second, independent mechanism also produces — usually a guard clause, whose early return makes "nothing visibly happened"
+true whether or not its caller was ever there. **Pin the mechanism, and pin that it was armed**: "the timer never fired" is worth nothing without "a
+timer was scheduled", cheapest as one assertion. A negative assertion over an optional path — `expect(probe?.[0]).not.toBe("x")` — passes when
+`probe` is absent outright, so it asserts nothing.
 
-**The copied-literal check: a literal copied from the source under test is not an expected value.** This is the case the deletion check cannot
-reach. A transcription goes red the moment the source changes, so it is never vacuous by that measure — it merely records that two files agree with
-each other, which is a fact about the repository rather than about the software. These shapes are all common:
+**The copied-literal check: a literal copied from the source under test is not an expected value.** The deletion check cannot reach it: a
+transcription goes red when the source changes, yet only records that two files agree, a fact about the repository rather than the software. Common
+shapes:
 
-- **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
-  that are derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
-- **A registration list.** The middleware roster or command list copied into the test as an array of names in order. Assert dispatch instead — drive
-  a request through the real stack and pin what it did: which mount got which guard, which status the refusal returned, what the command wrote.
-  Asserting an _identity_ rather than a spelling is what stops two copies of a name drifting apart.
+- **A transcribed constant map.** A frozen array or lookup table asserted back entry by entry. Test what _reads_ the table: the behaviour its
+  entries were chosen to produce.
+- **A registration list.** The middleware roster or command list copied in as an array of names. Assert dispatch instead — drive a request through
+  the real stack and pin which mount got which guard, which status the refusal returned, what the command wrote; an _identity_, not a spelling, is
+  what stops two copies of a name drifting apart.
 - **A class string hoisted out of a recipe.** A style literal lifted from the source, or out of rendered output, and reassembled in the expected
   value. A token rename then fails the test while changing nothing a reader can see, and a stylesheet carrying no rule for that class fails nothing
   at all.
@@ -249,20 +245,19 @@ each other, which is a fact about the repository rather than about the software.
 **The operational test: if this test and the source under test were edited together by the same rename, would anything go red?** If no, the test
 pins agreement between two files, not behaviour.
 
-This does not weaken §3a. An exact assertion on the markup a view emitted **is** the contract — the whole string, written out in the test where a
-reader can see the entity encoding. What §3e refuses is the derived form: a class constant imported or transcribed from the source and recomposed
-into the expectation, so that both sides move together and neither is ever checked against an outcome.
+This does not weaken §3a: the exact markup a view emitted, written out whole where a reader can see the entity encoding, **is** the contract.
+§3e refuses the derived form — a class constant imported or transcribed from the source and recomposed into the expectation, so both sides move
+together.
 
 **An expected value has to come from somewhere other than the source.** In descending order of strength:
 
 - **A published standard's test vectors.** Literals from a standards body make transcription structurally impossible.
 - **A table generated from the domain rule** — every shape a discriminator can produce, enumerated from the rule rather than from the branches.
 - **A real dependency's own answer** — a query plan from a real database over real migrations, a DOM state after a real event in a real browser.
-  Neither side of that comparison was transcribed by anyone.
 - **The observable outcome of a request**, asserted whole: status, body, and headers, per §3a and §3d.
 
-**Where a constant genuinely is the contract, write it as a literal rather than importing it.** A test that reads the value back out of the module
-under test cannot fail when that value changes, which is the whole point of pinning it. The reverse holds for a value the repository does not own: a
+**Where a constant genuinely is the contract, write it as a literal rather than importing it.** Read back out of the module under test, it cannot
+fail when the value changes. The reverse holds for a value the repository does not own: a
 cap or a limit defined by the shared library is imported, so a library change surfaces as a failure here rather than as silent disagreement.
 
 **Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
@@ -273,7 +268,7 @@ outbound call made — pins what the refusal cost, which no restatement of the g
 **A claim removed from a comment is not removed from the system until an assertion holds it.** `CODE_RULES.md` §5e is this rule seen from the source
 side: a comment asserting behaviour is prose standing in for a test, and the fix is the test. This section is the receiving end.
 
-So a change that deletes such a comment carries work here, and the work is scoped, not incidental:
+A change that deletes such a comment carries scoped work here:
 
 - **The claim names the assertion.** "Redirects to the login route when the session cookie is absent" is already a test name and an expectation; it
   does not need to be redesigned, only written.
@@ -294,8 +289,8 @@ copied back out of the source, has not landed — it has been restated in a new 
 A fake is a minimal in-test implementation of a real interface, written as a plain object literal typed to that interface. **TypeScript enforces
 that every member is present**, so interface drift breaks the test at compile time — which is the whole of the argument for fakes over mocks.
 
-**Mock libraries are not installed and must not be added.** They detect no API change, couple the test to call order and argument matchers, and pass
-happily against a stale signature.
+<!-- rule:apps-testing-no-mock-library --> They detect no API change, couple the test to call order and argument matchers, and pass happily against
+a stale signature.
 
 **Prefer the shared library's fixtures over hand-rolled ones** — in-memory storage fakes, a render helper, a request builder. A fake every suite
 writes for itself is a fake that drifts per suite ([`FORGE_CONSUMPTION.md`][fc-1b] §1b).
@@ -315,7 +310,7 @@ outcome.
 ### 5a. Both Pass and Fail Cases Required
 
 **Security-sensitive code requires both a positive case — the guard allows a valid request — and a negative case — the guard blocks an invalid
-one.** A suite with only the happy path is incomplete and must not be merged.
+one.** A happy-path-only suite is not merged.
 
 | Feature | Required positive case | Required negative case |
 | --- | --- | --- |
@@ -335,7 +330,7 @@ coverage.
 **Write a separate case for each way a request can be refused**, not one case that omits everything at once.
 
 A single "invalid request" test passes as soon as _any_ guard fires, so it stays green after the guard it was written for is deleted — the deletion
-check ([`CODE_REVIEW.md`][cr-3c] §3c) fails it immediately. Each case must be valid in every respect except the one it is testing.
+check ([`CODE_REVIEW.md`][cr-3c] §3c) fails it. Each case is valid in every respect except the one it tests.
 
 ### 5c. Negative Case Structure
 
@@ -350,7 +345,7 @@ runtime-dependent values.
 **If a test expects a guard to fire and the response is 200, the guard has a hole.** Treat an unexpected 200 from a guarded route as a defect
 requiring root-cause investigation.
 
-**Never adjust the assertion to match the observed status.** That is how a real security regression becomes a permanent, documented behaviour.
+**Never adjust the assertion to match the observed status** — that turns a security regression into documented behaviour.
 
 ### 5e. No Mocking of Security Primitives
 
@@ -367,12 +362,10 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 ### 6a. One Command, Nested Tiers
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** They are
-nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. Each tier above `static` includes the tier below it, as its first entry. **A bare invocation is
-`runtime`**, and that is the gate an epic closes on; §6e says which tier each other moment takes. A config file owns the step table: every step,
-how it runs, and the tiers that list it. Read it there rather than trusting any prose copy.
+nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. **A bare invocation is `runtime`**, the gate an epic closes on; §6e says which tier each other
+moment takes. The step table is owned by its config file; read it there, not from a prose copy.
 
-**Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
-warning" — is a failure.
+**A task is complete only when every step the run executed passes with zero errors**; "types pass, lint has one warning" is a failure.
 
 **A tier names what a step needs, so a step's tier is predictable from the step alone:**
 
@@ -393,9 +386,8 @@ warning" — is a failure.
 That budget is stated here and nowhere else. **A step that is not heavy stays where what it needs puts it**, however slow it feels, because a tier
 whose membership follows taste is a tier nobody can predict.
 
-**A heavy test inside `unit` is split out, never dropped.** The `unit` row's sources leave it out, which is the deliberate tier split §2b allows,
-and it runs as a test row of its own, `testStep({ label, sources })` listed in the `scheduled` tier. It is never deleted, skipped or `#[ignore]`d
-out of every automated run.
+<!-- rule:apps-testing-split-not-dropped --> The `unit` row's sources leave it out — the deliberate tier split §2b allows — and a `testStep`
+with its own label and sources runs it.
 
 **The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the epic gate.** A
 step worth proving only periodically — another browser engine — goes in the `scheduled` tier of `config/steps.config.ts`, which a tag and the cron
@@ -410,19 +402,12 @@ may not be closed on a step nobody ran.
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
-**A table declares each tier as its own list, in run order, and a tier includes a lower one by reference, expanded in place.** Nothing sorts a
-tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
-runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
-check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
-
-**A tier the table does not declare runs as the nearest declared tier below it**, so a table with no `runtime` key closes an epic on its `unit`
-rows. The runner does this, and the verdict names it — `verify (as unit)` — so a table never spells a fallback as a tier that only references the
-one below. A tier with no declared tier at or below it is refused.
-
-**A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
-whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row is left untouched only in the
-tier that declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about which
-changes reach it.
+**A table declares each tier as its own list, in run order, and each tier above `static` leads with a reference to the tier below**, by
+convention — which makes a fail-fast `scheduled` run fail on the sub-second check rather than after minutes of browser. A row moves tier by moving
+its entry, never by declaring it twice. `resolveTiers`'s TSDoc owns the expansion, the run of an undeclared tier as the nearest declared one below,
+and the refusals; the verdict names a fallback — `verify (as unit)` — so a table never spells one as a tier that only references the one below.
+A malformed table is refused whole, whichever tier the run asked for. Below `scheduled`, a row is left untouched only in the tier that declares it
+directly; one reached through a reference runs whole, because the declaring tier made no claim about which changes reach it.
 
 ### 6b. What Each Tool Catches
 
@@ -438,19 +423,18 @@ a fail-fast run stops there without being told to.
 
 ### 6c. A Scoped Run Is Not a Gate Run
 
-A narrowed selection brands every summary line as scoped, so a scoped green can never be read as a green gate. **A selection resolving to zero steps
-is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+`Selection`'s `scoped` flag owns the brand a narrowed run puts on every summary line, so a scoped green never reads as a green gate. **A selection
+resolving to zero steps is refused**: a gate that ran nothing must never pass for one that passed.
 
 **Leaving a row untouched at `runtime` is not a scoped selection.** It is the tier's own definition (§6a), fixed by the tree and the commit it sits
 on, so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
 same commit.
 
-**A runtime row's reach is derived wherever a graph can derive it.** A row runs whole when a change touches one of the gate's own inputs or a path
-the row reads, and runs nothing otherwise. A row may also trace at run time the paths no glob can name ahead of time; a change reaching one of them
-runs it whole, and so does a trace that fails. The only hand-kept list names what no graph can see — a file a spec reads without importing it, or a
-module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that leaves one of its globs matching
-nothing is refused rather than silently dropping the row from a change it reads. **`scheduled` runs every row whole on every tag and every cron
-run**, which is the backstop for a reach the derivation missed. A row that declares nothing it reads runs whole on every change.
+**A runtime row's reach is derived wherever a graph can derive it**: the row runs whole when a change touches the gate's own inputs, a path the row
+reads or one it traces at run time, and when its trace fails, and runs nothing otherwise. The only hand-kept list names what no graph can see — a
+file a spec reads without importing it, a specifier resolved at run time — and a glob in it matching nothing is refused rather than silently
+dropping the row. **`scheduled` runs every row whole on every tag and every cron run**, the backstop for a reach the derivation missed; a row that
+declares nothing it reads runs whole on every change.
 
 **A Playwright row has no reach to derive**: the browser set and the Worker-runtime suite both start at `scheduled`, where every row runs whole
 (§6a).
@@ -471,23 +455,24 @@ step says so, exits 0 and carries the scoped brand, so it is never a green gate.
 
 **The bind address is load-bearing, not decoration.** `0.0.0.0` is what makes 8787 reachable from another container, which is what turns a browser
 set bound there from an annoyance into a hazard: the run does not merely collide with the dev server, it **answers as it** — driving the real
-application, against the real bindings, and writing into the database the next run wipes. Stating only the port number permits exactly the failure
-this rule exists for.
+application, against the real bindings, and writing into the database the next run wipes.
 
-**The origin is spelled to match the bind address — `127.0.0.1`, never `localhost`.** An application's allowed-origin check compares strings, so
-`https://localhost:8788` is not `https://127.0.0.1:8788` and a browser run on the wrong spelling fails its own origin guard for a reason that has
-nothing to do with the code under test.
+<!-- rule:apps-testing-origin-spelling --> An application's allowed-origin check compares strings, so `https://localhost:8788` is not
+`https://127.0.0.1:8788` and a browser run on the wrong spelling fails its own origin guard for a reason that has nothing to do with the code under
+test.
 
-**The override lives in the browser runner's config, never in the Worker config.** The port a harness listens on is a property of the harness;
-moving the number the application declares moves the application.
+<!-- rule:apps-testing-port-in-runner --> The port a harness listens on is a property of the harness; moving the number the application declares
+moves the application.
 
-**A fixed port is for a server a human starts or attaches to. A server a spec starts per run takes an ephemeral port and never a number** — the
-`listen()` of wrangler's `createTestHarness` takes a free one from the OS, which is why a per-run set has no port problem to solve. A fixed 8788
-still collides when two repositories' browser sets run at once; an environment-variable override covers that in one line.
+**A fixed port is for a server a human starts or attaches to.**
+
+<!-- rule:apps-testing-ephemeral-port --> The `listen()` of wrangler's `createTestHarness` takes a free port from the OS, which is why a per-run set
+has no port problem to solve. A fixed 8788 still collides when two repositories' browser sets run at once; an environment-variable override covers
+that in one line.
 
 **`reuseExistingServer` is `false`.** The dev command builds the stylesheet as it boots, so a reused server serves the CSS the source had at boot
 time — a run against edited views then measures the previous layout and reports it as current. A repository that cannot make `false` work records
-the exception with its compensating control, rather than leaving the reuse undocumented.
+the exception with its compensating control.
 
 ### 6e. One Tier per Moment
 
@@ -503,21 +488,19 @@ the exception with its compensating control, rather than leaving the reuse undoc
 
 No other moment exists to close on.
 
-**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier by itself, never plans it
-into a task, and never reports it as owed: `forge release` runs it before it tags, on a release the user asked for, the ledger host runs it daily,
-and a break either finds reaches the ledger as a task without anyone being told to look.
+**`verify:scheduled` belongs to the tag and the cron, never to an agent**, who neither runs it, plans it into a task nor reports it as owed:
+`forge release` runs it on a release the user asked for, the ledger host runs it daily, and a break either finds reaches the ledger as a task.
 
 **The browser set starts at `scheduled`, because a step that starts a browser is heavy (§6a).** Narrowing it at `runtime` bought almost nothing:
-its reach was the Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. A broken page is found by
-the next daily cron run or the next tag, and a tag never ships without the set. **Between them, a browser spec is the developing agent's call.**
-Where a UI change needs confirming in a browser, one spec on one engine — `bun run test:browser -- <spec>` — confirms it. It is never the whole
-set and never routine, because each run starts a browser and the set runs whole on the schedule anyway; it is a scoped run, never a task check or
-a gate green (§6c).
+its reach was the Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. A tag never ships without
+the set. **Between them, a browser spec is the developing agent's call**: one spec on one engine — `bun run test:browser -- <spec>` — where a UI
+change needs confirming, never the whole set or a routine run, since the schedule runs the set whole; it is a scoped run, never a task check or a
+gate green (§6c).
 
 **The cron run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
-default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in
-the project it ran for, kept to one open task that each later failure rewrites in place; a run that never reached a test — the server it needs did
-not come up — is logged and filed as nothing, because it says nothing about the code.
+default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes one open
+task in the project it ran for, rewritten in place by each later failure; a run that never reached a test — the server it needs did not come up —
+is logged and filed as nothing, since it says nothing about the code.
 
 **Chromium is the browser set's engine, and `browser: true` emits its row, `test:browser`.** An application that needs wider compatibility merges
 `crossEngineStep()` into its `scheduled` tier. A tag and the cron run then each take Firefox and WebKit, and each needs the second Playwright
@@ -532,9 +515,10 @@ fixed, or skipped as the first line of the case with `test.skip(browserName === 
 the skip is written. A spec that needs a Chromium-only Playwright capability — the CDP virtual WebAuthn authenticator has no Firefox or WebKit
 equivalent — is skipped on the other two the same way.
 
-**A browser run takes no retries, and never more workers than its Playwright server's client limit.** `retries` is `0`, because a retry turns an
-intermittent failure into a green. The worker count defaults to the client limit, read from the environment, because a worker past it only queues;
-a set whose specs share one database across workers sets `1` and says why.
+<!-- rule:apps-testing-no-retries --> A retry turns an intermittent failure into a green.
+
+**A browser run never takes more workers than its Playwright server's client limit.** The worker count defaults to the client limit, read from the
+environment, because a worker past it only queues; a set whose specs share one database across workers sets `1` and says why.
 
 [aa-1]: ./APP_ARCHITECTURE.md#1-the-composition-root
 [boundaries-2]: ./BOUNDARIES.md#2-middleware-ordering-and-guard-placement

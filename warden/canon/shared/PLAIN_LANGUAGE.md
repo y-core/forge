@@ -102,11 +102,10 @@ are chosen. Editing at the end can fix §5. It cannot fix §3.
 Name the reader before writing. The readers who recur here are not the same person.
 
 **A governing document is read by an agent or an engineer mid-task**, with the surrounding code already in view and a specific question in hand.
-They know the domain. They do not need the domain explained, and they will not read to the end. What they need is the ruling, the reason it holds,
-and the boundary where it stops.
+They know the domain and will not read to the end; they need the ruling, the reason it holds, and the boundary where it stops.
 
-**Feedback is read by the person who asked**, who holds the context of their own request and nothing else. They do not have your tool output, your
-file listing, or your reasoning. They know what they asked for and what they intend to do with the answer.
+**Feedback is read by the person who asked**, who holds the context of their own request and nothing else — not your tool output, file listing or
+reasoning — and knows what they asked for and what they will do with the answer.
 
 Reader characteristics that change the text: existing subject knowledge, how much of the surrounding state they can see, and what they will do next.
 Writing for a generic "user" is how a document ends up serving no one.
@@ -127,11 +126,10 @@ Context changes what the text should look like.
 - **The terminal.** Feedback is read once, in a scrolling pane, often while the reader is doing something else. There is no second page to turn to
   and no index.
 - **Limited attention.** The reader is mid-task. Attention spent parsing your structure is attention taken from the work.
-- **Arrival at one section.** A governing document is usually reached through search, landing in the middle. Every section must make sense to
-  somebody who has read no other section of that document. That is why cross-references exist (`AGENT_GUIDE.md` §5) — a section that only makes
-  sense in sequence is a section most of its readers will misread.
-- **Consequence of misunderstanding.** A destructive command, a security control, and a naming convention do not deserve the same care. Spend the
-  words where being wrong costs the most.
+- **Arrival at one section.** A governing document is usually reached through search, landing in the middle, so every section must make sense to
+  a reader who has read no other — which is why cross-references exist (`AGENT_GUIDE.md` §5).
+- **Consequence of misunderstanding.** Spend the words where being wrong costs the most: a destructive command, a security control and a naming
+  convention do not deserve the same care.
 
 ### 3d. Select Content, and Select It Ethically
 
@@ -177,8 +175,8 @@ These ordering rules are not matters of taste:
 1. **The most important message goes where the reader looks first** — the top. In feedback, the outcome leads. In a section, the ruling leads.
 2. **Build new information on what the reader already knows**, rather than defining forward.
 3. **Procedures run chronologically.** A step list is the one place the reader's order and the author's order coincide.
-4. **Warnings come before the instruction they qualify.** If getting a step wrong causes damage, the caveat precedes the command — never after it,
-   never in a trailing note. A reader who acts on line one has already acted before reaching line four.
+4. **Warnings come before the instruction they qualify.** Where getting a step wrong causes damage, the caveat precedes the command, never trails
+   it: a reader who acts on line one has acted before reaching line four.
 
 Rule 4 has a concrete form in feedback: **the risk of a destructive action is stated before the command that performs it**, not appended once the
 reader has copied it.
@@ -222,8 +220,8 @@ decoration costs the reader the moment they stop believing structure means somet
 Background, rationale, alternatives considered, and edge cases are often necessary without being central to what the reader came for. Keep them
 available and keep them out of the way: later in the section, in a linked document, or in a closing paragraph the reader can skip.
 
-**Do not make every piece of information compete for equal attention.** A response in which the outcome, an incidental observation, and a possible
-future improvement are three equal bullets has made the reader do the ranking. Rank it for them.
+**Do not make every piece of information compete for equal attention**: an outcome, an incidental observation and a possible improvement as three
+equal bullets leave the ranking to the reader.
 
 ---
 
@@ -236,9 +234,9 @@ This is the principle most people mean by "plain language". It is third for a re
 Where two expressions are equally accurate, prefer the one the reader is more likely to know: _before_ over _prior to_, _if_ over _in the event
 that_, _enough_ over _a sufficient number of_.
 
-**Simplification must not destroy precision.** A technical term is frequently the clearest term available, and the reader identified in §3a already
-knows most of them. _Idempotent_, _isolate_, _barrel_, _fail-closed_ — each names something no paraphrase names as exactly. Keep the term. Where it
-is genuinely novel to the reader, keep it _and explain it once_; do not replace it with an approximation that will need correcting later.
+**Simplification must not destroy precision.** A technical term is often the clearest available, and the §3a reader knows most of them:
+_idempotent_, _isolate_, _barrel_, _fail-closed_ each name something no paraphrase names as exactly. A term genuinely novel to the reader is kept
+_and explained once_, never replaced by an approximation that will need correcting.
 
 The goal is not simple words. The goal is **meaning that is immediately accessible to the intended reader** — which, for this corpus's readers,
 sometimes means the more technical word.
@@ -301,8 +299,8 @@ happened. State it once, accurately, and move on. Both failures are the same fai
 
 ## 6. Usable — Readers Can Act On It
 
-The fourth principle closes the loop. It is what makes this a communication standard rather than a style guide: an author cannot establish that a
-document works by believing it does.
+The fourth principle makes this a communication standard rather than a style guide: an author cannot establish that a document works by believing
+it does.
 
 ### 6a. Evaluate While Drafting
 
@@ -318,8 +316,8 @@ Before finishing, read the draft as the reader named in §3a, asking:
 
 ### 6b. The Curse of Knowledge
 
-Once you understand something, you cannot reliably predict what another reader will misunderstand. This is not a failure of effort, and more care
-does not fix it — the author is structurally the worst-placed judge of their own clarity.
+Once you understand something, you cannot reliably predict what another reader will misunderstand, and more care does not fix it: the author is
+structurally the worst-placed judge of their own clarity.
 
 Practical consequences follow. First, prefer the concrete over the abstract when both are available: a reader who does not share your model can
 still act on a named file, an exact command, or a specific failing case. Second, treat "this is obvious" as a warning; it is a statement about the
@@ -414,8 +412,7 @@ running tally of earlier mistakes. Combine several corrections into one statemen
 
 These are not corrections, and must not be treated as one:
 
-- **A follow-up question is not a signal of error.** A reader asking more about your work is asking about your work. Answer the question; do not
-  re-audit the earlier statement.
+- **A follow-up question is not a signal of error**: answer it, without re-auditing the earlier statement.
 - **An accurate statement needs no revisiting.** Do not restate how you verified something, re-hedge a claim you already qualified, or re-examine
   phrasing that was correct.
 
@@ -429,10 +426,10 @@ right, correct the substance and move on — without narrating the correction it
 **No check measures plainness, and none is proposed.** The claim is recorded here rather than implied, because a rule stronger than its control is
 the failure this corpus refuses.
 
-**A readability score is insufficient, and would be optimised against.** It can find long sentences and long words. It cannot determine whether the
-reader was given the information they needed (§3), whether the structure matches the task they arrived with (§4), whether the technical term
-retained was the right call (§5a), or whether the instructions let them finish (§6). A gate built on one would reward exactly the simplified wording
-§2 rejects, and text would be shortened to pass it — including the caveats §3d says may never be compressed away.
+**A readability score is insufficient, and would be optimised against.** It finds long sentences and words, but not whether the reader got what they
+needed (§3), whether the structure matches their task (§4), whether a retained technical term was right (§5a), or whether the instructions let them
+finish (§6). A gate built on one would reward the simplified wording §2 rejects, and text would be shortened to pass it, the caveats §3d protects
+included.
 
 _Holds instead:_
 

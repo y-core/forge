@@ -3,10 +3,13 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync, rmSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { statementsDigest } from "../rules/render";
 import type { SourceDoc } from "../types";
 import { build } from "./build";
 import { openDatabase } from "./db";
 import { advisory, freshness } from "./freshness";
+
+const NONE = statementsDigest(new Map());
 
 const roots: string[] = [];
 afterAll(() => {
@@ -33,7 +36,7 @@ describe("freshness()", () => {
     const { sources } = fixture({ "docs/A.md": DOC }, "warden-fresh-");
     build(db, sources, "1.0.0");
 
-    expect(freshness(db, sources, "1.0.0")).toEqual({ fresh: true, rebuild: false, stale: [], reason: "" });
+    expect(freshness(db, sources, "1.0.0", NONE)).toEqual({ fresh: true, rebuild: false, stale: [], reason: "" });
     db.close();
   });
 
@@ -42,10 +45,22 @@ describe("freshness()", () => {
     const { sources } = fixture({ "docs/A.md": DOC }, "warden-version-");
     build(db, sources, "1.0.0");
 
-    const state = freshness(db, sources, "1.0.1");
+    const state = freshness(db, sources, "1.0.1", NONE);
 
     expect(state.rebuild).toBe(true);
     expect(state.reason).toContain("canon version");
+    db.close();
+  });
+
+  it("demands a whole rebuild when a rule statement changed, though no document did", () => {
+    const db = openDatabase(":memory:");
+    const { sources } = fixture({ "docs/A.md": DOC }, "warden-statement-");
+    build(db, sources, "1.0.0", undefined, new Map([["forge-x", "Never do x."]]));
+
+    const state = freshness(db, sources, "1.0.0", statementsDigest(new Map([["forge-x", "Never do y."]])));
+
+    expect(state.rebuild).toBe(true);
+    expect(state.reason).toContain("rule statement");
     db.close();
   });
 
@@ -54,7 +69,7 @@ describe("freshness()", () => {
     const { sources } = fixture({ "docs/A.md": DOC, "docs/B.md": DOC }, "warden-set-");
     build(db, sources, "1.0.0");
 
-    expect(freshness(db, sources.slice(0, 1), "1.0.0").rebuild).toBe(true);
+    expect(freshness(db, sources.slice(0, 1), "1.0.0", NONE).rebuild).toBe(true);
     db.close();
   });
 
@@ -64,7 +79,7 @@ describe("freshness()", () => {
     build(db, sources, "1.0.0");
     writeFileSync((sources[1] as SourceDoc).file, `${DOC}\nAnd more.\n`, "utf-8");
 
-    const state = freshness(db, sources, "1.0.0");
+    const state = freshness(db, sources, "1.0.0", NONE);
 
     expect(state).toMatchObject({ fresh: false, rebuild: false, stale: ["docs/B.md"] });
     db.close();
@@ -77,7 +92,7 @@ describe("freshness()", () => {
     const later = new Date(Date.now() + 60_000);
     utimesSync((sources[0] as SourceDoc).file, later, later);
 
-    expect(freshness(db, sources, "1.0.0").fresh).toBe(true);
+    expect(freshness(db, sources, "1.0.0", NONE).fresh).toBe(true);
     db.close();
   });
 });

@@ -1,0 +1,13 @@
+diff --git a/src/ui/core/description-list.tsx b/src/ui/core/description-list.tsx
+index a8dd5f36..ccc65c6b 100644
+--- a/src/ui/core/description-list.tsx
++++ b/src/ui/core/description-list.tsx
+@@ -13,7 +13,7 @@ interface DescriptionListTermProps extends Omit<JSX.IntrinsicElements["dt"], "ch
+ 
+ type DescriptionListDetailsProps = JSX.IntrinsicElements["dd"];
+ 
+-const TERM_LINK = "focus-ring rounded-sm underline underline-offset-4 hover:text-primary";
++const TERM_LINK = "rounded-sm underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring";
+ 
+ const DescriptionListRoot: FC<DescriptionListProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+   <dl data-slot={slotToken("description-list", inherited)} class={cn("grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm", cls)} {...rest}>

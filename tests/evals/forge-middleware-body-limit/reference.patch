@@ -1,0 +1,264 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a192ccd..e7959c1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -36,6 +36,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
+ 
+ - **`Finding.rule`, in `@y-core/forge/tooling/gate`**: the id of the rule a finding breaks. `formatFinding` prints it as `[rule] ` before
+   the message when it is set, and a finding without one prints as before.
++- **`bodyLimit({ maxBytes })` in `@y-core/forge/security` caps a request body**, refusing `413` on a `Content-Length` over the cap before
++  reading and on a streamed body the moment it passes it. The refusal is `{ guard: "body-limit", status: 413, reason: "too-large" }`, a new
++  member of `Refusal`, answered through `onRefuse` like every other guard's.
+ 
+ ---
+ 
+diff --git a/docs/FORGE_ERRORS.md b/docs/FORGE_ERRORS.md
+index 3deabe36..b0793ee1 100644
+--- a/docs/FORGE_ERRORS.md
++++ b/docs/FORGE_ERRORS.md
+@@ -188,6 +188,7 @@ forge's own answers stay plain text (§3d), every refusal is logged as `security
+ | `rate-limit` | `429` | `retryAfter`, in seconds | `Too many requests. Please try again later.` |
+ | `rate-limit` | `503` | `reason`: `binding-absent`, `key-failed` or `binding-failed` | `Service Unavailable` |
+ | `admin` | `403` | nothing more | `Forbidden` |
++| `body-limit` | `413` | `reason: "too-large"` | `Payload Too Large` |
+ 
+ **The reason is for the hook and the log, never the client.** No default writes it into a body or a header, and a hook that echoes it breaks
+ [`ERROR_HANDLING.md`][eh-3b] §3b.
+diff --git a/src/context/types.ts b/src/context/types.ts
+index bbba70f8..8470fcec 100644
+--- a/src/context/types.ts
++++ b/src/context/types.ts
+@@ -93,6 +93,7 @@ export type Refusal =
+     }
+   | { readonly guard: "csrf"; readonly status: 413; readonly reason: "too-large" }
+   | { readonly guard: "csrf"; readonly status: 400; readonly reason: "unreadable-body" }
++  | { readonly guard: "body-limit"; readonly status: 413; readonly reason: "too-large" }
+   | { readonly guard: "origin"; readonly status: 403; readonly reason: "missing" | "disallowed" | "cross-site" | "same-site" }
+   | { readonly guard: "rate-limit"; readonly status: 429; readonly retryAfter?: number }
+   | { readonly guard: "rate-limit"; readonly status: 503; readonly reason: "binding-absent" | "key-failed" | "binding-failed" }
+diff --git a/src/security/README.md b/src/security/README.md
+index 9aa3a23e..b0423844 100644
+--- a/src/security/README.md
++++ b/src/security/README.md
+@@ -546,6 +546,21 @@ rate limit, are [§5c][sh-5c]'s.
+ 
+ ---
+ 
++## Capping a request body
++
++```ts
++import { bodyLimit } from "@y-core/forge/security";
++
++app.use("/uploads/*", bodyLimit({ maxBytes: 1_048_576 }));
++```
++
++A `Content-Length` over `maxBytes` is refused `413` before the body is read. A body with no `Content-Length`, or one that lies, is counted as it
++streams and refused the moment it passes the cap; a body within it is handed on whole, so the handler reads it as usual. The refusal is
++`{ guard: "body-limit", status: 413, reason: "too-large" }`, answered by `onRefuse`, else the chain's hook, else `Payload Too Large`
++([`FORGE_ERRORS.md`][eh-3e] §3e).
++
++---
++
+ ## Correlating requests in logs
+ 
+ ```ts
+@@ -752,6 +767,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
+ [assets-readme]: ../tooling/assets/README.md
+ [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
+ [cf-dev]: ../tooling/cf/README.md#running-the-app-locally
++[eh-3e]: ../../docs/FORGE_ERRORS.md#3e-one-refusal-contract-for-every-guard
+ [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
+ [form-readme]: ../form/README.md
+ [html-readme]: ../html/README.md
+diff --git a/src/security/body-limit.test.ts b/src/security/body-limit.test.ts
+new file mode 100644
+index 00000000..8ef36f64
+--- /dev/null
++++ b/src/security/body-limit.test.ts
+@@ -0,0 +1,91 @@
++import { describe, expect, it } from "bun:test";
++
++import type { Middleware } from "@remix-run/fetch-router";
++
++import { Forge } from "../app/forge-app";
++import { refuseHookCtx } from "../context/refusal";
++import type { Refusal } from "../context/types";
++import { mapHandler } from "../testing/route";
++import { bodyLimit } from "./body-limit";
++import type { BodyLimitOptions } from "./types";
++
++function makeApp(options: BodyLimitOptions, before: Middleware[] = []) {
++  const app = new Forge();
++  app.use("*", ...before, bodyLimit(options));
++  mapHandler(app, "POST", "/upload", async ({ request }) => new Response(`read ${(await request.arrayBuffer()).byteLength}`));
++  return app;
++}
++
++function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {
++  const encoder = new TextEncoder();
++  return new ReadableStream({
++    start(controller) {
++      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
++      controller.close();
++    },
++  });
++}
++
++function streamed(body: ReadableStream<Uint8Array>): RequestInit {
++  return { method: "POST", body, duplex: "half" } as RequestInit;
++}
++
++describe("bodyLimit", () => {
++  it("passes a body within the cap on to the handler, which can still read it whole", async () => {
++    const res = await makeApp({ maxBytes: 8 }).request("/upload", { method: "POST", body: "12345678" });
++
++    expect([res.status, await res.text()]).toEqual([200, "read 8"]);
++  });
++
++  it("refuses 413 on a declared Content-Length over the cap, before the handler runs", async () => {
++    const res = await makeApp({ maxBytes: 4 }).request("/upload", { method: "POST", body: "12345", headers: { "Content-Length": "5" } });
++
++    expect([res.status, await res.text()]).toEqual([413, "Payload Too Large"]);
++  });
++
++  it("refuses 413 on a streamed body that runs past the cap with no Content-Length", async () => {
++    const res = await makeApp({ maxBytes: 4 }).request("/upload", streamed(streamOf("123", "456")));
++
++    expect([res.status, await res.text()]).toEqual([413, "Payload Too Large"]);
++  });
++
++  it("passes a streamed body that stays within the cap", async () => {
++    const res = await makeApp({ maxBytes: 6 }).request("/upload", streamed(streamOf("123", "456")));
++
++    expect([res.status, await res.text()]).toEqual([200, "read 6"]);
++  });
++
++  it("answers through its own hook, handing it the body-limit refusal", async () => {
++    const seen: Refusal[] = [];
++    const onRefuse = (_c: unknown, refusal: Refusal) => {
++      seen.push(refusal);
++      return new Response("too big", { status: 413 });
++    };
++    const res = await makeApp({ maxBytes: 1, onRefuse }).request("/upload", { method: "POST", body: "12" });
++
++    expect([res.status, await res.text()]).toEqual([413, "too big"]);
++    expect(seen).toEqual([{ guard: "body-limit", status: 413, reason: "too-large" }]);
++  });
++
++  it("answers through the chain's hook when it has none of its own", async () => {
++    const publish: Middleware = (context, next) => {
++      refuseHookCtx.set(context, () => new Response("chain says no", { status: 413 }));
++      return next();
++    };
++    const res = await makeApp({ maxBytes: 1 }, [publish]).request("/upload", { method: "POST", body: "12" });
++
++    expect(await res.text()).toBe("chain says no");
++  });
++
++  it("lets a bodyless request through untouched", async () => {
++    const app = new Forge();
++    app.use("*", bodyLimit({ maxBytes: 0 }));
++    mapHandler(app, "GET", "/page", () => new Response("ok"));
++
++    expect((await app.request("/page")).status).toBe(200);
++  });
++
++  it("refuses a cap that is not a whole number of bytes when it is built", () => {
++    expect(() => bodyLimit({ maxBytes: 1.5 })).toThrow("bodyLimit: maxBytes must be a whole number of bytes, got 1.5");
++  });
++});
+diff --git a/src/security/body-limit.ts b/src/security/body-limit.ts
+new file mode 100644
+index 00000000..2dc52b05
+--- /dev/null
++++ b/src/security/body-limit.ts
+@@ -0,0 +1,53 @@
++import type { Middleware } from "@remix-run/fetch-router";
++
++import { createRefusalAnswer } from "./refusal";
++import type { BodyLimitOptions } from "./types";
++
++const TOO_LARGE = { guard: "body-limit", status: 413, reason: "too-large" } as const;
++
++function declaredLength(request: Request): number | null {
++  const header = request.headers.get("content-length");
++  if (header === null) return null;
++  const length = Number(header);
++  return Number.isFinite(length) ? length : null;
++}
++
++async function readCapped(body: ReadableStream<Uint8Array>, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
++  let seen = 0;
++  let overflowed = false;
++  const counter = new TransformStream<Uint8Array, Uint8Array>({
++    transform(chunk, controller) {
++      seen += chunk.byteLength;
++      if (seen > maxBytes) {
++        overflowed = true;
++        controller.error(new Error("body exceeds the limit"));
++        return;
++      }
++      controller.enqueue(chunk);
++    },
++  });
++  try {
++    return new Uint8Array(await new Response(body.pipeThrough(counter)).arrayBuffer());
++  } catch (thrown) {
++    if (overflowed) return null;
++    throw thrown;
++  }
++}
++
++/** Middleware that refuses `413` a body over `maxBytes`, by its `Content-Length` before reading and by counting the stream when the header is absent or lies. @public */
++export function bodyLimit<Bindings = Record<string, unknown>>(options: BodyLimitOptions<Bindings>): Middleware {
++  const { maxBytes } = options;
++  if (!Number.isInteger(maxBytes) || maxBytes < 0) throw new Error(`bodyLimit: maxBytes must be a whole number of bytes, got ${maxBytes}`);
++  const refuse = createRefusalAnswer<Bindings>(options.onRefuse);
++
++  return async (context, next) => {
++    const { request } = context;
++    const declared = declaredLength(request);
++    if (declared !== null && declared > maxBytes) return refuse(context, TOO_LARGE);
++    if (request.body === null) return next();
++    const bytes = await readCapped(request.body, maxBytes);
++    if (bytes === null) return refuse(context, TOO_LARGE);
++    context.request = new Request(request, { method: request.method, body: bytes });
++    return next();
++  };
++}
+diff --git a/src/security/mod.ts b/src/security/mod.ts
+index 229c10cd..98c7e220 100644
+--- a/src/security/mod.ts
++++ b/src/security/mod.ts
+@@ -1,3 +1,4 @@
++export { bodyLimit } from "./body-limit";
+ export { parseWebhookSecrets, WebhookSecretSchema } from "./config";
+ export { isSafeMethod, requireFormContentType } from "./content-type";
+ export { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
+@@ -17,6 +18,7 @@ export { requestId, requestIdCtx } from "./request-id";
+ export type {
+   ApplySecurityHeadersOptions,
+   BaseUrlConfig,
++  BodyLimitOptions,
+   CorsOptions,
+   CrossOriginResult,
+   CspDirectiveOptions,
+diff --git a/src/security/types.ts b/src/security/types.ts
+index 962e51d1..0d63ceae 100644
+--- a/src/security/types.ts
++++ b/src/security/types.ts
+@@ -149,6 +149,14 @@ export type RateLimitOptions<Bindings = Record<string, unknown>> = {
+     }
+ );
+ 
++/** `bodyLimit` options: the byte cap, and the hook that answers a refused body. @public */
++export interface BodyLimitOptions<Bindings = Record<string, unknown>> {
++  /** The largest body accepted, in bytes, whether `Content-Length` declares it or the stream delivers it. */
++  maxBytes: number;
++  /** Answers the `413` in place of the chain's hook, or declines with `undefined` to it; with neither answering, forge's plain-text default. */
++  onRefuse?: RefuseHook<Bindings>;
++}
++
+ /** CORS middleware options: allowed origins, methods, allowed and exposed headers, credentials, and preflight cache. @public */
+ export interface CorsOptions<Bindings = Record<string, unknown>> {
+   /** Exact allowed origins or subdomain patterns ("https://*.example.com"), or a resolver answering them once per `env` from that `env`. */

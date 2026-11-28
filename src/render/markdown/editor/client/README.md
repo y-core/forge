@@ -90,7 +90,8 @@ It needs `dialect.html`: mounting in `html` or calling `setRendering("html")` wi
 Render with `renderMarkdownHtml` under an allowlist schema, and pass `lineAnchors: true` so the viewport can keep the reader's place:
 
 ```ts
-import { MARKDOWN_ELEMENTS, renderMarkdownHtml } from "@y-core/forge/render/markdown";
+import { MARKDOWN_ELEMENTS, parseMarkdown, renderMarkdownHtml } from "@y-core/forge/render/markdown";
+import type { ViewportDialect } from "@y-core/forge/render/markdown/editor/client";
 
 const APP_DIALECT: ViewportDialect = {
   spans,

@@ -1,0 +1,1 @@
+-- The app's declared schema: edit this, then `bun run db:compose` writes the migration.

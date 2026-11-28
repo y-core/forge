@@ -1,14 +1,22 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { balancedSpan, blankSourceLiterals, endOfString, lineAt, listFiles } from "./source-scan";
+import { balancedSpan, blankSourceLiterals, endOfString, isTestSource, lineAt, listFiles } from "./source-scan";
 import type { ConfigFileCheckConfig } from "./types";
 
 const DEFINE_HELPER = /^define[A-Z]\w*$/;
+
+/** The files tools write into `config/` by default: the release's section digests and the ratchet's budgets. @public */
+export const CONFIG_STATE_FILES: readonly string[] = ["config/changelog-sections.json", "config/rules-baseline.json"];
+
+/** The directories tools write into `config/` by default: `forge db`'s migrations, schema snapshot and row types, `DB_LAYOUT`'s home. @public */
+export const CONFIG_STATE_DIRS: readonly string[] = ["config/db"];
+
+const SIBLING_IMPORT = /(?:from|import)\s*\(?\s*["']\.\/([^"'/]+)["']/g;
 
 const BASES = resolve(dirname(fileURLToPath(import.meta.url)), "../../config");
 
@@ -221,11 +229,120 @@ export function checkConfigBaseline(root: string): Finding[] {
   ];
 }
 
-/** Holds every `config/*.config.ts` to imports, `const` declarations and one default export calling an imported `define*` helper, and the tool configs to forge's bases under `baseline`. @public */
+const MARKDOWN_IGNORE = "**/*.md";
+
+function checkMarkdownIgnored(root: string): Finding[] {
+  const file = ".oxfmtrc.json";
+  const { config, findings } = localConfig(root, file);
+  if (config === undefined) return findings;
+  if (stringsOf(config["ignorePatterns"]).includes(MARKDOWN_IGNORE)) return findings;
+  return [
+    ...findings,
+    fail(
+      `\`ignorePatterns\` leaves out \`${MARKDOWN_IGNORE}\` while the table runs \`validate-markdown\` — the formatter and the check would own the same bytes`,
+      { file },
+    ),
+  ];
+}
+
+const PLAYWRIGHT_CONFIG = "playwright.config.ts";
+
+// Node loads `playwright.config.ts` and refuses to strip types under `node_modules`, so only a prebuilt subpath loads there.
+function checkPlaywrightImports(root: string, nodeSubpaths: readonly string[]): Finding[] {
+  const path = join(root, PLAYWRIGHT_CONFIG);
+  if (!existsSync(path)) return [];
+  const source = readFileSync(path, "utf-8");
+  const subpaths = nodeSubpaths.map((subpath) => subpath.replace(/^\.\//, ""));
+  const reachesNodeSubpath = (specifier: string): boolean =>
+    specifier.startsWith("@y-core/forge")
+      ? subpaths.some((subpath) => specifier === `@y-core/forge/${subpath}`)
+      : !specifier.startsWith("./src/") || subpaths.some((subpath) => specifier.startsWith(`./src/${subpath}/`));
+  return [...source.matchAll(/from\s+"([^"]+)"/g)]
+    .filter((match) => !reachesNodeSubpath(match[1] ?? ""))
+    .map((match) =>
+      fail(
+        `imports \`${match[1] ?? ""}\`, which no \`forge.node\` subpath covers — node loads this file and cannot strip a \`.ts\` under \`node_modules\``,
+        { file: PLAYWRIGHT_CONFIG, line: lineAt(source, match.index) },
+      ),
+    );
+}
+
+/** The `config/` files a `*.config.ts` reaches through sibling imports, directly or through another module there. */
+function importedModules(dir: string, entries: readonly string[], present: ReadonlySet<string>): Set<string> {
+  const reached = new Set<string>();
+  const queue = [...entries];
+  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+    if (!name.endsWith(".ts")) continue;
+    for (const match of readFileSync(join(dir, name), "utf-8").matchAll(SIBLING_IMPORT)) {
+      const specifier = match[1] ?? "";
+      const target = [specifier, `${specifier}.ts`].find((candidate) => present.has(candidate));
+      if (target === undefined || reached.has(target)) continue;
+      reached.add(target);
+      queue.push(target);
+    }
+  }
+  return reached;
+}
+
+// `config/` is where a developer tweaks the tools, so a test, a script or a tree of its own there is a file nobody looks for there.
+function checkConfigScope(root: string, stateFiles: readonly string[], stateDirs: readonly string[]): Finding[] {
+  const dir = join(root, "config");
+  const listed = readdirSync(dir, { withFileTypes: true });
+  const files = listed.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  const present = new Set(files);
+  const imported = importedModules(
+    dir,
+    files.filter((name) => name.endsWith(".config.ts")),
+    present,
+  );
+  const declared = new Set(stateFiles);
+  const declaredDirs = new Set(stateDirs.map((path) => path.replace(/\/+$/, "")));
+  const findings: Finding[] = listed
+    .filter((entry) => entry.isDirectory() && !declaredDirs.has(`config/${entry.name}`))
+    .map((entry) =>
+      fail("is a directory no tool is declared to write — move what it holds to the code it serves, or declare it in `stateDirs`", {
+        file: `config/${entry.name}`,
+      }),
+    );
+  for (const name of files) {
+    const file = `config/${name}`;
+    if (isTestSource(name)) {
+      findings.push(fail("is a test — a config gets no test; test the code that reads it, beside that code", { file }));
+      continue;
+    }
+    if (!name.endsWith(".ts")) {
+      if (!declared.has(file) && !imported.has(name))
+        findings.push(
+          fail("is neither a module a `*.config.ts` imports nor a declared state file — move it, or declare it in `stateFiles`", { file }),
+        );
+      continue;
+    }
+    if (name.endsWith(".config.ts")) continue;
+    const source = blankSourceLiterals(readFileSync(join(dir, name), "utf-8"));
+    const main = source.indexOf("import.meta.main");
+    if (main !== -1)
+      findings.push(
+        fail("runs code when executed directly (`import.meta.main`) — a script belongs beside the code it serves", {
+          file,
+          line: lineAt(source, main),
+        }),
+      );
+    else if (!imported.has(name))
+      findings.push(fail("is a module no `*.config.ts` imports — fold it into the code that uses it, or delete it", { file }));
+  }
+  return findings;
+}
+
+/** Holds every `config/*.config.ts` to imports, `const` declarations and one default export calling an imported `define*` helper, `config/` to those modules, what they import and its state files, the tool configs to forge's bases under `baseline`, markdown off the formatter under `markdown`, and the Playwright config to `nodeSubpaths`. @public */
 export function checkConfigFiles(config: ConfigFileCheckConfig): CheckResult {
   const files = listFiles(join(config.root, "config"), (name) => name.endsWith(".config.ts"));
   if (files.length === 0) return scannedNothing("`config/` holds no `*.config.ts` module", "config-files");
-  const findings = files.flatMap((name) => checkConfigFile(config.root, name));
+  const findings = [
+    ...files.flatMap((name) => checkConfigFile(config.root, name)),
+    ...checkConfigScope(config.root, config.stateFiles ?? CONFIG_STATE_FILES, config.stateDirs ?? CONFIG_STATE_DIRS),
+    ...(config.markdown === true ? checkMarkdownIgnored(config.root) : []),
+    ...(config.nodeSubpaths === undefined ? [] : checkPlaywrightImports(config.root, config.nodeSubpaths)),
+  ];
   if (config.baseline !== true) return checkResult(findings, `${files.length} config module(s)`);
   return checkResult([...findings, ...checkConfigBaseline(config.root)], `${files.length} config module(s) and the tool configs`);
 }

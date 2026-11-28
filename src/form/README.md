@@ -168,8 +168,8 @@ applyMiddlewareChain<AppEnv>(app, {
 });
 ```
 
-**An app has one policy.** It is `applyMiddlewareChain`'s own option, never a `MiddlewareContribution`'s. So `maxBytes` is app-wide: set it
-on the one policy. Why there is one is [`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f's.
+**An app has one policy**, `applyMiddlewareChain`'s own option and never a `MiddlewareContribution`'s
+([`ROUTING_AND_MIDDLEWARE.md`][ram-3f] §3f).
 
 **A route with its own origin check or rate limit goes in a guard group**, the chain's `guards`, not in its own `middleware` array. The group
 verifies the token after those checks; a route's own middleware runs after the token was already verified.
@@ -240,8 +240,8 @@ explaining it.
 
 `csrfFieldCtx` is the same idea for the form field, and is what the `defineAction` pipeline reads to know which field to drop.
 
-**Read both with `.getOptional`, never `.get`.** Absence says the policy did not cover this request, so nothing was consumed and nothing should be
-dropped for it ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
+**Read both with `.getOptional`**: absence says the policy did not cover this request, so nothing was consumed and nothing should be dropped for it
+([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 
 ---
 
@@ -399,7 +399,7 @@ shape of an ordinary validation refusal ([`INPUT_VALIDATION.md`][iv-4b] §4b).
 
 **An oversized body is a `413`, never a `403`.**
 
-**`secretKey` is the Turnstile secret, never the site key**, and both come from bindings rather than literals. The same holds for `CSRF_SECRET`.
+**`secretKey` is the Turnstile secret, never the site key**; both, like `CSRF_SECRET`, come from bindings ([`SECURITY_HARDENING.md`][sh-8] §8).
 Cloudflare's always-pass testing keys are `TURNSTILE_TEST_KEYS` in `@y-core/forge/testing/form`, kept off every runtime subpath so that no
 production Worker can ship them by accident.
 
@@ -410,11 +410,9 @@ production Worker can ship them by accident.
 
 ## Gotchas
 
-**A raised `maxBytes` must be raised in both places.** The CSRF policy parses before the handler does, so a route that raises `defineAction`'s
-`maxBytes` must raise the policy's to match or the policy rejects first ([`INPUT_VALIDATION.md`][iv-2c] §2c). The policy's cap is app-wide; each
-route's own `maxBytes` still caps that route. Forgetting it says so: once the shared
-parse has been **refused** at the smaller cap, a later, larger cap throws a wiring error naming both caps — `isFormCapConflict(error)` identifies
-it — which the CSRF policy, the pipeline and `readAuthSubmission` all rethrow to the error boundary rather than replaying as a `413`.
+**A raised `maxBytes` must be raised in both places.** The CSRF policy parses before the handler does, so the policy's app-wide cap must be at least
+the largest route's, or the policy rejects first. Forgetting it throws a wiring error that `isFormCapConflict` identifies, not a `413`
+([`INPUT_VALIDATION.md`][iv-2c] §2c).
 
 **A token is bound to a path, so a token minted for `c.url.pathname` is wrong the moment the form posts elsewhere** — verification fails with
 `path-mismatch`. Mint one token per render and never cache one across requests.

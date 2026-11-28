@@ -17,7 +17,7 @@ function arrow(body: AstNode): AstNode {
 }
 
 const message = (method: string, where: string) =>
-  `\`.${method}(…)\` runs once per item ${where} — read every key in one statement through \`json_each\`, or load them through \`createRowLoader\` (docs/STORAGE_BINDINGS.md §1h).`;
+  `[forge-sql-in-loop] \`.${method}(…)\` runs once per item ${where} — read every key in one statement through \`json_each\`, or load them through \`createRowLoader\`.`;
 
 describe("sql-in-loop", () => {
   it("reports each D1 read or write awaited in the body of every loop form", () => {

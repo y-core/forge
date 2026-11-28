@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { resolve } from "node:path";
 
 import { cloudflareWorkerSteps } from "../../src/tooling/gate/presets";
 import { isCheckStep } from "../../src/tooling/gate/steps";
@@ -101,12 +102,26 @@ describe("wardenAppSteps()", () => {
     citableDirs: ["node_modules/@y-core/forge/warden/canon/shared"],
   };
 
-  it("declares the docs row on static and the index rows on unit, with no refs and no other tier", () => {
+  it("declares the pattern and docs rows on static and the index rows on unit, with no refs and no other tier", () => {
     const tiers = wardenAppSteps(options);
 
     expect(Object.keys(tiers)).toEqual(["static", "unit"]);
-    expect(tiers.static?.map((entry) => ("label" in entry ? entry.label : entry))).toEqual(["validate-docs"]);
+    expect(tiers.static?.map((entry) => ("label" in entry ? entry.label : entry))).toEqual(["warden:check", "validate-docs"]);
     expect(tiers.unit?.map((entry) => ("label" in entry ? entry.label : entry))).toEqual(["warden:index", "warden:queries", "warden:duplicates"]);
+  });
+
+  it("warns on the workers-consumer app's planted raw `c.env.SECRET` read through its warden:check row", async () => {
+    const root = resolve(import.meta.dir, "../../tests/fixtures/workers-consumer/app");
+    const step = wardenAppSteps({ ...options, root })
+      .static?.filter((entry) => "label" in entry)
+      .find((entry) => isCheckStep(entry) && entry.label === "warden:check");
+    if (step === undefined || !isCheckStep(step)) throw new Error("no warden:check row");
+    const result = await step.run("static");
+
+    expect(result.ok).toBe(true);
+    expect(result.findings.map(({ level, rule, file, line }) => ({ level, rule, file, line }))).toEqual([
+      { level: "warn", rule: "apps-code-review-raw-env", file: "src/services/mail.ts", line: 2 },
+    ]);
   });
 
   it("merges onto the Cloudflare preset into a table that resolves, the index rows after `test`", () => {

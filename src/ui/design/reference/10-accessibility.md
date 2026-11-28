@@ -70,8 +70,8 @@ Forge publishes state twice, on purpose. `stateAttrs` (SSR) and `applyStateAttrs
 `STATE_ATTRS` — `data-pressed`, `data-selected`, `data-checked`, `data-invalid` and the rest — and those drive **styling and the client runtime**.
 The ARIA attribute beside them drives **assistive technology**. Neither substitutes for the other.
 
-**A `data-state` with no ARIA counterpart styles perfectly and announces nothing.** The component looks right in every review that is conducted by
-looking.
+<!-- rule:forge-ui-a11y-aria-beside-data --> **A `data-state` with no ARIA counterpart styles perfectly and announces nothing.** The component looks
+right in every review that is conducted by looking.
 
 | What you are expressing | The styling hook | The ARIA counterpart |
 | --- | --- | --- |
@@ -82,13 +82,9 @@ looking.
 | A field holds an error | `data-invalid` | `aria-invalid` plus `aria-describedby` |
 | A control is inert but discoverable | `data-disabled` | `aria-disabled` |
 
-Default: emit both halves for every state you express, and emit the `data-*` half through `stateAttrs` or `applyStateAttrs` rather than by writing
-the attribute name — unless the element is purely decorative and carries no state a reader can act on. <!-- rule:forge-ui-a11y-aria-beside-data -->
-
-Default: read state in CSS from the `data-*` attribute, not from the `aria-*` one — unless no `data-*` exists for that state, in which case add it
-to `STATE_ATTRS` first. <!-- rule:forge-ui-a11y-state-attrs-source --> Boolean `data-*` states are presence flags with an empty value, so the
-selector is `[data-pressed]`; `aria-*` keeps its `"true"` / `"false"` string form because WAI-ARIA requires it. Selecting on ARIA is what eventually
-produces an element whose styling and whose announcement disagree.
+<!-- rule:forge-ui-a11y-state-attrs-source --> Boolean `data-*` states are presence flags with an empty value, so the selector is `[data-pressed]`;
+`aria-*` keeps its `"true"` / `"false"` string form because WAI-ARIA requires it. Selecting on ARIA is what eventually produces an element whose
+styling and whose announcement disagree.
 
 ---
 
@@ -96,9 +92,8 @@ produces an element whose styling and whose announcement disagree.
 
 ### 3a. Labels and the wiring behind them
 
-Default: name a control with a visible `Label` or `FormField.Label` — unless the design genuinely has no room for a visible label, in which case see
-the screen-reader-only rule below. <!-- rule:forge-ui-a11y-label-element --> A visible label is reviewable by anyone who can see the page. An
-`aria-label` is reviewable only by someone who reads the source or runs a screen reader, which is why it drifts.
+<!-- rule:forge-ui-a11y-label-element --> A visible label is reviewable by anyone who can see the page. An `aria-label` is reviewable only by
+someone who reads the source or runs a screen reader, which is why it drifts.
 
 Field id and `aria-describedby` wiring is owned by [`06-forms.md`][forms] — `forge-ui-form-id-helpers` for deriving ids through `fieldId` /
 `fieldDescriptionId` / `fieldErrorId` / `fieldDescribedBy` rather than as literals, and `forge-ui-form-control-props` for passing a `field`
@@ -125,44 +120,33 @@ import { FormField, Input } from "@y-core/forge/ui/core";
 
 ### 3b. Naming a control with no visible text
 
-Default: when a control genuinely has no visible text — an icon-only `Button shape="icon"` — pair a decorative `Icon` with visually-hidden text
-rather than an `aria-label`, wherever the layout allows it — unless the sr-only span would be read twice because the control already has a name.
 <!-- rule:forge-ui-a11y-icon-plus-text --> `Icon` is `aria-hidden` by default, so it contributes nothing to the name; the `sr-only` span is real
 text that a reviewer can see in the source next to what it names, and that survives translation the way an attribute value tends not to. `Spinner`
 is the shipped example of the pattern: `aria-hidden` on the glyph and an `sr-only` label.
 
-Default: an icon-only `Button` — `shape="icon"` or `shape="circle"` — carries an `aria-label` naming the action it performs, unless the
-visually-hidden span above is used instead, which is the preferred form wherever the layout allows it. <!-- rule:forge-ui-icon-button-label -->
-`forge-ui-accessible-name` in `floor.md` is the invariant; what this Default adds is the shape that triggers it. Those two shapes size the control
-to its glyph, so there is no text left in it to carry a name, and `Icon` is `aria-hidden` by default — the button ships nameless unless one is
-given.
+<!-- rule:forge-ui-icon-button-label --> `forge-ui-accessible-name` in `floor.md` is the invariant; what this Default adds is the shape that
+triggers it. Those two shapes size the control to its glyph, so there is no text left in it to carry a name, and `Icon` is `aria-hidden` by default
+— the button ships nameless unless one is given.
 
-Default: a stepper, a nudge or any repeated pair of adjacent controls names the quantity it moves, not the direction it moves it — unless the page
-provably renders one such pair. <!-- rule:forge-ui-a11y-stepper-names-its-quantity --> `NumberField.Increment` and `.Decrement` default to
-"Increment" and "Decrement", which is a complete name for one field on a page and an ambiguous one for two: a reader tabbing a quantity beside a
-price hears the same two words twice and cannot tell which column they belong to. Pass `label` — "Increase quantity" — wherever a second pair can
-appear. Override for a form with exactly one, which is why the default is not the empty string.
+<!-- rule:forge-ui-a11y-stepper-names-its-quantity --> `NumberField.Increment` and `.Decrement` default to "Increment" and "Decrement", which is a
+complete name for one field on a page and an ambiguous one for two: a reader tabbing a quantity beside a price hears the same two words twice and
+cannot tell which column they belong to. Pass `label` — "Increase quantity" — wherever a second pair can appear. A page with exactly one pair is why
+the default is not the empty string.
 
 ### 3c. Required markers and `aria-readonly`
 
-Default: keep the required marker decorative and carry requiredness on the control — unless the form has no visual required convention at all.
 <!-- rule:forge-ui-a11y-required-marker --> `Label`'s `required` prop renders an `aria-hidden` asterisk; the `required` attribute on the input is
 what is actually announced.
 
-Default: never put `aria-readonly` on a `<button>` or a `role="button"` element — carry the state on the control the button acts on, or use
-`disabled` — unless the element's role genuinely supports it.
-<!-- rule:forge-ui-a11y-no-aria-readonly-on-button -->
+<!-- rule:forge-ui-a11y-no-aria-readonly-on-button --> `aria-readonly` is not a supported attribute of `role="button"`, so a validator flags it and
+no assistive technology acts on it. `NumberField`'s steppers are where the mistake looks most plausible — a `readonly` input beside two buttons —
+and forge deliberately leaves them bare, letting the input's own `readonly` carry the state.
 
-`aria-readonly` is not a supported attribute of `role="button"`, so a validator flags it and no assistive technology acts on it. `NumberField`'s
-steppers are where the mistake looks most plausible — a `readonly` input beside two buttons — and forge deliberately leaves them bare, letting the
-input's own `readonly` carry the state.
-
-Default: leave Home and End to a `NumberField`'s own input rather than binding them to min and max — unless the control is a spinbutton you built
-out of non-input elements. <!-- rule:forge-ui-a11y-spinbutton-home-end --> APG's Spinbutton pattern lists Home and End as jumps to the minimum and
-maximum, but forge's field **is** a native `<input type="number">`, where both keys move the caret within the text the reader is editing. APG's own
-Keyboard Interface note warns against capturing a text-editing key, and a reader who has learnt that End reaches the end of their input loses that
-everywhere the moment one widget disagrees. The stepping keyboard is the platform's arrows; the steppers are `tabindex="-1"` and pointer-operable,
-and a press on either hands focus back to the field, so the value that changed is announced on the control that owns it.
+<!-- rule:forge-ui-a11y-spinbutton-home-end --> APG's Spinbutton pattern lists Home and End as jumps to the minimum and maximum, but forge's field
+**is** a native `<input type="number">`, where both keys move the caret within the text the reader is editing. APG's own Keyboard Interface note
+warns against capturing a text-editing key, and a reader who has learnt that End reaches the end of their input loses that everywhere the moment one
+widget disagrees. The stepping keyboard is the platform's arrows; the steppers are `tabindex="-1"` and pointer-operable, and a press on either hands
+focus back to the field, so the value that changed is announced on the control that owns it.
 
 ---
 
@@ -170,28 +154,23 @@ and a press on either hands focus back to the field, so the value that changed i
 
 `forge-ui-heading-order` is the Floor: never skip a level.
 
-Default: choose the heading level from the section's position in the document and set its size with a class — unless the component's own compound
-already fixes the tag, as `Card.Title` does. <!-- rule:forge-ui-a11y-heading-size-by-class --> The skip almost always arrives the same way: a
-designer wants smaller text, so the `<h2>` becomes an `<h4>`. Size and level are independent, and `text-sm font-medium` on an `<h3>` gets both
-right.
+<!-- rule:forge-ui-a11y-heading-size-by-class --> The skip almost always arrives the same way: a designer wants smaller text, so the `<h2>` becomes
+an `<h4>`. Size and level are independent, and `text-sm font-medium` on an `<h3>` gets both right.
 
 ---
 
 ## 5. Motion and live regions
 
-Default: author a scale or slide inside `motion-safe:` and give `motion-reduce:` the settled state or an opacity fade in its place, rather than
-treating reduced motion as a later pass — unless the movement conveys information that has no static equivalent.
 <!-- rule:forge-ui-a11y-reduced-motion-pair --> `forge-ui-reduced-motion` is the Floor; this is where in the process it gets satisfied. Durations
 and the one-moment budget are [`09-interaction.md`][interaction]'s.
 
 ### 5a. One live region, and why `Toast` is not one
 
-Default: speak through `announce()` and add no live region of your own — unless the surface has a genuinely separate stream of updates, which is
-what a channel of its own is for. <!-- rule:forge-ui-a11y-one-live-region --> `<Announcer />`, stamped once in the layout, renders the page's only
-live regions, one polite and one assertive, and `announce(text, { channel, politeness })` is how anything reaches them. A second live region on
-the page means two announcers competing over one utterance queue, and the reader hears fragments of both. The rule reports `aria-live`, the roles
-that imply it, `alert`, `status` and `log`, and an `<output>` with neither, which is an implicit `status`; a readout such as `Slider`'s takes
-`aria-live="off"`, and the control it mirrors carries the value.
+<!-- rule:forge-ui-a11y-one-live-region --> `<Announcer />`, stamped once in the layout, renders the page's only live regions, one polite and one
+assertive, and `announce(text, { channel, politeness })` is how anything reaches them. A second live region on the page means two announcers
+competing over one utterance queue, and the reader hears fragments of both. The rule reports `aria-live`, the roles that imply it, `alert`, `status`
+and `log`, and an `<output>` with neither, which is an implicit `status`; a readout such as `Slider`'s takes `aria-live="off"`, and the control it
+mirrors carries the value.
 
 **`Toast` and `Toast.Container` are visual, deliberately.** The container is a scope that hands each toast it holds to `announce()`, at load and
 whenever one is inserted, `FlashOob` included. The announcer's regions exist from the first paint, which is what makes an insertion reliable, where
@@ -208,15 +187,13 @@ error of a failed submission is announced assertively for you.
 
 ### 5b. Politeness and the announced wait
 
-Default: leave an announcement polite — unless the message is a failure that stops the reader's current task, which is the only case that earns an
-interruption. <!-- rule:forge-ui-a11y-live-politeness -->
+<!-- rule:forge-ui-a11y-live-politeness -->
 
-Default: pair a `Skeleton` region with one announcement, because `Skeleton` renders `aria-hidden="true"` and is silent by design — unless the wait
-is short enough that nothing needs to be announced. <!-- rule:forge-ui-a11y-spinner-announces --> Which placeholder a wait takes is
-[`07-states.md`][states]'s (`forge-ui-state-skeleton-shape`, `forge-ui-state-spinner-scope`, `forge-ui-state-one-indicator`); what this rule adds is
-that a skeleton-only region announces nothing at all. A region that swaps under the reader carries `aria-busy` while it is in flight, and a
-`Spinner` carries no role: its `sr-only` `label` is what the busy channel speaks while the request runs, and a request answered inside the settle
-is never spoken at all. The label is the utterance, so give it a real one rather than the `Loading…` default.
+<!-- rule:forge-ui-a11y-spinner-announces --> Which placeholder a wait takes is [`07-states.md`][states]'s (`forge-ui-state-skeleton-shape`,
+`forge-ui-state-spinner-scope`, `forge-ui-state-one-indicator`); what this rule adds is that a skeleton-only region announces nothing at all. A
+region that swaps under the reader carries `aria-busy` while it is in flight, and a `Spinner` carries no role: its `sr-only` `label` is what the
+busy channel speaks while the request runs, and a request answered inside the settle is never spoken at all. The label is the utterance, so give it
+a real one rather than the `Loading…` default.
 
 ```tsx
 import { Skeleton, Spinner } from "@y-core/forge/ui/core";
@@ -241,12 +218,10 @@ import { Skeleton, Spinner } from "@y-core/forge/ui/core";
 
 ## 6. An optional prop a reader's tooling can still see
 
-Default: declare every optional prop a consumer passes a value into as `?: T | undefined` — unless the type is one an application never constructs.
-<!-- rule:forge-ui-optional-prop-undefined -->
-
-The reason is an accessibility one, which is why the rule lives here rather than with the type conventions. Under `exactOptionalPropertyTypes`, a
-bare `?:` refuses `aria-label={maybeUndefined}`, so the caller writes the value into a spread instead — and a spread is opaque to `jsx-a11y`, which
-reads attributes. The prop still reaches the element; what is lost is every lint rule that would have judged it.
+<!-- rule:forge-ui-optional-prop-undefined --> The reason is an accessibility one, which is why the rule lives here rather than with the type
+conventions. Under `exactOptionalPropertyTypes`, a bare `?:` refuses `aria-label={maybeUndefined}`, so the caller writes the value into a spread
+instead — and a spread is opaque to `jsx-a11y`, which reads attributes. The prop still reaches the element; what is lost is every lint rule that
+would have judged it.
 
 ```tsx
 // Wrong — the label is correct at runtime and invisible to every a11y rule that would check it.

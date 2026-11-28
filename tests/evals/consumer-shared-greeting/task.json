@@ -1,0 +1,20 @@
+{
+  "id": "consumer-shared-greeting",
+  "tree": "consumer",
+  "model": "opus",
+  "timeoutMinutes": 30,
+  "bait": ["bait/greeting-in-home.patch"],
+  "accept": ["tests/hello.accept.ts"],
+  "traps": [
+    {
+      "id": "controller-import",
+      "rules": ["canon:APP_ARCHITECTURE.md#2b"],
+      "detector": { "kind": "rg", "pattern": "from \"\\.(/|\\./controllers/)[^\"]+\"", "paths": ["src/controllers"] }
+    },
+    {
+      "id": "view-imports-service",
+      "rules": ["canon:APP_ARCHITECTURE.md#2d", "canon:APP_ARCHITECTURE.md#2b"],
+      "detector": { "kind": "rg", "pattern": "from \"\\.\\./services/", "paths": ["src/views"] }
+    }
+  ]
+}

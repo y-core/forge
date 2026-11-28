@@ -55,21 +55,21 @@ const request = (id: number | null, method: string, params?: Record<string, unkn
 describe("handle()", () => {
   const index = knowledge();
 
-  it("answers initialize with a protocol version and the two capabilities warden has", () => {
-    const result = handle(index, "initialize", {}, 1)?.result as { protocolVersion: string; capabilities: unknown } | undefined;
+  it("answers initialize with a protocol version and the two capabilities warden has", async () => {
+    const result = (await handle(index, "initialize", {}, 1))?.result as { protocolVersion: string; capabilities: unknown } | undefined;
 
     expect(result?.protocolVersion).toBe("2024-11-05");
     expect(result?.capabilities).toEqual({ tools: {}, resources: { subscribe: false, listChanged: false } });
   });
 
-  it("answers a notification with nothing at all", () => {
-    expect(handle(index, "notifications/initialized", {}, null)).toBeUndefined();
+  it("answers a notification with nothing at all", async () => {
+    expect(await handle(index, "notifications/initialized", {}, null)).toBeUndefined();
   });
 
-  it("lists the five tools and the resources", () => {
-    const tools = handle(index, "tools/list", {}, 1)?.result as { tools: Array<{ name: string }> } | undefined;
-    const resources = handle(index, "resources/list", {}, 1)?.result as { resources: unknown[] } | undefined;
-    const templates = handle(index, "resources/templates/list", {}, 1)?.result as { resourceTemplates: unknown[] } | undefined;
+  it("lists the seven tools and the resources", async () => {
+    const tools = (await handle(index, "tools/list", {}, 1))?.result as { tools: Array<{ name: string }> } | undefined;
+    const resources = (await handle(index, "resources/list", {}, 1))?.result as { resources: unknown[] } | undefined;
+    const templates = (await handle(index, "resources/templates/list", {}, 1))?.result as { resourceTemplates: unknown[] } | undefined;
 
     expect(tools?.tools.map((tool) => tool.name)).toEqual([
       "knowledge_search",
@@ -77,17 +77,19 @@ describe("handle()", () => {
       "knowledge_outline",
       "knowledge_related",
       "knowledge_impact",
+      "warden_check",
+      "warden_query",
     ]);
     expect(resources?.resources).toHaveLength(1);
     expect(templates?.resourceTemplates).toHaveLength(3);
   });
 
-  it("refuses a resource URI it does not serve, by name", () => {
-    expect(handle(index, "resources/read", { uri: "knowledge://nowhere" }, 1)?.error?.message).toBe('no resource at "knowledge://nowhere"');
+  it("refuses a resource URI it does not serve, by name", async () => {
+    expect((await handle(index, "resources/read", { uri: "knowledge://nowhere" }, 1))?.error?.message).toBe('no resource at "knowledge://nowhere"');
   });
 
-  it("refuses an unknown method rather than answering it", () => {
-    expect(handle(index, "tools/invoke", {}, 1)?.error?.code).toBe(-32601);
+  it("refuses an unknown method rather than answering it", async () => {
+    expect((await handle(index, "tools/invoke", {}, 1))?.error?.code).toBe(-32601);
   });
 });
 
@@ -137,43 +139,58 @@ describe("serve() — stdout purity", () => {
   });
 });
 
+describe("serve() — concurrency", () => {
+  it("answers a second request while a slow warden_query is still running", async () => {
+    const index = knowledge();
+    const slow = "async () => { const end = Date.now() + 800; while (Date.now() < end) {} return 'slow'; }";
+    const { transport, out } = pair([request(1, "tools/call", { name: "warden_query", arguments: { code: slow } }), request(2, "ping")]);
+
+    await serve(transport, index);
+
+    const answered = out.map((line) => JSON.parse(line) as { id: number; result?: { content?: Array<{ text?: string }> } });
+    expect(answered.map((response) => response.id)).toEqual([2, 1]);
+    expect(answered[1]?.result?.content?.[0]?.text).toBe('"slow"');
+    index.close();
+  });
+});
+
 describe("handle() freshness", () => {
   /** The body of the one `content` entry a tool call answers with. */
-  function body(response: ReturnType<typeof handle>): string {
+  function body(response: Awaited<ReturnType<typeof handle>>): string {
     const result = (response as { result?: { content?: Array<{ text?: string }> } } | undefined)?.result;
     return result?.content?.[0]?.text ?? "";
   }
 
-  it("serves a document edited after the server started, without a restart", () => {
+  it("serves a document edited after the server started, without a restart", async () => {
     const { index, root } = served();
     const call = { name: "knowledge_search", arguments: { query: "honeypots" } };
 
-    expect(body(handle(index, "tools/call", call, 1))).toContain("No section of this corpus covers");
+    expect(body(await handle(index, "tools/call", call, 1))).toContain("No section of this corpus covers");
 
     writeFileSync(join(root, "docs/A.md"), `${DOC}\nA sentence about honeypots.\n`, "utf-8");
 
-    expect(body(handle(index, "tools/call", call, 2))).toContain("docs/A.md");
+    expect(body(await handle(index, "tools/call", call, 2))).toContain("docs/A.md");
     index.close();
   });
 
-  it("serves a document added after the server started, through the resource templates too", () => {
+  it("serves a document added after the server started, through the resource templates too", async () => {
     const { index, root } = served();
     const uri = "knowledge://project/docs/B.md";
 
-    expect(handle(index, "resources/read", { uri }, 1)).toHaveProperty("error");
+    expect(await handle(index, "resources/read", { uri }, 1)).toHaveProperty("error");
 
     writeFileSync(join(root, "docs/B.md"), DOC.replace("The comment budget is a ceiling.", "Turnstile fails closed."), "utf-8");
 
-    expect(JSON.stringify(handle(index, "resources/read", { uri }, 2))).toContain("Turnstile fails closed.");
+    expect(JSON.stringify(await handle(index, "resources/read", { uri }, 2))).toContain("Turnstile fails closed.");
     index.close();
   });
 
-  it("does not rebuild for a method that only describes the server", () => {
+  it("does not rebuild for a method that only describes the server", async () => {
     const { index, root } = served();
 
     writeFileSync(join(root, "docs/A.md"), `${DOC}\nA sentence about honeypots.\n`, "utf-8");
-    handle(index, "initialize", {}, 1);
-    handle(index, "resources/templates/list", {}, 2);
+    await handle(index, "initialize", {}, 1);
+    await handle(index, "resources/templates/list", {}, 2);
 
     expect(search(index.db, "honeypots")).toEqual([]);
     index.close();
@@ -181,12 +198,12 @@ describe("handle() freshness", () => {
 
   // `tools/list` is the exception among the describing methods: the search description names the
   // documents this index holds, so a stale one advertises a corpus that has moved on.
-  it("rebuilds for tools/list, whose description is built from the corpus", () => {
+  it("rebuilds for tools/list, whose description is built from the corpus", async () => {
     const { index, root } = served();
 
     writeFileSync(join(root, "docs/B.md"), DOC, "utf-8");
 
-    expect(JSON.stringify(handle(index, "tools/list", {}, 1))).toContain("B.md");
+    expect(JSON.stringify(await handle(index, "tools/list", {}, 1))).toContain("B.md");
     index.close();
   });
 });

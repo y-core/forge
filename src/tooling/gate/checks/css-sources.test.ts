@@ -165,6 +165,26 @@ describe("checkCssSources() — pass B, whether a directory is registered", () =
     });
   });
 
+  it("skips a file registered as quoting classes, and fails an entry naming no file or giving no reason", () => {
+    const tree = { "src/css/tailwind.css": '@source "../ui/core";\n', "src/ui/core/button.ts": CLASSES, "src/ui/design/rules.ts": CLASSES };
+    const classFree = new Map([["design", "corpus only"]]);
+
+    expect(messages(tree, { classFree, quotedClasses: new Map([["src/ui/design/rules.ts", "rule examples, never rendered"]]) })).toEqual([]);
+    expect(
+      messages(tree, {
+        classFree,
+        quotedClasses: new Map([
+          ["src/ui/design/rules.ts", " "],
+          ["src/ui/design/gone.ts", "moved"],
+        ]),
+      }),
+    ).toEqual([
+      "is registered as quoting classes with no reason — say why its class strings are never rendered",
+      "is registered as quoting classes, but does not exist on disk — delete the entry",
+      AGGREGATE,
+    ]);
+  });
+
   it("leaves a class-free directory's specs alone, whose class strings are fragments of asserted markup", () => {
     const tree = { "src/css/tailwind.css": '@source "../ui/core";\n', "src/ui/core/button.ts": CLASSES, "src/ui/assets/tokens.test.ts": CLASSES };
 

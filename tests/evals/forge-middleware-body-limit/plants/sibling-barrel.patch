@@ -1,0 +1,12 @@
+diff --git a/src/security/types.ts b/src/security/types.ts
+index 0d63ceae..169aad67 100644
+--- a/src/security/types.ts
++++ b/src/security/types.ts
+@@ -1,6 +1,6 @@
+ import type { RequestContext } from "@remix-run/fetch-router";
+ 
+-import type { AppContext, Refusal, RefuseHook } from "../context/types";
++import type { AppContext, Refusal, RefuseHook } from "../context/mod";
+ import type { GuardResult, Result } from "../result/types";
+ import type { NONCE } from "./nonce";
+ import type { UNSAFE_CSP_SOURCES } from "./unsafe";

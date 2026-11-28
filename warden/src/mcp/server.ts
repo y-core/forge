@@ -3,11 +3,12 @@ import { stdin } from "bun";
 import type { Knowledge } from "../index/open";
 import { openIndex } from "../index/open";
 import { resolveRepoRoot } from "../paths";
+import { loadSteps, type StepSummary } from "../sdk/data";
 import { resolveKind } from "../sync/kind";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
 import { RESOURCES, readResource, TEMPLATES } from "./resources";
-import { encode, err, ok, parseRequest, RPC_ERRORS, type RpcResponse, takeLines } from "./rpc";
+import { encode, err, ok, parseRequest, RPC_ERRORS, type RpcRequest, type RpcResponse, takeLines } from "./rpc";
 import { callTool, knowledgeTools } from "./tools";
 
 const PROTOCOL_VERSION = "2024-11-05";
@@ -22,7 +23,13 @@ export interface Transport {
 }
 
 /** Answers one request, refreshing the index first where the method serves content. @public */
-export function handle(knowledge: Knowledge, method: string, params: Record<string, unknown>, id: string | number | null): RpcResponse | undefined {
+export async function handle(
+  knowledge: Knowledge,
+  method: string,
+  params: Record<string, unknown>,
+  id: string | number | null,
+  steps: readonly StepSummary[] = [],
+): Promise<RpcResponse | undefined> {
   if (SERVES_CONTENT.has(method)) knowledge.refresh();
 
   switch (method) {
@@ -46,7 +53,7 @@ export function handle(knowledge: Knowledge, method: string, params: Record<stri
     case "tools/call": {
       const name = typeof params.name === "string" ? params.name : "";
       const args = (params.arguments ?? {}) as Record<string, unknown>;
-      return ok(id, callTool(knowledge, name, args));
+      return ok(id, await callTool(knowledge, name, args, steps));
     }
 
     case "resources/list":
@@ -67,11 +74,24 @@ export function handle(knowledge: Knowledge, method: string, params: Record<stri
 }
 
 /** Runs the protocol loop over `transport`. @public */
-export async function serve(transport: Transport, knowledge: Knowledge): Promise<void> {
+export async function serve(transport: Transport, knowledge: Knowledge, steps: readonly StepSummary[] = []): Promise<void> {
   // stdout carries JSON-RPC and nothing else: one stray `console.log` anywhere in the import graph
   // corrupts the stream, and the host reports it as a protocol error naming no source.
   console.log = console.error;
   console.info = console.error;
+
+  // Each request is answered when it settles, not in arrival order: a slow `warden_query` holds back
+  // only its own response, and the id is what pairs a response with its request.
+  const pending = new Set<Promise<void>>();
+  const answer = async (request: RpcRequest): Promise<void> => {
+    const id = request.id ?? null;
+    try {
+      const response = await handle(knowledge, request.method, request.params ?? {}, id, steps);
+      if (response !== undefined && request.id !== undefined) transport.write(encode(response));
+    } catch (error) {
+      if (request.id !== undefined) transport.write(encode(err(id, RPC_ERRORS.internal, error instanceof Error ? error.message : String(error))));
+    }
+  };
 
   let buffer = "";
   for await (const piece of transport.read()) {
@@ -84,16 +104,12 @@ export async function serve(transport: Transport, knowledge: Knowledge): Promise
         transport.write(encode(parsed.response));
         continue;
       }
-      const { request } = parsed;
-      const id = request.id ?? null;
-      try {
-        const response = handle(knowledge, request.method, request.params ?? {}, id);
-        if (response !== undefined && request.id !== undefined) transport.write(encode(response));
-      } catch (error) {
-        if (request.id !== undefined) transport.write(encode(err(id, RPC_ERRORS.internal, error instanceof Error ? error.message : String(error))));
-      }
+      const task = answer(parsed.request).finally(() => pending.delete(task));
+      pending.add(task);
     }
   }
+  // The caller closes the index once this returns, so every request still running finishes first.
+  await Promise.all(pending);
 }
 
 /** Opens the index and serves it over stdio. @public */
@@ -112,8 +128,10 @@ export async function serveStdio(options: { root?: string; kind?: string; depend
     },
   };
 
+  // Read once: a step table is code, so the rows are loaded before the first request rather than per query.
+  const steps = await loadSteps(root);
   try {
-    await serve(transport, knowledge);
+    await serve(transport, knowledge, steps.ok ? steps.data : []);
   } finally {
     knowledge.close();
   }

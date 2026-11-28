@@ -1,5 +1,5 @@
-import { reporter } from "../report.ts";
-import type { AstNode, JsxAttributeNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, JsxAttributeNode } from "../types.ts";
 
 // Hand-listed rather than imported: this namespace is a leaf and may not reach into `ui`
 // (NAMESPACES.md §4a). `src/ui/contracts/state-attrs.test.ts` holds the two lists together.
@@ -9,13 +9,12 @@ export const PRESENCE_STATES: readonly string[] = ["pressed", "checked", "select
 const PRESENCE_ATTRS = new Set(PRESENCE_STATES.map((state) => `data-${state}`));
 
 /** A `data-*` state attribute written by hand rather than emitted through `stateAttrs`. */
-export const a11yAriaBesideData: LintRule = {
+export const a11yAriaBesideData = defineLintRule("forge-ui-a11y-aria-beside-data", {
   meta: {
     type: "problem",
     docs: { description: "A state hook is emitted through `stateAttrs`, so its `aria-*` counterpart is never written alone." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-a11y-aria-beside-data");
+  create(_context, report) {
     return {
       JSXAttribute(node: AstNode): void {
         const name = (node as JsxAttributeNode).name?.name ?? "";
@@ -27,4 +26,4 @@ export const a11yAriaBesideData: LintRule = {
       },
     };
   },
-};
+});

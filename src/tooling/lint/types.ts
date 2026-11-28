@@ -111,38 +111,31 @@ export interface LintPlugin {
   rules: Record<string, LintRule>;
 }
 
+/** Reports one finding; the message printed is `[id] detail`. */
+export type LintReport = (detail: string, at: SourceLocation | { node: unknown }) => void;
+
+/** A forge rule before its id is bound, whose `create` reports only through `report`. */
+export interface ForgeLintRuleSpec {
+  meta?: LintRule["meta"];
+  create: (context: Omit<RuleContext, "report">, report: LintReport) => Visitor;
+}
+
+/** A rule as oxlint loads it, carrying the register id every message it prints opens with. */
+export interface ForgeLintRule extends LintRule {
+  readonly id: string;
+}
+
+/** forge's plugin, every rule of which carries its id. */
+export interface ForgeLintPlugin extends LintPlugin {
+  rules: Record<string, ForgeLintRule>;
+}
+
 /** One piece of class text: the node it was read from, its contents, and where it starts. */
 export interface ClassText {
   node: AstNode;
   text: string;
   loc: SourceLocation;
 }
-
-/** A rule the design corpus states and this tooling enforces. @public */
-export type RuleId =
-  | "forge-ui-color-token-only"
-  | "forge-ui-color-theme-no-raw-utility"
-  | "forge-ui-no-inline-style"
-  | "forge-ui-spacing-scale-only"
-  | "forge-ui-no-nested-card"
-  | "forge-ui-interaction-focus-visible"
-  | "forge-ui-interaction-filter-group-required"
-  | "forge-ui-catalog-wrong-raw-input"
-  | "forge-ui-contrast-floor"
-  | "forge-ui-hit-target"
-  | "forge-ui-a11y-label-association"
-  | "forge-ui-a11y-live-politeness"
-  | "forge-ui-a11y-no-aria-readonly-on-button"
-  | "forge-ui-a11y-one-live-region"
-  | "forge-ui-a11y-aria-beside-data"
-  | "forge-ui-a11y-heading-size-by-class"
-  | "forge-ui-a11y-state-attrs-source"
-  | "forge-ui-reduced-motion"
-  | "forge-ui-focus-ring"
-  | "forge-ui-optional-prop-undefined";
-
-/** Which mechanism enforces a rule. @public */
-export type RuleEnforcer = "gate" | "lint" | "contrast" | "faded-text" | "browser";
 
 /** A JSX opening element and the attributes it carries, in source order. */
 export interface JsxOpeningElementNode extends AstNode {
@@ -195,7 +188,7 @@ export type ModernCssRuleId =
   | "forge-ui-platform-color-mix";
 
 /** Rule ids the design corpus owns, which this check reports under rather than minting again. @public */
-export type ModernCssCitedRuleId = Extract<RuleId, "forge-ui-interaction-focus-visible">;
+export type ModernCssCitedRuleId = "forge-ui-interaction-focus-visible";
 
 /** Any id this check reports a finding under. @public */
 export type ModernCssReportedId = ModernCssRuleId | ModernCssCitedRuleId;
@@ -207,15 +200,8 @@ export type ModernCssTier = "A" | "B" | "C";
 export interface ModernCssRule {
   tier: ModernCssTier;
   severity: "fail" | "warn";
-  /** The corpus file that states the rule. */
-  corpus: string;
   /** The platform feature that replaces the pattern. */
   replacement: string;
   /** What has to be confirmed by hand before taking the replacement. */
   verify: string;
-  /** Which mechanism enforces it. Absent means `"gate"` — a detector in this check. */
-  enforcer?: RuleEnforcer;
 }
-
-/** Any id a plugin rule reports under: a corpus rule, or one of the modern-platform rules. */
-export type ReportedId = RuleId | ModernCssRuleId;

@@ -1,13 +1,14 @@
 import { attributesOf, openingTag, spreadName, statedString } from "../jsx.ts";
-import type { AstNode, JsxAttributeNode, LintRule, SourceLocation } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, JsxAttributeNode, SourceLocation } from "../types.ts";
 
 /** A literal `data-slot` a later spread on the same element silently overwrites. */
-export const dataSlotBeforeSpread: LintRule = {
+export const dataSlotBeforeSpread = defineLintRule("forge-data-slot-before-spread", {
   meta: {
     type: "problem",
     docs: { description: "A literal `data-slot` written before `{...rest}` loses to the spread, so the element ships the caller's token." },
   },
-  create(context) {
+  create(_context, report) {
     return {
       JSXOpeningElement(node: AstNode): void {
         let slot: { value: string; loc: SourceLocation } | undefined;
@@ -23,13 +24,13 @@ export const dataSlotBeforeSpread: LintRule = {
           if (attribute.type !== "JSXSpreadAttribute" || slot === undefined) continue;
           const spread = spreadName(attribute);
           if (spread === undefined) continue;
-          context.report({
-            message: `\`<${openingTag(node)}>\` has a literal \`data-slot='${slot.value}'\` before \`{...${spread}}\` — the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot.value}", inherited)}\``,
-            loc: slot.loc,
-          });
+          report(
+            `\`<${openingTag(node)}>\` has a literal \`data-slot='${slot.value}'\` before \`{...${spread}}\` — the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot.value}", inherited)}\``,
+            slot.loc,
+          );
           return;
         }
       },
     };
   },
-};
+});

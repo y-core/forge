@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import { corpusIdOf, RULE_ENFORCER } from "./design-rules";
 import plugin from "./plugin";
 import { suppressionNeedsReason } from "./rules/suppression-needs-reason.ts";
 import type { DisableDirective, RuleContext } from "./types.ts";
@@ -28,26 +27,22 @@ describe("plugin shape", () => {
     expect(plugin.meta.name).toBe("forge");
   });
 
+  it("binds every rule to a register id, which each of its messages opens with", () => {
+    const unbound = Object.entries(plugin.rules).filter(([, rule]) => typeof rule.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(rule.id));
+
+    expect({ rules: Object.keys(plugin.rules).length > 0, unbound }).toEqual({ rules: true, unbound: [] });
+  });
+
   it("registers the suppression rule under its kebab-case id", () => {
     expect(Object.keys(plugin.rules)).toContain("suppression-needs-reason");
     expect(plugin.rules["suppression-needs-reason"]).toBe(suppressionNeedsReason);
-  });
-
-  it("registers every corpus rule the register routes to the plugin, and no other corpus id", () => {
-    const registered = Object.keys(plugin.rules).flatMap((key) => {
-      const id = corpusIdOf(key);
-      return id === undefined ? [] : [id];
-    });
-    const routed = Object.entries(RULE_ENFORCER).flatMap(([id, enforcers]) => (enforcers.includes("lint") ? [id] : []));
-
-    expect(registered.sort()).toEqual(routed.sort());
   });
 });
 
 describe("suppression-needs-reason", () => {
   it("reports a directive written with no reason", () => {
     expect(run([directive()])).toEqual([
-      "`oxlint-disable-next-line` for `eslint/no-unused-vars` with no reason — append ` -- <why>`, so the next reader can judge the suppression rather than only count it.",
+      "[forge-suppression-needs-reason] `oxlint-disable-next-line` for `eslint/no-unused-vars` with no reason — append ` -- <why>`, so the next reader can judge the suppression rather than only count it.",
     ]);
   });
 
@@ -61,7 +56,7 @@ describe("suppression-needs-reason", () => {
 
   it("names `every rule` for a blanket directive, which suppresses more than any named one", () => {
     expect(run([directive({ type: "disable", value: "" })])).toEqual([
-      "`oxlint-disable` for every rule with no reason — append ` -- <why>`, so the next reader can judge the suppression rather than only count it.",
+      "[forge-suppression-needs-reason] `oxlint-disable` for every rule with no reason — append ` -- <why>`, so the next reader can judge the suppression rather than only count it.",
     ]);
   });
 

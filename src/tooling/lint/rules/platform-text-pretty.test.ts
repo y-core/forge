@@ -3,9 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { platformTextPretty } from "./platform-text-pretty.ts";
 
-const CORPUS = "(forge-ui-platform-text-pretty — src/ui/design/reference/16-platform.md)";
+const PREFIX = "[forge-ui-platform-text-pretty] ";
 
-const detail = (hit: string): string => `\`${hit}\` prose with no \`text-pretty\` — avoid the orphan with \`text-wrap: pretty\` ${CORPUS}`;
+const detail = (hit: string): string => `${PREFIX}\`${hit}\` prose with no \`text-pretty\` — avoid the orphan with \`text-wrap: pretty\``;
 
 describe("platform-text-pretty", () => {
   it("reports prose with no `text-pretty`", () => {

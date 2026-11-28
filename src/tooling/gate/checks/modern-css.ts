@@ -48,13 +48,13 @@ export function checkModernCss(config: ModernCssCheckConfig): CheckResult {
       continue;
     }
     const rule = modernCssRule(violation.ruleId);
-    const message = `${violation.ruleId}: ${violation.detail} (${rule.corpus})`;
-    findings.push((rule.severity === "fail" ? fail : warn)(message, { file: violation.file, line: violation.line }));
+    findings.push(
+      (rule.severity === "fail" ? fail : warn)(violation.detail, { file: violation.file, line: violation.line, rule: violation.ruleId }),
+    );
   }
 
   for (const violation of adoption) {
-    const rule = modernCssRule(violation.ruleId);
-    findings.push(warn(`${violation.ruleId}: ${violation.detail} (${rule.corpus})`, { file: violation.file, line: violation.line }));
+    findings.push(warn(violation.detail, { file: violation.file, line: violation.line, rule: violation.ruleId }));
   }
 
   for (const entry of deferrals) {

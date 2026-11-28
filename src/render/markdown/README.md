@@ -88,6 +88,7 @@ are refused.
 
 ```ts
 import { createUrlPolicy } from "@y-core/forge/render/markdown";
+import type { HtmlSchema } from "@y-core/forge/render/markdown";
 
 const allowsUrl = createUrlPolicy({ linkProtocols: ["http", "https"], srcProtocols: [] });
 
@@ -106,6 +107,9 @@ the `https://` yourself, or add `http` to `linkProtocols`.
 ### Setting `rel` on links
 
 ```ts
+import { parseMarkdown, renderMarkdownHtml } from "@y-core/forge/render/markdown";
+
+const document = parseMarkdown(source);
 const html = renderMarkdownHtml(document, { schema, links: { rel: "nofollow noopener" } });
 ```
 
@@ -173,12 +177,15 @@ nothing after it, is not.
 ```ts
 import { listTasks, parseMarkdown, setTasks } from "@y-core/forge/render/markdown";
 
-const document = parseMarkdown(source);
-const done = listTasks(document).filter((task) => task.checked).length;
+export function saveTasks(source: string, form: FormData): Response {
+  const document = parseMarkdown(source);
+  const done = listTasks(document).filter((task) => task.checked).length;
 
-const ticked = new Set(form.getAll("task").map(Number));
-const next = setTasks(source, document, ticked);
-if (!next.ok) return new Response(`Lines ${next.error.join(", ")} no longer hold a task.`, { status: 409 });
+  const ticked = new Set(form.getAll("task").map(Number));
+  const next = setTasks(source, document, ticked);
+  if (!next.ok) return new Response(`Lines ${next.error.join(", ")} no longer hold a task.`, { status: 409 });
+  return new Response(next.data);
+}
 ```
 
 `setTasks` takes the whole ticked set: a box on a line in the set is ticked and every other box is unticked. Only the character between a
@@ -192,6 +199,9 @@ Pass `tasks: { name }` and every task box renders as a form field, wrapped with 
 reports for it:
 
 ```ts
+import { parseMarkdown, renderMarkdownHtml } from "@y-core/forge/render/markdown";
+
+const document = parseMarkdown(source);
 const html = renderMarkdownHtml(document, { schema, tasks: { name: "task" } });
 // <li class="task-list-item"><label><input type="checkbox" name="task" value="3" checked> Ship it</label></li>
 const page = `<form method="post">${html}<button>Save</button></form>`;

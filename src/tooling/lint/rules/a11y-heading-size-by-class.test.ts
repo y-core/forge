@@ -3,12 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { a11yHeadingSizeByClass } from "./a11y-heading-size-by-class.ts";
 
-const CORPUS = "(forge-ui-a11y-heading-size-by-class — src/ui/design/reference/10-accessibility.md)";
+const PREFIX = "[forge-ui-a11y-heading-size-by-class] ";
 
 describe("a11y-heading-size-by-class", () => {
   it("reports a heading whose class carries no size", () => {
     expect(runRule(a11yHeadingSizeByClass, element("h2", attribute("className", literal("font-bold"))))).toEqual([
-      `\`<h2>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position ${CORPUS}`,
+      `${PREFIX}\`<h2>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position`,
     ]);
   });
 
@@ -31,7 +31,7 @@ describe("a11y-heading-size-by-class", () => {
   it("names the tag it found, so the reader knows which heading to fix", () => {
     const found = runRule(a11yHeadingSizeByClass, element("h6", attribute("className", literal("font-bold"))));
 
-    expect(found[0]?.startsWith("`<h6>`")).toBe(true);
+    expect(found[0]?.startsWith("[forge-ui-a11y-heading-size-by-class] `<h6>`")).toBe(true);
   });
 
   it("leaves a heading with no class position alone — nothing is written to judge", () => {

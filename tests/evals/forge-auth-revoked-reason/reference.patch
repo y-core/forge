@@ -1,0 +1,318 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 46f08f69..98482b29 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -20,6 +20,11 @@ All notable changes to `@y-core/forge` are documented here. The format follows
+ 
+ ### Breaking Changes
+ 
++- **An access token's revoke records why: `revoke(id, userId, at, reason)` on `AccessTokenService` and `AccessTokenStore`.** `reason` is a
++  string of at most 200 characters, or `null`, stored in the new nullable `auth_access_tokens.revoked_reason` column and read back as
++  `AuthAccessToken.revokedReason`. **Migration:** run `forge db migrate compose` after upgrading — it adds `revoked_reason` in place, with no
++  backfill — and apply it before you deploy. Pass a reason, or `null`, at every `revoke` call; a store of your own writes the column and reads
++  it back. Regenerate the row types with `forge db types`.
+ - **Every forge lint message opens with its rule id as `[rule-id] `, and names no corpus file.** A message read
+   `<detail> (<id> — <corpus path>)`; it now reads `[<id>] <detail>`, and the 9 rules that reported without an id carry one too, among them
+   `[forge-sql-in-loop]` and `[forge-type-import-separation]`. No lint message cites a document section (`DOC.md §N`) any more. Internally each
+diff --git a/src/auth/README.md b/src/auth/README.md
+index e705e900..91d7ff06 100644
+--- a/src/auth/README.md
++++ b/src/auth/README.md
+@@ -483,8 +483,8 @@ const issued = await tokensFor(c).issue({ userId, label: "Laptop CLI", scopes: [
+ 
+ A refusal is an `AccessTokenIssueReason`, or the store's `AuthStoreError`. An `expiresAt` must fall in `(now, now + maxLifetimeMs]`.
+ 
+-`list(userId)` answers the user's tokens for a settings page, and `revoke(id, userId, at)` carries the owner, so a token id belonging to somebody
+-else revokes nothing.
++`list(userId)` answers the user's tokens for a settings page, and `revoke(id, userId, at, reason)` carries the owner, so a token id belonging to
++somebody else revokes nothing. `reason` is up to 200 characters, or `null`, and reads back as the token's `revokedReason`.
+ 
+ **Guard the API routes with `requireBearer`, and read the token off `accessTokenCtx`:**
+ 
+diff --git a/src/auth/schema.sql b/src/auth/schema.sql
+index 5d8be53f..ee5c90d8 100644
+--- a/src/auth/schema.sql
++++ b/src/auth/schema.sql
+@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS auth_access_tokens (
+   last_used_at INTEGER,
+   revoked_at INTEGER,
+   created_at INTEGER NOT NULL,
++  revoked_reason TEXT CHECK (revoked_reason IS NULL OR length(revoked_reason) <= 200),
+   CHECK (length(token_hash) = 32 AND length(label) BETWEEN 1 AND 100)
+ ) STRICT;
+ 
+diff --git a/src/auth/stores/access-tokens.test.ts b/src/auth/stores/access-tokens.test.ts
+index bf15b83d..d5899eec 100644
+--- a/src/auth/stores/access-tokens.test.ts
++++ b/src/auth/stores/access-tokens.test.ts
+@@ -42,6 +42,7 @@ function tokenRow(overrides: Record<string, unknown> = {}): Record<string, unkno
+     last_used_at: 8_500,
+     revoked_at: null,
+     created_at: 1_000,
++    revoked_reason: null,
+     ...overrides,
+   };
+ }
+@@ -62,6 +63,7 @@ describe("createAccessTokenStore — create", () => {
+       expiresAt: 9_000,
+       lastUsedAt: null,
+       revokedAt: null,
++      revokedReason: null,
+       createdAt: 7_000,
+     });
+   });
+@@ -107,6 +109,7 @@ describe("createAccessTokenStore — findByHash", () => {
+         expiresAt: 9_000,
+         lastUsedAt: 8_500,
+         revokedAt: null,
++        revokedReason: null,
+         createdAt: 1_000,
+       },
+     });
+@@ -145,18 +148,32 @@ describe("createAccessTokenStore — recordUse", () => {
+ });
+ 
+ describe("createAccessTokenStore — revoke", () => {
+-  it("revokes only the owner's token, and only once", async () => {
++  it("revokes only the owner's token, and only once, recording the reason beside the time", async () => {
+     const [client, db] = writerOf(() => 1);
+-    expect(await createAccessTokenStore(client).revoke(TOKEN_ID, USER_ID, 5_000)).toEqual({ ok: true, data: true });
+-    expect(normalized(db.calls[0]?.sql)).toBe("UPDATE auth_access_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL");
+-    expect(db.calls[0]?.params).toEqual([5_000, uuidToBytes(TOKEN_ID), uuidToBytes(USER_ID)]);
++    expect(await createAccessTokenStore(client).revoke(TOKEN_ID, USER_ID, 5_000, "leaked in a log")).toEqual({ ok: true, data: true });
++    expect(normalized(db.calls[0]?.sql)).toBe(
++      "UPDATE auth_access_tokens SET revoked_at = ?, revoked_reason = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
++    );
++    expect(db.calls[0]?.params).toEqual([5_000, "leaked in a log", uuidToBytes(TOKEN_ID), uuidToBytes(USER_ID)]);
++  });
++
++  it("binds a NULL reason when the caller gives none", async () => {
++    const [client, db] = writerOf(() => 1);
++    await createAccessTokenStore(client).revoke(TOKEN_ID, USER_ID, 5_000, null);
++    expect(db.calls[0]?.params).toEqual([5_000, null, uuidToBytes(TOKEN_ID), uuidToBytes(USER_ID)]);
++  });
++
++  it("reads the recorded reason back onto the token", async () => {
++    const [client] = clientOf(() => [tokenRow({ revoked_at: 5_000, revoked_reason: "rotated" })]);
++    const found = await createAccessTokenStore(client).findByHash(HASH);
++    expect(found.ok && found.data && [found.data.revokedAt, found.data.revokedReason]).toEqual([5_000, "rotated"]);
+   });
+ 
+   it("answers false for a malformed id or owner and binds nothing", async () => {
+     const [client, db] = writerOf(() => 1);
+     const tokens = createAccessTokenStore(client);
+-    expect(await tokens.revoke("u9", USER_ID, 5_000)).toEqual({ ok: true, data: false });
+-    expect(await tokens.revoke(TOKEN_ID, "u9", 5_000)).toEqual({ ok: true, data: false });
++    expect(await tokens.revoke("u9", USER_ID, 5_000, null)).toEqual({ ok: true, data: false });
++    expect(await tokens.revoke(TOKEN_ID, "u9", 5_000, null)).toEqual({ ok: true, data: false });
+     expect(db.calls).toEqual([]);
+   });
+ });
+diff --git a/src/auth/stores/access-tokens.ts b/src/auth/stores/access-tokens.ts
+index 87dea895..8705721d 100644
+--- a/src/auth/stores/access-tokens.ts
++++ b/src/auth/stores/access-tokens.ts
+@@ -6,7 +6,7 @@ import type { AccessTokenStore } from "../types";
+ import { readAccessToken, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+ import type { AccessTokenRow } from "./types";
+ 
+-const COLUMNS = sql`id, user_id, label, scopes, expires_at, last_used_at, revoked_at, created_at`;
++const COLUMNS = sql`id, user_id, label, scopes, expires_at, last_used_at, revoked_at, revoked_reason, created_at`;
+ 
+ /** Creates the `AccessTokenStore` over a SQL database — looked up by the token's hash, revoked only by its owner. @public */
+ export function createAccessTokenStore(db: D1Client): AccessTokenStore {
+@@ -28,6 +28,7 @@ export function createAccessTokenStore(db: D1Client): AccessTokenStore {
+         expiresAt: input.expiresAt,
+         lastUsedAt: null,
+         revokedAt: null,
++        revokedReason: null,
+         createdAt: at,
+       });
+     },
+@@ -62,12 +63,12 @@ export function createAccessTokenStore(db: D1Client): AccessTokenStore {
+       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("accessTokens.recordUse", outcome.error));
+     },
+ 
+-    async revoke(id, userId, at) {
++    async revoke(id, userId, at, reason) {
+       const key = uuidKey(id);
+       const owner = uuidKey(userId);
+       if (!key || !owner) return ok(false);
+       const outcome = await db.execute(
+-        sql`UPDATE auth_access_tokens SET revoked_at = ${at}
++        sql`UPDATE auth_access_tokens SET revoked_at = ${at}, revoked_reason = ${reason}
+             WHERE id = ${key} AND user_id = ${owner} AND revoked_at IS NULL`,
+       );
+       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("accessTokens.revoke", outcome.error));
+diff --git a/src/auth/stores/rows.test.ts b/src/auth/stores/rows.test.ts
+index 783a05f5..683d615d 100644
+--- a/src/auth/stores/rows.test.ts
++++ b/src/auth/stores/rows.test.ts
+@@ -425,7 +425,7 @@ describe("schema drift", () => {
+     await accessTokens.findByHash(new Uint8Array(32));
+     await accessTokens.listByUser(USER_ID);
+     await accessTokens.recordUse(OTHER_ID, 1, 60_000);
+-    await accessTokens.revoke(OTHER_ID, USER_ID, 1);
++    await accessTokens.revoke(OTHER_ID, USER_ID, 1, null);
+     const recoveryCodes = createRecoveryCodeStore(client);
+     await recoveryCodes.stage(USER_ID, [new Uint8Array(32)], 1);
+     await recoveryCodes.holdsStaged(USER_ID, new Uint8Array(32));
+diff --git a/src/auth/stores/rows.ts b/src/auth/stores/rows.ts
+index e6ba9dec..e8b7fe2d 100644
+--- a/src/auth/stores/rows.ts
++++ b/src/auth/stores/rows.ts
+@@ -234,6 +234,7 @@ export function readAccessToken(row: AccessTokenRow): AuthAccessToken {
+     expiresAt: row.expires_at,
+     lastUsedAt: row.last_used_at,
+     revokedAt: row.revoked_at,
++    revokedReason: row.revoked_reason,
+     createdAt: row.created_at,
+   };
+ }
+diff --git a/src/auth/stores/types.ts b/src/auth/stores/types.ts
+index 88092fbe..e90f7636 100644
+--- a/src/auth/stores/types.ts
++++ b/src/auth/stores/types.ts
+@@ -167,6 +167,7 @@ export interface AccessTokenRow {
+   last_used_at: number | null;
+   revoked_at: number | null;
+   created_at: number;
++  revoked_reason: string | null;
+ }
+ 
+ /** What a scheduled `totp-app` secret purge acts on. @public */
+diff --git a/src/auth/tokens/service.test.ts b/src/auth/tokens/service.test.ts
+index d2c9cbde..477481f4 100644
+--- a/src/auth/tokens/service.test.ts
++++ b/src/auth/tokens/service.test.ts
+@@ -42,6 +42,7 @@ function fakeTokenStore(fail: readonly (keyof AccessTokenStore)[] = [], recordUs
+         expiresAt: input.expiresAt,
+         lastUsedAt: null,
+         revokedAt: null,
++        revokedReason: null,
+         createdAt: at,
+       };
+       rows.push({ record, input });
+@@ -63,8 +64,8 @@ function fakeTokenStore(fail: readonly (keyof AccessTokenStore)[] = [], recordUs
+       if (fail.includes("recordUse")) return outage("accessTokens.recordUse");
+       return Promise.resolve(ok(recordUse));
+     },
+-    revoke(id, userId, at) {
+-      calls.push(`revoke ${id} ${userId} ${at}`);
++    revoke(id, userId, at, reason) {
++      calls.push(`revoke ${id} ${userId} ${at} ${reason}`);
+       return Promise.resolve(ok(true));
+     },
+   };
+@@ -245,9 +246,9 @@ describe("createAccessTokenService — list and revoke", () => {
+     expect(listed.ok && listed.data.map((token) => token.scopes)).toEqual([["notes:read"]]);
+   });
+ 
+-  it("passes the owner through to the store's revoke", async () => {
++  it("passes the owner and the reason through to the store's revoke", async () => {
+     const fake = fakeTokenStore();
+-    expect(await serviceOver(fake).revoke("t1", USER_ID, AT)).toEqual({ ok: true, data: true });
+-    expect(fake.calls).toEqual([`revoke t1 ${USER_ID} ${AT}`]);
++    expect(await serviceOver(fake).revoke("t1", USER_ID, AT, "rotated")).toEqual({ ok: true, data: true });
++    expect(fake.calls).toEqual([`revoke t1 ${USER_ID} ${AT} rotated`]);
+   });
+ });
+diff --git a/src/auth/tokens/service.ts b/src/auth/tokens/service.ts
+index 05f0e1e0..2a9a274d 100644
+--- a/src/auth/tokens/service.ts
++++ b/src/auth/tokens/service.ts
+@@ -92,8 +92,8 @@ export function createAccessTokenService<const Scope extends string>(options: Ac
+       return listed.ok ? ok(listed.data.map((token) => narrowAccessToken<Scope>(token, configured))) : listed;
+     },
+ 
+-    revoke(id, userId, at) {
+-      return store.revoke(id, userId, at);
++    revoke(id, userId, at, reason) {
++      return store.revoke(id, userId, at, reason);
+     },
+   };
+ }
+diff --git a/src/auth/tokens/types.ts b/src/auth/tokens/types.ts
+index 7c684459..f3f13823 100644
+--- a/src/auth/tokens/types.ts
++++ b/src/auth/tokens/types.ts
+@@ -39,5 +39,5 @@ export interface AccessTokenService<Scope extends string> {
+   issue(input: AccessTokenIssueInput<Scope>, at: number): Promise<Result<AccessTokenIssued<Scope>, AccessTokenIssueReason | AuthStoreError>>;
+   verify(presented: string, at: number, required?: readonly Scope[]): Promise<Result<AuthAccessToken<Scope>, AccessTokenReason | AuthStoreError>>;
+   list(userId: string): Promise<AuthStoreResult<readonly AuthAccessToken<Scope>[]>>;
+-  revoke(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
++  revoke(id: string, userId: string, at: number, reason: string | null): Promise<AuthStoreResult<boolean>>;
+ }
+diff --git a/src/auth/types.ts b/src/auth/types.ts
+index bd983e83..ba89f2ad 100644
+--- a/src/auth/types.ts
++++ b/src/auth/types.ts
+@@ -101,6 +101,7 @@ export interface AuthAccessToken<Scope extends string = string> {
+   readonly expiresAt: number | null;
+   readonly lastUsedAt: number | null;
+   readonly revokedAt: number | null;
++  readonly revokedReason: string | null;
+   readonly createdAt: number;
+ }
+ 
+@@ -328,7 +329,8 @@ export interface AccessTokenStore {
+   listByUser(userId: string): Promise<AuthStoreResult<readonly AuthAccessToken[]>>;
+   /** Stamps `last_used_at` unless one landed within `intervalMs`, deciding in the one statement. */
+   recordUse(id: string, at: number, intervalMs: number): Promise<AuthStoreResult<boolean>>;
+-  revoke(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
++  /** Records `reason`, at most 200 characters, beside `revoked_at`; `null` records none. */
++  revoke(id: string, userId: string, at: number, reason: string | null): Promise<AuthStoreResult<boolean>>;
+ }
+ 
+ /** The fields a sign-in supplies when it creates a session row; `tokenHash` is the SHA-256 of the cookie's token. @public */
+diff --git a/src/auth/web/guards.test.ts b/src/auth/web/guards.test.ts
+index 31c1fe53..22108369 100644
+--- a/src/auth/web/guards.test.ts
++++ b/src/auth/web/guards.test.ts
+@@ -2478,7 +2478,7 @@ describe("requireBearer", () => {
+     const rows: { hash: string; record: AuthAccessToken }[] = [];
+     const store: AccessTokenStore = {
+       create: async (input, at) => {
+-        const record = { ...input, id: `t${rows.length + 1}`, lastUsedAt: null, revokedAt: null, createdAt: at };
++        const record = { ...input, id: `t${rows.length + 1}`, lastUsedAt: null, revokedAt: null, revokedReason: null, createdAt: at };
+         rows.push({ hash: bytesToHex(input.tokenHash), record });
+         return ok(record);
+       },
+diff --git a/tests/fixtures/auth-d1/worker.ts b/tests/fixtures/auth-d1/worker.ts
+index 6e4fcfe9..fbf50a58 100644
+--- a/tests/fixtures/auth-d1/worker.ts
++++ b/tests/fixtures/auth-d1/worker.ts
+@@ -458,9 +458,9 @@ async function probeAccessTokens(db: D1Database): Promise<Record<string, unknown
+   const useInsideInterval = await use(AT + INTERVAL_MS);
+   const useAtEdge = await use(AT + 1 + INTERVAL_MS);
+ 
+-  const revokeByStranger = must(await accessTokens.revoke(token.id, lee, AT + 2), "revoke as stranger");
+-  const revokeByOwner = must(await accessTokens.revoke(token.id, kim, AT + 3), "revoke as owner");
+-  const revokeAgain = must(await accessTokens.revoke(token.id, kim, AT + 4), "revoke again");
++  const revokeByStranger = must(await accessTokens.revoke(token.id, lee, AT + 2, null), "revoke as stranger");
++  const revokeByOwner = must(await accessTokens.revoke(token.id, kim, AT + 3, null), "revoke as owner");
++  const revokeAgain = must(await accessTokens.revoke(token.id, kim, AT + 4, null), "revoke again");
+ 
+   must(await admins.setDeactivated(kim, true, AT + 5, OPERATOR), "deactivate kim");
+   const foundWhileDeactivated = must(await accessTokens.findByHash(hash), "find while deactivated")?.id ?? null;
+@@ -591,7 +591,7 @@ async function probeResetTokens(db: D1Database): Promise<Record<string, unknown>
+   const cli = must(await issue(rae, "cli"), "issue rae's cli token").token;
+   must(await issue(rae, "ci"), "issue rae's ci token");
+   const retired = must(await issue(rae, "retired"), "issue rae's retired token");
+-  must(await accessTokens.revoke(retired.accessToken.id, rae, AT + 1), "revoke rae's retired token");
++  must(await accessTokens.revoke(retired.accessToken.id, rae, AT + 1, null), "revoke rae's retired token");
+   const samToken = must(await issue(sam, "sam-cli"), "issue sam's token").token;
+   const bearerBeforeReset = await bearer(cli);
+ 
+diff --git a/tests/fixtures/db-schema/config/db/tables.ts b/tests/fixtures/db-schema/config/db/tables.ts
+index 2f2255ae..a0513964 100644
+--- a/tests/fixtures/db-schema/config/db/tables.ts
++++ b/tests/fixtures/db-schema/config/db/tables.ts
+@@ -10,6 +10,7 @@ export interface AuthAccessTokensRow {
+   last_used_at: number | null;
+   revoked_at: number | null;
+   created_at: number;
++  revoked_reason: string | null;
+ }
+ 
+ export interface AuthChallengesRow {

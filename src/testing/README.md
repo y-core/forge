@@ -271,7 +271,7 @@ nothing else. Each step's `detail` is SQLite's own text, for anything the two do
 
 ## Asserting an expiry without waiting for one
 
-`fakeKV` judges every write's expiry against the clock you give it, so a TTL test costs no wall-clock time. Advance the clock; do not sleep.
+`fakeKV` judges every write's expiry against the clock you give it: advance that clock rather than sleep ([`TEST_RUNNERS.md`][testing-7b] §7b).
 
 ```ts
 let now = Date.UTC(2026, 0, 1);
@@ -507,17 +507,14 @@ test("the declaration lays out where it did", async () => {
 });
 ```
 
-**A fixture that is not there yet is written, and the run passes.** The first run of a new suite should not fail on a file nobody could have
-committed. Pass `ci: true` where a run must not create one — the absence is then `reason: "missing"` and nothing is written. **`ci` overrides
-`update`**, so a CI run carrying `update` from a stale script rewrites nothing.
+**A fixture that is not there yet is written, and the run passes**, unless you pass `ci: true`, which reports `reason: "missing"` and writes
+nothing. **`ci` overrides `update`**, so a stale script's `update` rewrites nothing in CI.
 
-**Rewriting fixtures is an argument, never an environment variable.** `{ update: true }` is what regenerates them; nothing in the module reads the
-environment, so what your suite does is visible in the call rather than in a variable the runner may or may not have set. Wire `ci` and `update` to
-whatever your own suite already knows, as above.
+**Rewriting fixtures is an argument, never an environment variable**: `{ update: true }` regenerates them and nothing in the module reads the
+environment, so wire `ci` and `update` to what your suite already knows, as above.
 
-**It returns a `Result` and never throws.** `outcome.error.report` is the rendered, line-numbered text to put in front of a reviewer;
-`outcome.error.diff` is the same information as data, uncapped, for a caller that wants to inspect it. `limit` caps the report alone. An unreadable
-or unwritable path is a `reason` with the original `Error` as `cause` — a broken checkout is data like anything else, and rethrowing is your call.
+**It returns a `Result` and never throws**: `outcome.error.report` is the line-numbered text for a reviewer, `outcome.error.diff` the same as data,
+and an unreadable or unwritable path is a `reason` with the original `Error` as `cause`.
 
 **Assert on the report, not on `ok`.** `expect(outcome.ok).toBe(true)` tells a reviewer that something differed; the shape above puts the differing
 lines in the failure message.

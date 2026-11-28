@@ -58,17 +58,19 @@ export function writeMeta(db: Database, key: string, value: string): void {
 }
 
 /** The versions a stale index is recognised by, cheapest gate first. @public */
-export function stampVersions(db: Database, canonVersion: string): void {
+export function stampVersions(db: Database, canonVersion: string, rulesDigest: string): void {
   writeMeta(db, "schema_version", SCHEMA_VERSION);
   writeMeta(db, "indexer_version", INDEXER_VERSION);
   writeMeta(db, "canon_version", canonVersion);
+  writeMeta(db, "rules_digest", rulesDigest);
 }
 
-/** True when the index was built by this schema, this indexer, and this canon. @public */
-export function versionsMatch(db: Database, canonVersion: string): boolean {
+/** True when the index was built by this schema, this indexer, this canon and these rule statements. @public */
+export function versionsMatch(db: Database, canonVersion: string, rulesDigest: string): boolean {
   return (
     readMeta(db, "schema_version") === SCHEMA_VERSION &&
     readMeta(db, "indexer_version") === INDEXER_VERSION &&
-    readMeta(db, "canon_version") === canonVersion
+    readMeta(db, "canon_version") === canonVersion &&
+    readMeta(db, "rules_digest") === rulesDigest
   );
 }

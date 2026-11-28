@@ -1,0 +1,28 @@
+diff --git a/src/controllers/webhooks.ts b/src/controllers/webhooks.ts
+index 4c4eaa31..7d4dee37 100644
+--- a/src/controllers/webhooks.ts
++++ b/src/controllers/webhooks.ts
+@@ -19,2 +19,14 @@ function parseJson(bytes: Uint8Array): unknown {
+ 
++async function signatureMatches(headers: Headers, body: Uint8Array, secret: string): Promise<boolean> {
++  const id = headers.get("webhook-id");
++  const stamp = headers.get("webhook-timestamp");
++  const signature = headers.get("webhook-signature");
++  if (!id || !stamp || !signature) return false;
++  const keyBytes = Uint8Array.from(atob(secret.replace(/^whsec_/, "")), (char) => char.charCodeAt(0));
++  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
++  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${id}.${stamp}.${new TextDecoder().decode(body)}`));
++  const expected = btoa(String.fromCharCode(...new Uint8Array(signed)));
++  return signature.split(" ").some((entry) => entry === `v1,${expected}`);
++}
++
+ export const orderWebhook = createAction(routes.orderWebhook, async (context) => {
+@@ -22,5 +34,5 @@ export const orderWebhook = createAction(routes.orderWebhook, async (context) =>
+   const config = appConfig.get(c.env);
+-  const verified = await (await resolveOrderWebhooks(c)).verify(c.request);
+-  if (!verified.ok) return new Response("Unauthorized", { status: 401 });
+-  const order = v.safeParse(OrderEventSchema, parseJson(verified.data.body));
++  const body = new Uint8Array(await c.request.arrayBuffer());
++  if (!(await signatureMatches(c.request.headers, body, config.webhookSecrets))) return new Response("Unauthorized", { status: 401 });
++  const order = v.safeParse(OrderEventSchema, parseJson(body));
+   if (!order.success) return new Response("Unprocessable order", { status: 422 });

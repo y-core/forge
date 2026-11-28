@@ -1,4 +1,5 @@
-import type { AstNode, CallNode, LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
+import type { AstNode, CallNode } from "../types.ts";
 
 const D1_CALL = new Set(["query", "queryOne", "execute"]);
 const LOOP = new Set(["ForStatement", "ForOfStatement", "ForInStatement", "WhileStatement", "DoWhileStatement"]);
@@ -31,7 +32,7 @@ function repeatingScope(call: AstNode): "loop" | "callback" | undefined {
 }
 
 /** A `.query`, `.queryOne` or `.execute` call awaited inside a loop body, or run inside a `.map`/`.flatMap`/`.forEach` callback. */
-export const sqlInLoop: LintRule = {
+export const sqlInLoop = defineLintRule("forge-sql-in-loop", {
   meta: {
     type: "problem",
     docs: {
@@ -39,18 +40,18 @@ export const sqlInLoop: LintRule = {
         "A D1 call per item is the N+1 shape: each one is a round trip and counts toward the invocation's query cap, so the items' keys go to one `json_each` statement or a `createRowLoader` instead.",
     },
   },
-  create(context) {
+  create(_context, report) {
     return {
       CallExpression(node: AstNode) {
         const method = methodOf(node);
         if (method === undefined || !D1_CALL.has(method)) return;
         const scope = repeatingScope(node);
         if (scope === undefined) return;
-        context.report({
-          message: `\`.${method}(…)\` runs once per item ${scope === "loop" ? "of a loop" : "of a per-item callback"} — read every key in one statement through \`json_each\`, or load them through \`createRowLoader\` (docs/STORAGE_BINDINGS.md §1h).`,
-          loc: node.loc,
-        });
+        report(
+          `\`.${method}(…)\` runs once per item ${scope === "loop" ? "of a loop" : "of a per-item callback"} — read every key in one statement through \`json_each\`, or load them through \`createRowLoader\`.`,
+          node.loc,
+        );
       },
     };
   },
-};
+});

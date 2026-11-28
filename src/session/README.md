@@ -135,8 +135,7 @@ holding a signed id from an expired or deleted record keeps that id. The signatu
 deletes a record, another edge location can still read it and serve the old session to a cookie that still names it. Where a sign-out must hold at
 once, record the revocation somewhere strongly consistent and check it.
 
-`createMemorySessionStorage()` is **development only**: Workers are stateless and run across many isolates, so in-memory sessions do not survive in
-production.
+`createMemorySessionStorage()` is **development only** ([`STORAGE_BINDINGS.md`][sb-5a] §5a).
 
 ---
 
@@ -289,12 +288,9 @@ carries no `Domain`, and in return refuses one planted from a sibling subdomain.
 a `path` other than `/`, at construction and on a per-call override to `serialize`, so the cookie cannot be written in a shape the browser would
 silently drop. A `__Secure-` or `__Host-` name is `Secure` by default under `createUnsignedCookie` too, and `secure: false` on one throws.
 
-**`Secure` is not configurable, and that is the point.** A session cookie that loses `Secure` fails silently in every way that would otherwise catch
-it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session.
-[`WORKERS_PLATFORM.md`][wp-4e] §4e rules out the plain-http development posture that would want it — **development is https at every hop**, so
-`Secure` is already correct locally and relaxing it buys nothing a correct dev transport does not. If a local server cannot hold a session, the fix
-is its transport. An in-process test harness does not need it either: `Secure` is enforced by a _browser_ deciding whether to send a cookie back
-over http, and `app.request(…)` has no browser in it.
+**`Secure` is not configurable** ([`SECURITY_HARDENING.md`][sh-3f] §3f). A cookie that loses it fails silently — no test goes red, and anyone on
+the path replays the session — and development is https at every hop ([`WORKERS_PLATFORM.md`][wp-4e] §4e), so a local server that cannot hold a
+session needs its transport fixed.
 
 **A configured lifetime is enforced by the signature, not announced by `Max-Age`.** Where `createSignedCookie` is given `maxAge` or `expires`, the
 expiry is embedded in the value and covered by the HMAC, so a captured cookie stops verifying on the server at the instant its header claimed —
@@ -317,7 +313,8 @@ alike, so a session cookie cannot ride a cross-site request. Pair it with the ap
 binding the token to the session id so one minted in one browser cannot be replayed from another — the wiring is
 [`src/form/README.md`][form-readme]'s.
 
-**Source secrets from bindings, and generate each one.** `env.SESSION_SECRET`, never a literal, holding the output of `openssl rand -hex 32`.
+**Source secrets from bindings, and generate each one** ([`SECURITY_HARDENING.md`][sh-8] §8): `env.SESSION_SECRET`, holding the output of
+`openssl rand -hex 32`.
 `importKeyRing` decodes each secret from hex and throws on one that fails the strength rule in [`SECURITY_HARDENING.md`][sh-8] §8, so no session,
 anonymous-session or flash cookie is built on a weak one.
 
@@ -362,6 +359,8 @@ object there is nothing to cache on, and the resolver runs on every request.
 [http-readme]: ../http/README.md
 [namespaces-5a]: ../../docs/NAMESPACES.md#5a-security--transport-layer-hardening-only
 [ram-3h]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3h-the-session-is-a-typed-chain-slot
+[sb-5a]: ../../docs/STORAGE_BINDINGS.md#5a-absent-bindings-in-local-dev
+[sh-3f]: ../../docs/SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
 [sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2f]: ../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows
 [wp-4e]: ../../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

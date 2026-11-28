@@ -1,6 +1,5 @@
 import { classExpressionVisitor } from "../ast.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 const OUTLINE_SUPPRESSOR = /(?<![\w-])(outline-none|outline-hidden)(?![\w-])/;
 
@@ -11,13 +10,12 @@ const FOCUS_VISIBLE_RING = /focus-visible[^\s]*:ring(?:-(?!0(?![\w-])|offset)[\w
 const POINTER_TARGET = /(?<![\w-])cursor-pointer(?![\w-])/;
 
 /** `outline-none` on a pointer target with no `focus-visible:` ring put back in its place. */
-export const focusRing: LintRule = {
+export const focusRing = defineLintRule("forge-ui-focus-ring", {
   meta: {
     type: "problem",
     docs: { description: "An outline a class list suppresses is replaced by a `focus-visible:` ring, not simply removed." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-focus-ring");
+  create(_context, report) {
     return classExpressionVisitor((found) => {
       // `cursor-pointer` is what separates a focus target from a surface: a popup panel suppresses
       // its outline and owes no ring, because nothing focuses it.
@@ -30,4 +28,4 @@ export const focusRing: LintRule = {
       );
     });
   },
-};
+});

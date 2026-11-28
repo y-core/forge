@@ -5,7 +5,7 @@ import type { AstNode } from "../types.ts";
 import { sqlTagCalledDirectly } from "./sql-tag-called-directly.ts";
 
 const message =
-  "`sql(…)` called as a function builds a fragment from caller text that no `?` binds — write the statement as a `sql`…`` template, and map a column or direction onto fixed fragments (docs/STORAGE_BINDINGS.md §1b).";
+  "[forge-sql-tag-called-directly] `sql(…)` called as a function builds a fragment from caller text that no `?` binds — write the statement as a `sql`…`` template, and map a column or direction onto fixed fragments.";
 
 describe("sql-tag-called-directly", () => {
   it("reports sql called with an array of strings", () => {

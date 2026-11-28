@@ -19,11 +19,11 @@ audience: internal
 
 ## 0. Quick Reference
 
-- §1 Review Workflow: what to do before and while reviewing
+- §1 Review Workflow: deferred whole to `CODE_REVIEW.md` §1
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves
-- §3b Tier 2 — Ripgrep with Triage: commands and their false-positive classes
+- §3b Tier 2 — Pattern Sweep with Triage: `warden check`, and the rules its patterns hold
 - §3c Tier 3 — Judgement: what to read when no command can decide
 - §4 Severity Calibration: critical, major, minor, informational
 - §5 Verification Protocol: prove a finding before reporting it
@@ -51,7 +51,7 @@ also blocks a merge regardless of severity argument.
 | --- | --- |
 | `valibot` is never imported outside the `validation` facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
 | A state-changing route is covered by the app's CSRF policy | [`INPUT_VALIDATION.md`][iv-3a] §3a |
-| No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
+| No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b, held by `warden:check` |
 
 ---
 
@@ -59,7 +59,7 @@ also blocks a merge regardless of severity argument.
 
 ### 3a. Tier 1 — Gated
 
-**A rule with a gate step is not a review item.** Do not hand-review these; run the gate and read its output.
+**A rule with a gate step is not a review item**: run the gate and read its output.
 
 | Rule | detect |
 | --- | --- |
@@ -81,103 +81,28 @@ also blocks a merge regardless of severity argument.
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
 
-### 3b. Tier 2 — Ripgrep with Triage
+### 3b. Tier 2 — Pattern Sweep with Triage
 
-**Every command here has a known false-positive class, stated with it.** A command without its triage note is worse than no command.
+**Run `warden check` — `warden_check` over MCP — and read each hit against the triage it carries** ([`CODE_REVIEW.md`][cr] §3b). A `fail`
+pattern already holds in the gate's `warden:check` step; a `warn` hit is a candidate, not a verdict.
 
-**Hand-spelled focus ring or disabled paint in `src/ui`**
-
-```bash
-rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity|has-\[select:disabled\]:opacity' \
-  src/ui --glob '!*.test.*' --glob '!forge-ui.css' --glob '!src/ui/design/**'
-```
-
-_Triage:_ any hit is a component re-spelling a recipe `forge-ui.css` publishes as an `@utility` (`focus-ring`, `state-disabled`, `state-invalid`,
-`state-busy`, `field-chrome`) — see [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e, whose own definitions the `!forge-ui.css` glob drops. The design
-corpus under `src/ui/design` quotes the utilities it teaches, so it is dropped for the same reason every other Tier 2 command drops it. One hit
-remains and is legitimate: `Switch`'s `peer-focus-visible:ring-2` on the track, which reaches across a sibling that `&:has()` cannot.
-
-**Valibot facade breach**
-
-```bash
-rg -n 'from "valibot"|from \x27valibot\x27' src/ --glob '!src/validation/**' --glob '!**/*.mjs'
-```
-
-_Triage:_ any hit is a breach, including in a `*.test.ts`. A test that imports valibot directly bypasses the facade exactly as production code
-would, and will not follow a version bump. One class is not a hit but reads as one: a gate check's fixture carries the specifier as a **string
-literal** for the parser under test to find — `src/tooling/gate/` only, and the line is inside a quoted fixture rather than at module scope. The
-`!**/*.mjs` glob drops the generated node bundles, which inline valibot by design: each is published behind a subpath of its own, and its bytes are
-held to its source by a `validate-*-bundle` gate step, so the source file is what this command reads.
-
-**Sibling-barrel import**
-
-```bash
-rg -nP 'from "\.\./(?!validation/mod|primitives/mod)[a-z-]+/mod"' src/ --glob '!*.test.*'
-```
-
-_Triage:_ the negative lookahead already excludes the sanctioned exemptions ([`NAMESPACE_DESIGN.md`][nd-2c] §2c), and the `!*.test.*` glob
-excludes the one legitimate class — a published-surface assertion importing a sibling barrel on purpose, each already carrying an
-`oxlint-disable-next-line` and its reason. With both, this should return nothing.
-**PCRE2 (`-P`) is required** — the default engine has no lookahead and will silently match everything.
-
-**Web-APIs-only breach in a runtime namespace**
-
-```bash
-rg -n '\bBun\.|from "node:' src/ \
-  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/snapshot.ts' \
-  --glob '!src/testing/harness.ts' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
-  --glob '!**/*.fixture.ts' --glob '!src/testing/d1/*.ts' --glob '!**/*.mjs'
-```
-
-_Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
-is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/snapshot.ts` reads a fixture off the disk,
-`src/testing/harness.ts` starts workerd under node and `src/testing/d1/*.ts` stand up a local D1 under node or Bun, and each is reached only
-through a subpath of its own and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them
-([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the files, not the namespace around them. Tests and `.browser.ts` specs run under Bun or
-Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker does. The `!**/*.mjs` glob drops the
-generated node bundles: each is subpath-only like the module it is built from, and a `validate-*-bundle` gate step byte-checks it against that
-source, so a breach shows in the `.ts` this command still reads. **Without those globs the command returns dozens of legitimate hits and will be
-ignored.** A hit anywhere else is a genuine runtime-portability break.
-
-_The direction that matters most is already a gate step._ `validate-import-boundary` fails any runtime module that imports a build-time one, so
-a review does not have to find that by hand; run this command for the case the step cannot see — a Node API used **inside** a runtime namespace
-without an import crossing any boundary.
-
-**Timer handle not cleared by its disposer**
-
-```bash
-rg -n 'setTimeout\(|setInterval\(' src/ui/client/
-```
-
-_Triage:_ a hit is only a defect if the handle it returns is not cleared in the module's disposer — **read the disposer, not the call site**
-([`UI_CLIENT_RUNTIME.md`][ucr-2d] §2d). A timer paired with a poll must also be cleared when the poll **succeeds**, not only when it times out.
-
-**Substring assertion on rendered HTML**
-
-```bash
-rg -n 'toContain\(|toMatch\(|\.includes\(' src/ --glob '*.test.ts*'
-```
-
-_Triage:_ legitimate on non-HTML strings — an error message, a log line, a SQL fragment. **A hit asserting on rendered markup is a defect**
-([`TEST_RUNNERS.md`][testing-3b] §3b).
-
-**Widest-possible icon prop**
-
-```bash
-rg -n '\bicon\??:\s*ForgeIcon(<string>)?\s*[;,]' src/
-```
-
-_Triage:_ every hit is a defect, and the fix is always to narrow the parameter to the glyph names the component actually renders —
-`ForgeIcon<"chevron-down">`, or a `<N | "chevron-down">` threaded from the props interface when the caller names one. `ForgeIcon<Name>` is a
-component type, so its `name` prop is contravariant under `strictFunctionTypes`: the _narrow_ declaration is the _permissive_ one, accepting both a
-narrow sheet and a wide one, while a bare `ForgeIcon` demands a sheet that accepts every string and rejects the app sheet enumerating just its own
-symbols. A bare `ForgeIcon` in a prop position is therefore never a deliberate widening, and it costs the consumer either a cast or an unchecked
-glyph that renders an empty `<use>`. **The command is anchored to a prop position** — `createIcon`'s own overloads return `ForgeIcon<string>`
-correctly, which is the one shape a looser pattern picks up as a false positive.
-
-**The unparameterised spelling never reaches review**: `ForgeIcon` declares no default for `Name`, so `bun check` rejects a bare `ForgeIcon` at the
-declaration site and the gate's `typecheck` step fails before this command runs. The command stays because `ForgeIcon<string>` is still spellable,
-still compiles, and is still always wrong in a prop position.
+- <!-- rule:forge-ui-recipe-respelled --> `forge-ui.css` publishes each recipe as an `@utility` — `focus-ring`, `state-disabled`, `state-invalid`,
+  `state-busy`, `field-chrome` ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
+- <!-- rule:forge-valibot-facade --> A test that imports valibot directly bypasses the facade exactly as production code would, and will not follow
+  a version bump ([`INPUT_VALIDATION.md`][iv-1a] §1a). The generated `.mjs` bundles inline valibot by design, and a `validate-*-bundle` step holds
+  each to its source.
+- <!-- rule:forge-sibling-barrel-import --> The exemptions are [`NAMESPACE_DESIGN.md`][nd-2c] §2c's; a published-surface assertion importing a
+  sibling barrel on purpose carries an `oxlint-disable-next-line` and its reason.
+- <!-- rule:forge-runtime-web-apis-only --> `src/tooling/` is the build-time container, so membership is the exemption
+  ([`NAMESPACES.md`][namespaces-4a] §4a); the node-only `testing` modules are reached only through subpaths of their own
+  ([`TEST_RUNNERS.md`][testing-7f] §7f, [`LIBRARY_ARCHITECTURE.md`][la-1e] §1e). `validate-import-boundary` holds the import direction; this
+  pattern holds a Node API used inside a runtime namespace with no import crossing any boundary.
+- <!-- rule:forge-client-timer-cleared --> A timer paired with a poll is also cleared when the poll succeeds ([`UI_CLIENT_RUNTIME.md`][ucr-2d] §2d).
+- <!-- rule:forge-substring-markup --> Exact match ([`TEST_RUNNERS.md`][testing-3b] §3b).
+- <!-- rule:forge-icon-prop-narrow --> `ForgeIcon<Name>`'s `name` prop is contravariant under `strictFunctionTypes`, so the narrow declaration is
+  the permissive one: it accepts a narrow sheet and a wide one, while `ForgeIcon<string>` rejects an app sheet enumerating its own symbols and costs
+  the consumer a cast or an empty `<use>`. A bare `ForgeIcon` does not compile, since `Name` has no default.
+- <!-- rule:forge-remix-headers-facade --> `http` is the one namespace that wraps the package ([`NAMESPACES.md`][namespaces-5d] §5d).
 
 Restating-the-code and narration are not reachable by any command; they belong to §3c.
 
@@ -263,7 +188,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `announcers` in `src/ui/client/announce.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`][ucr-4] §4 |
-| A non-null assertion in a test file | Permitted by the `**/*.test.ts` oxlint override, which sets `typescript/no-non-null-assertion: off`; the rule is `error` in production source |
+| A non-null assertion in a test file | Permitted by the `**/*.test.ts` oxlint override; the rule is `error` in production source |
 | `ok` / `err` not following `create*` | The one documented naming exception — [`FORGE_ERRORS.md`][eh-1a] §1a |
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`FORGE_ERRORS.md`][eh-5e] §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACES.md`][namespaces-5b] §5b |
@@ -274,7 +199,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `[--tone:var(--color-…)]` arbitrary-property classes, and `bg-(--tone)` reading them | The tone mechanism, not a stray arbitrary value: `toneVariants` sets the properties and one recipe per appearance reads them — [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e |
 | `state-invalid` or `cursor-pointer` passed as a separate `cn` argument, outside the base literal | Not an untidy call: the narrower recipe's group is a subset of an earlier one's, so folding it into the literal deletes it — [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e |
 | `data-size` on `Avatar`, `Turnstile`, or a field control | A presentational attribute carrying a chosen value, not a state hook — it is declared beside the state table rather than in it — [`STATE_ATTRIBUTES.md`][sa-2] §2 |
-| `hx-on:*` emitted verbatim while every bare `on*` attribute is dropped, and a `js:`-prefixed `hx-vals`/`hx-headers` left as a raw string | A ratified fail-open exception: the renderer's handler filter tests the lowercased name for a leading `on`, which `hx-on:click` does not carry, and a `js:` value is an attribute value htmx evaluates rather than a name. Written into [`HTMX.md`][htmx-7b] §7b, whose control is that the value be developer-authored — [`BOUNDARIES.md`][boundaries-5c] §5c |
+| `hx-on:*` emitted verbatim while every bare `on*` attribute is dropped, and a `js:`-prefixed `hx-vals`/`hx-headers` left as a raw string | A ratified fail-open exception: the renderer's `on*` filter does not reach `hx-on:click`, and a `js:` value is one htmx evaluates, so the control is that the value be developer-authored — [`HTMX.md`][htmx-7b] §7b, [`BOUNDARIES.md`][boundaries-5c] §5c |
 | A `navbar:filters` document event accepted from any script on the page | A ratified fail-open exception: `filters` repaints already-delivered items and never decides what a viewer may reach, so a forged event degrades presentation only — route guards are the enforcement point. Written into [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b — [`BOUNDARIES.md`][boundaries-5c] §5c |
 | A URL-valued `hx-*` attribute left unsanitized beside an `href` that is not | Deliberate: `safeUrl`'s `"#"` is a live same-origin request once htmx fetches it, so sanitizing converts a refusal into a silent wrong request — [`HTMX.md`][htmx-7a] §7a |
 
@@ -331,7 +256,8 @@ _recurs_: every future correct `role="status"` would owe a fresh suppression. A 
 
 **Every written suppression is load-bearing**, and proven so by `report-unused-disable-directives-severity error` on
 `typeAwareLintStep`: `switch.tsx` (`role-has-required-aria-props` — a native checkbox supplies `aria-checked` itself) and `scroll-area.tsx`
-(`no-noninteractive-tabindex` — WCAG 2.1.1 requires the tab stop). Directives are honoured both in JSX attribute position and inside a `{/* … */}`
+(`no-noninteractive-tabindex` — WCAG 2.1.1 requires the tab stop). Directives are honoured both in JSX
+attribute position and inside a `{/* … */}`
 container.
 
 **What it is blind to, so this section does not overclaim.** jsx-a11y is a React-ecosystem checker reading React prop spellings and lowercase
@@ -383,6 +309,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [namespaces-5b]: ./NAMESPACES.md#5b-uicore--ssr-components-only
+[namespaces-5d]: ./NAMESPACES.md#5d-http--responses-headers-and-paths
 [nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
 [ram-3f]: ./ROUTING_AND_MIDDLEWARE.md#3f-one-csrf-policy-per-app-verified-once
 [ram-4a]: ./ROUTING_AND_MIDDLEWARE.md#4a-contextvar-typed-accessor

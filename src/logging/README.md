@@ -372,9 +372,9 @@ says nothing to a screen reader.
 A channel is an object, not a function. `write` is the only required member; implement `read` and `readEntry` when there is a store behind it and
 you want the viewer to show it. The full contract is [`STRUCTURED_LOGGING.md`][sl-2a] §2a's.
 
-**The `record.data` you receive is already redacted and already a JSON-stable clone** — never the caller's live object. A `Date` arrives as an ISO
-string, a `Map` and a `Set` as their tagged forms, a repeated reference on its own path as `"[circular]"`, and a `URL` as `origin + pathname`. Do
-not write a channel that expects a live instance, and do not mutate what you are handed: every channel gets the same object.
+**The `record.data` you receive is already redacted and already a JSON-stable clone** — never the caller's live object, in the forms
+[`STRUCTURED_LOGGING.md`][sl-2h] §2h gives each value. Do not write a channel that expects a live instance, and do not mutate what you are handed:
+every channel gets the same object.
 
 ```ts
 import type { LogChannel } from "@y-core/forge/logging";
@@ -434,6 +434,7 @@ in it.
 [sl-2e]: ../../docs/STRUCTURED_LOGGING.md#2e-redaction-is-logger-wide-and-on-by-default
 [sl-2f]: ../../docs/STRUCTURED_LOGGING.md#2f-channel-write-failures-and-flushs-error-contract
 [sl-2g]: ../../docs/STRUCTURED_LOGGING.md#2g-log-ordering--newest-first-by-inverted-key
+[sl-2h]: ../../docs/STRUCTURED_LOGGING.md#2h-one-value-one-meaning-across-sinks
 [sl-3c]: ../../docs/STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger
 [sl-3d]: ../../docs/STRUCTURED_LOGGING.md#3d-forges-own-records-follow-the-request-logger
 [sl-4a]: ../../docs/STRUCTURED_LOGGING.md#4a-level-mapping-convention

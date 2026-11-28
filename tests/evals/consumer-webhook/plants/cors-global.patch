@@ -1,0 +1,12 @@
+diff --git a/src/router.ts b/src/router.ts
+index 248f576b..2abeb135 100644
+--- a/src/router.ts
++++ b/src/router.ts
+@@ -11,6 +11,6 @@ import { routes } from "./routes";
+ const PARTNER_ORIGINS = ["https://partner.example"];
+ 
+ export function registerRoutes(app: Forge<Bindings>): void {
+-  app.use("/api/status", cors({ origins: PARTNER_ORIGINS, methods: ["GET"] }));
++  app.use("*", cors({ origins: PARTNER_ORIGINS, methods: ["GET"] }));
+   app.map(routes, createController(routes, { actions: { home: homePage, apiStatus, orderWebhook } }));
+ }

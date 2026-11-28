@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -60,6 +60,15 @@ function ambientIncludes(tsconfig: string): Result<string[], string> {
   }
 }
 
+/** The nearest `node_modules` at or above `dir`, which is what a module in `dir` resolves bare specifiers against. */
+function nearestNodeModules(dir: string): string | undefined {
+  for (let current = resolve(dir); ; current = dirname(current)) {
+    const candidate = join(current, "node_modules");
+    if (existsSync(candidate)) return candidate;
+    if (dirname(current) === current) return undefined;
+  }
+}
+
 /** Compiles each fence as its own module, declaring each fence's `ambient` names and every one of `modules` as `any`. @internal */
 export function compileFences(
   fences: readonly FenceSource[],
@@ -71,6 +80,9 @@ export function compileFences(
   if (!ambientFiles.ok) return ambientFiles;
   const dir = mkdtempSync(join(tmpdir(), "forge-fences-"));
   try {
+    // The fences resolve packages from the step tsconfig's tree, so an installed package keeps its real types and is never declared untyped.
+    const installed = nearestNodeModules(dirname(project.tsconfig));
+    if (installed !== undefined) symlinkSync(installed, join(dir, "node_modules"), "dir");
     fences.forEach((fence, index) => {
       const declarations = (ambient.get(index) ?? []).map((name) => `declare const ${name}: any; type ${name} = any;\n`);
       writeFileSync(join(dir, `f${index}.${fence.lang ?? "tsx"}`), `${fence.body}\nexport {};\n${declarations.join("")}`);

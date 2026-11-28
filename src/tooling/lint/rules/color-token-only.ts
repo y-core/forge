@@ -1,7 +1,6 @@
 import { classLiteralVisitor } from "../ast.ts";
 import { COLOR_ROOTS, COLOR_TOKENS } from "../data/design-scale.ts";
-import { reporter } from "../report.ts";
-import type { LintRule } from "../types.ts";
+import { defineLintRule } from "../report.ts";
 
 const ROOTS = new Set(COLOR_ROOTS);
 
@@ -26,13 +25,12 @@ const DECLARED_PROPERTIES = new Set(["--tone", "--tone-fg", "--tone-text", "--to
 const CUSTOM_PROPERTY = /(?<![\w-])(?:[a-z][a-z0-9-]*:)*(-?[a-z][a-z0-9-]*)-[[(](--[a-z0-9-]+)[\])]/g;
 
 /** A raw colour literal in a class string, or a colour utility resolving a property the theme does not declare. */
-export const colorTokenOnly: LintRule = {
+export const colorTokenOnly = defineLintRule("forge-ui-color-token-only", {
   meta: {
     type: "problem",
     docs: { description: "A colour is resolved through a semantic token, so the theme — and every mode it has — decides what is painted." },
   },
-  create(context) {
-    const report = reporter(context, "forge-ui-color-token-only");
+  create(_context, report) {
     return classLiteralVisitor((found) => {
       const literals = new Set<string>();
       for (const match of found.text.matchAll(COLOR_LITERAL)) literals.add(match[0]);
@@ -55,4 +53,4 @@ export const colorTokenOnly: LintRule = {
       }
     });
   },
-};
+});

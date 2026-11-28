@@ -107,13 +107,14 @@ describe("meta", () => {
 });
 
 describe("versionsMatch()", () => {
-  it("is false before stamping, true after, and false again for a different canon", () => {
+  it("is false before stamping, true after, and false again for a different canon or rule digest", () => {
     const db = openDatabase(":memory:");
 
-    expect(versionsMatch(db, "1.0.0")).toBe(false);
-    stampVersions(db, "1.0.0");
-    expect(versionsMatch(db, "1.0.0")).toBe(true);
-    expect(versionsMatch(db, "1.0.1")).toBe(false);
+    expect(versionsMatch(db, "1.0.0", "d1")).toBe(false);
+    stampVersions(db, "1.0.0", "d1");
+    expect(versionsMatch(db, "1.0.0", "d1")).toBe(true);
+    expect(versionsMatch(db, "1.0.1", "d1")).toBe(false);
+    expect(versionsMatch(db, "1.0.0", "d2")).toBe(false);
     db.close();
   });
 });
